@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<AssemblyName>HomebrewDot.Net.Rimworld.Toolkit</AssemblyName>
+		<RootNamespace>HomebrewDot.Net.RimWorld</RootNamespace>
+		<Nullable>disable</Nullable>
+		<LangVersion>latestmajor</LangVersion>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<RimworldVersion>1.6</RimworldVersion>
+		<HarmonyVersion>1.5</HarmonyVersion>
+		<RimworldRoot>C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimworldRoot>
+		<RimworldWorkshopRoot>C:\Program Files (x86)\Steam\steamapps\workshop\content\294100</RimworldWorkshopRoot>
+		<RimWorldManaged>$(RimworldRoot)\RimWorldWin64_Data\Managed</RimWorldManaged>
+		<HarmonyRoot>$(RimworldWorkshopRoot)\2009463077\$(HarmonyVersion)\Assemblies</HarmonyRoot>
+		<OutputPath>..\..\$(RimworldVersion)\Assemblies</OutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Reference Include="Assembly-CSharp">
+			<HintPath>$(RimWorldManaged)\Assembly-CSharp.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.CoreModule.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="0Harmony">
+			<HintPath>$(HarmonyRoot)\0Harmony.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+	</ItemGroup>
+
+</Project>

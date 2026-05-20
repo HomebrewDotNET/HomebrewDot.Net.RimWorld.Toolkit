@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<RootNamespace>HomebrewDot.Net.RimWorld.Tests</RootNamespace>
+		<Nullable>disable</Nullable>
+		<LangVersion>latestmajor</LangVersion>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<!-- Output to local drive so .NET Framework doesn't block loading from the mapped J:\ drive -->
+		<OutputPath>$(TEMP)\HomebrewDot.Net.RimWorld.Toolkit.Tests\$(Configuration)\$(TargetFramework)\</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<RimworldRoot Condition="'$(RIMWORLD_ROOT)' == ''">C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimworldRoot>
+		<RimWorldManaged>$(RimworldRoot)\RimWorldWin64_Data\Managed</RimWorldManaged>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="Moq" />
+		<PackageReference Include="xunit"/>
+		<PackageReference Include="xunit.runner.visualstudio">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\src\HomebrewDot.Net.RimWorld.Toolkit\HomebrewDot.Net.RimWorld.Toolkit.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="Assembly-CSharp">
+			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+</Project>

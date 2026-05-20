@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>HomebrewDot.Net.RimWorld.Toolkit.Benchmarks</AssemblyName>
+		<RootNamespace>HomebrewDot.Net.RimWorld.Benchmarks</RootNamespace>
+		<Nullable>disable</Nullable>
+		<LangVersion>latestmajor</LangVersion>
+		<IsPackable>false</IsPackable>
+		<AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+		<GenerateBindingRedirectsOutputType>false</GenerateBindingRedirectsOutputType>
+		<!-- Output to local drive so .NET Framework doesn't block loading from the mapped J:\ drive -->
+		<OutputPath>$(TEMP)\HomebrewDot.Net.RimWorld.Toolkit.Benchmarks\$(Configuration)\$(TargetFramework)\</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<RimworldVersion>1.6</RimworldVersion>
+		<HarmonyVersion>1.5</HarmonyVersion>
+		<RimworldRoot>C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimworldRoot>
+		<RimworldWorkshopRoot>C:\Program Files (x86)\Steam\steamapps\workshop\content\294100</RimworldWorkshopRoot>
+		<RimWorldManaged>$(RimworldRoot)\RimWorldWin64_Data\Managed</RimWorldManaged>
+		<HarmonyRoot>$(RimworldWorkshopRoot)\2009463077\$(HarmonyVersion)\Assemblies</HarmonyRoot>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BenchmarkDotNet" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\HomebrewDot.Net.RimWorld.Toolkit\HomebrewDot.Net.RimWorld.Toolkit.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="Assembly-CSharp">
+			<HintPath>$(RimWorldManaged)\Assembly-CSharp.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.CoreModule.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+		<Reference Include="0Harmony">
+			<HintPath>$(HarmonyRoot)\0Harmony.dll</HintPath>
+			<Private>true</Private>
+		</Reference>
+	</ItemGroup>
+
+	<Target Name="CopyFrameworkNetStandardFacade" AfterTargets="Build">
+		<Copy
+			SourceFiles="$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\netstandard.dll"
+			DestinationFiles="$(OutputPath)netstandard.dll"
+			OverwriteReadOnlyFiles="true" />
+	</Target>
+
+</Project>
