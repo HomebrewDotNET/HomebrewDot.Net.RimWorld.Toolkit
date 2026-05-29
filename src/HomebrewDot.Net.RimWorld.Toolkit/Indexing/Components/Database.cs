@@ -6,13 +6,15 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collections.Models;
 using HomebrewDot.Net.RimWorld.Eventing.Models;
 using HomebrewDot.Net.RimWorld.Extensions;
+using HomebrewDot.Net.RimWorld.Generic.Models;
 using RimWorld;
+using Verse;
 using static HomebrewDot.Net.RimWorld.Indexing.Components.Database;
 using static HomebrewDot.Net.RimWorld.Toolkit;
 using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
 
 namespace HomebrewDot.Net.RimWorld.Indexing.Components
 {
@@ -21,6 +23,40 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
     /// </summary>
     public class Database : IDatabase, IDatabaseSchemaBuilder
     {
+        // Statics
+        private static readonly Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, ITrackingIndexed<object>>> _indexedCreator = new Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, ITrackingIndexed<object>>>();
+        private static Func<object, IReadOnlyDictionary<string, object>, ITrackingIndexed<object>> GetCreatorForType(Type type)
+        {
+            if(!_indexedCreator.TryGetValue(type, out var creator))
+            {
+                lock(_indexedCreator)
+                {
+                    if(!_indexedCreator.TryGetValue(type, out creator))
+                    {
+                        creator = CreateCreatorForType(type);
+                        _indexedCreator[type] = creator;
+                    }
+                }
+            }
+            return creator;
+        }
+
+        private static Func<object, IReadOnlyDictionary<string, object>, ITrackingIndexed<object>> CreateCreatorForType(Type type)
+        {
+            var inputParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "input");
+            var inputMetadataParameter = System.Linq.Expressions.Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "metadata");
+            var convertedInput = System.Linq.Expressions.Expression.Variable(type, "convertedInput");
+            var castInputToConverted = System.Linq.Expressions.Expression.Convert(inputParameter, type);
+            var assignConvertedInput = System.Linq.Expressions.Expression.Assign(convertedInput, castInputToConverted);
+            var targetConstructor = Expression.GetConstructorForGeneric(type, () => new TrackingIndexed<object>(null, null));
+            var newExpression = System.Linq.Expressions.Expression.New(targetConstructor, convertedInput, inputMetadataParameter);
+
+            var body = System.Linq.Expressions.Expression.Block(new[] { convertedInput }, assignConvertedInput, newExpression);
+
+            var lambda = System.Linq.Expressions.Expression.Lambda<Func<object, IReadOnlyDictionary<string, object>, ITrackingIndexed<object>>>(body, inputParameter, inputMetadataParameter);
+            return lambda.Compile();
+        }
+
         // Constants
         /// <summary>
         /// The char used to define sub tables in the database. For example, if you have a table named "Things" and a subtable named "Weapons", the full name of the subtable would be "Things.Weapons" using this separator.
@@ -73,14 +109,15 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             {
                 bool anyInserted = false;
                 var foundItem = Find(item);
-                TrackingIndexed<T> trackedItem = null;
-                if (foundItem is TrackingIndexed<T> existingTracked)
+                ITrackingIndexed<T> trackedItem = null;
+                if (foundItem is ITrackingIndexed<T> existingTracked)
                 {
                     trackedItem = existingTracked;
                 }
                 else
                 {
-                    trackedItem = new TrackingIndexed<T>(item, metadata);
+                    var creator = GetCreatorForType(item.GetType());
+                    trackedItem = (ITrackingIndexed<T>)creator(item, metadata);
                 }
                 Invoking.Safe(() => _onInserting?.Invoke(this, trackedItem));
                 foreach (var table in _tables.Values)
@@ -305,7 +342,6 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         {
             name = Guard.NotNullOrEmpty(name, nameof(name));
             name = Guard.Is(name, name => !name.Contains(TableNameSeparator), exceptionBuilder: () => new ArgumentException($"Table name cannot contain the separator character '{TableNameSeparator}'", nameof(name)));
-            tableBuilder = Guard.NotNull(tableBuilder, nameof(tableBuilder));
             var table = GetTable<T>(name);
             if (table is null)
             {
@@ -318,13 +354,14 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                             : new Table<T>(this, name, false);
                         _tablesByName[name] = newTable;
                         _tables[typeof(T)] = newTable;
-                        tableBuilder((ITableBuilder<T>)newTable);
+                        Log($"Added {(predicate != null ? "filtered " : string.Empty)}table {name} of type {typeof(T).Name} to database schema");
+                        tableBuilder?.Invoke((ITableBuilder<T>)newTable);
                     }
                 }
             }
             else
             {
-                tableBuilder((ITableBuilder<T>)_tablesByName[name]);
+                tableBuilder?.Invoke((ITableBuilder<T>)_tablesByName[name]);
             }
             return this;
         }
@@ -386,7 +423,12 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
 
-        internal class TrackingIndexed<T> : Indexed<T>, IWriteableIndexed<T> where T : class
+        internal interface ITrackingIndexed<out T> : IIndexed<T>, IWriteableIndexed<T> where T : class
+        {
+            Dictionary<string, object> IndexedBy { get; }
+        }
+
+        internal class TrackingIndexed<T> : Indexed<T>, ITrackingIndexed<T>, IWriteableIndexed<T> where T : class
         {
             // Fields
             private IReadOnlyDictionary<string, object> _metadata;
@@ -561,10 +603,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
     {
         // Fields
         private readonly List<IReadOnlyTable> _subTables = new List<IReadOnlyTable>();
-        private readonly Dictionary<T, TrackingIndexed<T>> _data = new Dictionary<T, TrackingIndexed<T>>();
+        private readonly Dictionary<T, ITrackingIndexed<T>> _data = new Dictionary<T, ITrackingIndexed<T>>();
         private readonly Predicate<T> _filter;
-        private readonly Dictionary<string, Dictionary<object, HashSet<TrackingIndexed<T>>>> _indexes = new Dictionary<string, Dictionary<object, HashSet<TrackingIndexed<T>>>>();
-        private readonly Dictionary<string, HashSet<TrackingIndexed<T>>> _boolIndexes = new Dictionary<string, HashSet<TrackingIndexed<T>>>();
+        private readonly Dictionary<string, Dictionary<object, HashSet<ITrackingIndexed<T>>>> _indexes = new Dictionary<string, Dictionary<object, HashSet<ITrackingIndexed<T>>>>();
+        private readonly Dictionary<string, HashSet<ITrackingIndexed<T>>> _boolIndexes = new Dictionary<string, HashSet<ITrackingIndexed<T>>>();
         private Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>> _onInserting;
         private Action<IDatabase, IReadOnlyTable<T>, IIndexed<T>> _onInserted;
         private Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>, IReadOnlyDictionary<string, object>> _onDeleting;
@@ -574,6 +616,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         private SnapshotTable _cachedSnapshot;
 
         // Properties
+        /// <summary>
+        /// The parent table of this table, if it is a subtable. If this table is a root table, this property will be <c>null</c>.
+        /// </summary>
+        public IReadOnlyTable Parent { get; private set; }
         /// <inheritdoc/>
         public override IReadOnlyList<IReadOnlyTable> SubTables => _subTables;
 
@@ -596,13 +642,13 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         }
 
         /// <inheritdoc/>
-        internal override bool TryGet<T1>(T1 data, out TrackingIndexed<T1> item)
+        internal override bool TryGet<T1>(T1 data, out ITrackingIndexed<T1> item)
         {
             if(data is T typedData)
             {
                 if (_data.TryGetValue(typedData, out var indexed))
                 {
-                    item = (TrackingIndexed<T1>)(object)indexed;
+                    item = (ITrackingIndexed<T1>)(object)indexed;
                     return true;
                 }
             }
@@ -611,10 +657,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         }
 
         /// <inheritdoc/>
-        internal override bool TryAddOrUpdate<T1>(TrackingIndexed<T1> item)
+        internal override bool TryAddOrUpdate<T1>(ITrackingIndexed<T1> item)
         {
             item = Guard.NotNull(item, nameof(item));
-            if (item is TrackingIndexed<T> tableItem)
+            if (item is ITrackingIndexed<T> tableItem)
             {
 
                 if (_filter != null && !_filter(tableItem.Value))
@@ -634,16 +680,16 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return false;
         }
         /// <inheritdoc/>
-        internal override bool TryDelete<T1>(TrackingIndexed<T1> item, IReadOnlyDictionary<string, object> metadata)
+        internal override bool TryDelete<T1>(ITrackingIndexed<T1> item, IReadOnlyDictionary<string, object> metadata)
         {
-            if (item is TrackingIndexed<T> tableItem)
+            if (item is ITrackingIndexed<T> tableItem)
             {
                 return Delete(tableItem, metadata);
             }
             return false;
         }
 
-        private bool Delete(TrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata)
+        private bool Delete(ITrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata)
         {
             Invoking.Safe(() => _onDeleting?.Invoke(_owner, this, item, metadata));
             if (_data.Remove(item.Value))
@@ -750,13 +796,14 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             {
                 return this;
             }
-            _indexes.Add(fullIndexName, new Dictionary<object, HashSet<TrackingIndexed<T>>>());
+            _indexes.Add(fullIndexName, new Dictionary<object, HashSet<ITrackingIndexed<T>>>());
+            Log($"Added {(filter != null ? "filtered " : string.Empty)}index {fullIndexName} on property {propertyName} to table {Name}");
 
             var self = ((ITableBuilder<T>)this);
             self.OnInserted((db, table, indexed) =>
             {
                 var indexValue = propertySelector(indexed);
-                Dictionary<object, HashSet<TrackingIndexed<T>>> index;
+                Dictionary<object, HashSet<ITrackingIndexed<T>>> index;
                 lock (_indexes)
                 {
                     if (!_indexes.TryGetValue(fullIndexName, out index))
@@ -764,7 +811,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                         return;
                     }
                 }
-                if (indexed is TrackingIndexed<T> tracked)
+                if (indexed is ITrackingIndexed<T> tracked)
                 {
                     lock (tracked)
                     {
@@ -795,12 +842,12 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
                         if (indexValue is not null)
                         {
-                            HashSet<TrackingIndexed<T>> set;
+                            HashSet<ITrackingIndexed<T>> set;
                             lock (index)
                             {
                                 if (!index.TryGetValue(indexValue, out set))
                                 {
-                                    set = new HashSet<TrackingIndexed<T>>();
+                                    set = new HashSet<ITrackingIndexed<T>>();
                                     index[indexValue] = set;
                                 }
                             }
@@ -814,7 +861,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 }
             }).OnDeleted((db, table, indexed, metadata) =>
             {
-                Dictionary<object, HashSet<TrackingIndexed<T>>> index;
+                Dictionary<object, HashSet<ITrackingIndexed<T>>> index;
                 lock (_indexes)
                 {
                     if (!_indexes.TryGetValue(fullIndexName, out index))
@@ -822,7 +869,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                         return;
                     }
                 }
-                if (indexed is TrackingIndexed<T> tracked)
+                if (indexed is ITrackingIndexed<T> tracked)
                 {
                     lock (tracked)
                     {
@@ -855,25 +902,49 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return ((ITableBuilder<T>)this).WithIndex<bool>(propertyName, propertySelector, null, name);
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.WithSubTable<TSub>(string name, Action<ITableBuilder<TSub>> tableBuilder, Predicate<TSub> filter)
+        ITableBuilder<T> ITableBuilder<T>.WithSubTable<TSub>(string name, Predicate<TSub> filter, Action<ITableBuilder<TSub>> tableBuilder)
         {
             name = Guard.NotNullOrEmpty(name, nameof(name));
-            tableBuilder = Guard.NotNull(tableBuilder, nameof(tableBuilder));
             var existingSubTable = _subTables.FirstOrDefault(st => st.Name == name);
             if (existingSubTable is null)
             {
                 var newTable = filter != null ? new Table<TSub>(_owner, name, filter) : new Table<TSub>(_owner, name, true);
                 _subTables.Add(newTable);
+                Log($"Added {(filter != null ? "filtered " : string.Empty)}sub table {name} of type {typeof(TSub).Name} to table {Name} of type {typeof(T).Name}");
 
                 existingSubTable = newTable;
             }
             if (existingSubTable is ITableBuilder<TSub> subTableBuilder)
             {
-                tableBuilder(subTableBuilder);
+                tableBuilder?.Invoke(subTableBuilder);
             }
             else
             {
                 throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(TSub).FullName}'. Multiple source might be using the same name but different types which is a conflict");
+            }
+            return this;
+        }
+        /// <inheritdoc/>
+        ITableBuilder<T> ITableBuilder<T>.WithSubTable(string name, Predicate<T> filter, Action<ITableBuilder<T>> tableBuilder)
+        {
+            name = Guard.NotNullOrEmpty(name, nameof(name));
+            filter = Guard.NotNull(filter, nameof(filter));
+            var existingSubTable = _subTables.FirstOrDefault(st => st.Name == name);
+            if (existingSubTable is null)
+            {
+                var newTable = new Table<T>(_owner, name, filter);
+                _subTables.Add(newTable);
+                Log($"Added {(filter != null ? "filtered " : string.Empty)}sub table {name} of type {typeof(T).Name} to table {Name} of same type");
+
+                existingSubTable = newTable;
+            }
+            if (existingSubTable is ITableBuilder<T> subTableBuilder)
+            {
+                tableBuilder?.Invoke(subTableBuilder);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(T).FullName}'. Multiple source might be using the same name but different types which is a conflict");
             }
             return this;
         }
@@ -923,6 +994,11 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             _hasChanges = false;
             return _cachedSnapshot;
         }
+        /// <inheritdoc/>
+        IEnumerator<T> IEnumerable<T>.GetEnumerator()
+        {
+            return _data.Keys.GetEnumerator();
+        }
 
         private sealed class SnapshotTable : IReadOnlyTable<T>
         {
@@ -967,6 +1043,11 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
             public IEnumerator<IIndexed<T>> GetEnumerator() => _data.Values.GetEnumerator();
             IEnumerator IEnumerable.GetEnumerator() => _data.GetEnumerator();
+            /// <inheritdoc/>
+            IEnumerator<T> IEnumerable<T>.GetEnumerator()
+            {
+                return _data.Keys.GetEnumerator();
+            }
         }
     }
     /// <summary>
@@ -995,7 +1076,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         /// <typeparam name="T">The type to attempt to insert.</typeparam>
         /// <param name="item">The item to insert.</param>
         /// <returns>True if the item was successfully added or updated; otherwise, false.</returns>
-        internal abstract bool TryAddOrUpdate<T>(TrackingIndexed<T> item) where T : class;
+        internal abstract bool TryAddOrUpdate<T>(ITrackingIndexed<T> item) where T : class;
         /// <summary>
         /// Tries to delete an item from the table. If an item with the same data exists, it will be removed and the method will return true. Otherwise, it will return false.
         /// </summary>
@@ -1003,7 +1084,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         /// <param name="item">The item to delete.</param>
         /// <param name="metadata">Optional metadata associated with the item.</param>
         /// <returns>True if the item was successfully deleted; otherwise, false.</returns>
-        internal abstract bool TryDelete<T>(TrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata) where T : class;
+        internal abstract bool TryDelete<T>(ITrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata) where T : class;
         /// <summary>
         /// Tries to retrieve an indexed item from the table based on the provided data.
         /// </summary>
@@ -1011,7 +1092,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         /// <param name="data">The data to search for.</param>
         /// <param name="item">The retrieved item, if found.</param>
         /// <returns>True if the item was found; otherwise, false.</returns>
-        internal abstract bool TryGet<T>(T data, out TrackingIndexed<T> item) where T : class;
+        internal abstract bool TryGet<T>(T data, out ITrackingIndexed<T> item) where T : class;
         /// <inheritdoc/>
         bool IReadOnlyTable.TryFind<T>(T data, out IIndexed<T> item)
         {

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>Homebrewed Toolkit</name>
+  <author>HomebrewDot.Net</author>
+  <packageId>homebrewdot.net.rimworld.toolkit</packageId>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <modDependencies>
+    <li>
+      <displayName>Core</displayName>
+      <packageId>ludeon.rimworld</packageId>
+    </li>
+    <li>
+      <displayName>Harmony</displayName>
+      <packageId>brrainz.harmony</packageId>
+      <steamWorkshopUrl>https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077</steamWorkshopUrl>
+    </li>
+
+  </modDependencies>
+
+  <loadAfter>
+  </loadAfter>
+
+  <loadBefore>
+  </loadBefore>
+
+  <incompatibleWith>
+  </incompatibleWith>
+</ModMetaData>

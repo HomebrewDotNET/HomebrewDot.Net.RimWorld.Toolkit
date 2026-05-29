@@ -82,5 +82,28 @@ namespace HomebrewDot.Net.RimWorld
             /// </summary>
             public const string TickMethod = "Tick";
         }
+
+        /// <summary>
+        /// Constants related to stats and stat defs.
+        /// </summary>
+        public static class  Stats
+        {
+            /// <summary>
+            /// Constants related weapon stats
+            /// </summary>
+            public static class Weapon
+            {
+                /// <summary>
+                /// Constants related to weapon stats on the def level.
+                /// </summary>
+                public static class Def
+                {
+                    /// <summary>
+                    /// Name of the stat that defines the range of a weapon.
+                    /// </summary>
+                    public const string Range = "Range";
+                }
+            }
+        }
     }
 }

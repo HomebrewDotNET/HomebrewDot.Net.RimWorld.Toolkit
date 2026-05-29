@@ -57,7 +57,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// <param name="tableBuilder">An action to configure the table's indexes and sub-tables.</param>
         /// <param name="predicate">Optional filter to create a filtered table</param>
         /// <returns>The current <see cref="IDatabaseSchemaBuilder"/> instance for chaining.</returns>
-        IDatabaseSchemaBuilder WithTable<T>(string name, Action<ITableBuilder<T>> tableBuilder, Predicate<T> predicate = null) where T : class;
+        IDatabaseSchemaBuilder WithTable<T>(string name, Action<ITableBuilder<T>> tableBuilder = null, Predicate<T> predicate = null) where T : class;
         /// <summary>
         /// Defines a callback to be invoked before an item is inserted into the database.
         /// </summary>
@@ -97,7 +97,16 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// <param name="tableBuilder">An instance of <see cref="ITableBuilder{TSub}"/> to configure the sub-table's schema.</param>
         /// <param name="filter">An optional predicate to filter items for the sub-table.</param>
         /// <returns>The current <see cref="ITableBuilder{T}"/> instance for chaining.</returns>
-        ITableBuilder<T> WithSubTable<TSub>(string name, Action<ITableBuilder<TSub>> tableBuilder, Predicate<TSub> filter) where TSub : class, T;
+        ITableBuilder<T> WithSubTable<TSub>(string name, Predicate<TSub> filter = null, Action<ITableBuilder<TSub>> tableBuilder = null) where TSub : class, T;
+        /// <summary>
+        /// Defines a sub-table within the current table. The sub-table will contain items of type TSub, and the provided <paramref name="tableBuilder"/> will be used to configure the sub-table's indexes and further nested sub-tables. The <paramref name="converter"/> function is used to convert an item of type T from the parent table into an item of type TSub for the sub-table.
+        /// </summary>
+        /// <typeparam name="TSub">The type of items in the sub-table.</typeparam>
+        /// <param name="name">The name of the sub-table.</param>
+        /// <param name="tableBuilder">An instance of <see cref="ITableBuilder{TSub}"/> to configure the sub-table's schema.</param>
+        /// <param name="filter">An optional predicate to filter items for the sub-table.</param>
+        /// <returns>The current <see cref="ITableBuilder{T}"/> instance for chaining.</returns>
+        ITableBuilder<T> WithSubTable(string name, Predicate<T> filter, Action<ITableBuilder<T>> tableBuilder = null);
         /// <summary>
         /// Defines a callback to be invoked before an item is inserted into the table.
         /// </summary>

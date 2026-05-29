@@ -8,6 +8,16 @@ namespace HomebrewDot.Net.RimWorld.Tests.Helpers
 {
     public class ExpressionTests
     {
+        private class GenericBox<T>
+        {
+            public GenericBox(T value)
+            {
+                Value = value;
+            }
+
+            public T Value { get; }
+        }
+
         #region GetMethod(Expression<Action>)
 
         [Fact]
@@ -144,6 +154,80 @@ namespace HomebrewDot.Net.RimWorld.Tests.Helpers
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() => ExpressionHelper.GetMethod<string, int>(lambda));
+        }
+
+        #endregion
+
+        #region GetConstructor
+
+        [Fact]
+        public void GetConstructor_Generic_WithConstructorExpression_ReturnsConstructorInfo()
+        {
+            // Arrange & Act
+            ConstructorInfo result = ExpressionHelper.GetConstructor(() => new List<string>());
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(typeof(List<string>), result.DeclaringType);
+        }
+
+        [Fact]
+        public void GetConstructor_Generic_WithNullExpression_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                ExpressionHelper.GetConstructor<List<string>>(null));
+        }
+
+        [Fact]
+        public void GetConstructor_Object_WithConstructorExpression_ReturnsConstructorInfo()
+        {
+            // Arrange & Act
+            ConstructorInfo result = ExpressionHelper.GetConstructor(() => new object());
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(typeof(object), result.DeclaringType);
+        }
+
+        [Fact]
+        public void GetConstructor_Object_WithNullExpression_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                ExpressionHelper.GetConstructor((System.Linq.Expressions.Expression<Func<object>>)null));
+        }
+
+        [Fact]
+        public void GetConstructorForGeneric_WithGenericConstructorExpression_ReturnsMatchingConstructorOnTargetType()
+        {
+            // Arrange & Act
+            ConstructorInfo result = ExpressionHelper.GetConstructorForGeneric(typeof(string), () => new GenericBox<int>(0));
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(typeof(GenericBox<string>), result.DeclaringType);
+            Assert.Single(result.GetParameters());
+            Assert.Equal(typeof(string), result.GetParameters()[0].ParameterType);
+        }
+
+        [Fact]
+        public void GetConstructorForGeneric_WithNullTargetGenericTypeArgument_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                ExpressionHelper.GetConstructorForGeneric(null, () => new GenericBox<int>(0)));
+        }
+
+        [Fact]
+        public void GetConstructorForGeneric_WithNullExpression_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                ExpressionHelper.GetConstructorForGeneric(typeof(string), null));
+        }
+
+        [Fact]
+        public void GetConstructorForGeneric_WithNonGenericConstructor_ThrowsArgumentException()
+        {
+            Assert.Throws<ArgumentException>(() =>
+                ExpressionHelper.GetConstructorForGeneric(typeof(string), () => new object()));
         }
 
         #endregion

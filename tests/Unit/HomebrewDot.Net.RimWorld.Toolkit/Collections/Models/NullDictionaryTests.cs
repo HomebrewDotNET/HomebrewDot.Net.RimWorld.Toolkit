@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Collections.Models;
+using HomebrewDot.Net.RimWorld.Generic.Models;
 using Xunit;
 
 namespace HomebrewDot.Net.RimWorld.Tests.Collections.Models

@@ -64,7 +64,7 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
                 database.Upsert(_entities[i], null);
             }
 
-            return database.GetTable<DatabaseBenchmarkEntity>("Items").Count();
+            return AsIndexed(database.GetTable<DatabaseBenchmarkEntity>("Items")).Count();
         }
 
         [Benchmark]
@@ -76,7 +76,7 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
                 database.Upsert(_entities[i], null);
             }
 
-            return database.GetTable<DatabaseBenchmarkEntity>("Items").Count();
+            return AsIndexed(database.GetTable<DatabaseBenchmarkEntity>("Items")).Count();
         }
 
         [Benchmark]
@@ -117,6 +117,9 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
                 schema.WithTable<DatabaseBenchmarkEntity>("Items", table => { }));
             return database;
         }
+
+        private static IEnumerable<IIndexed<T>> AsIndexed<T>(IReadOnlyTable<T> table) where T : class
+            => (IEnumerable<IIndexed<T>>)table;
 
         private static Database CreateIndexedEntityDatabase()
         {

@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collections.Models;
+using HomebrewDot.Net.RimWorld.Generic.Models;
 using HomebrewDot.Net.RimWorld.Hooks;
 using HomebrewDot.Net.RimWorld.Indexing.Triggers;
 using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
@@ -52,28 +52,28 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             }
         }
         /// <inheritdoc/>
-        public void Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
+        public bool Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
-            _database.Delete(data, metadata);
+            return _database.Delete(data, metadata);
         }
         /// <inheritdoc/>
-        public void Push<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
+        public bool Push<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
             if(!Changed(data))
             {
-                return;
+                return false;
             }
-            _database.Upsert(data, metadata);
+            return _database.Upsert(data, metadata);
         }
         /// <inheritdoc/>
-        public void Push<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class
+        public bool Push<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
             if(!Changed(data))
             {
-                return;
+                return false;
             }
             Dictionary<string, object> metadataDictionary = null;
             if (metadata != null && metadata.Length > 0)
@@ -86,15 +86,15 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 }
             }
 
-            _database.Upsert(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
+            return _database.Upsert(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
         }
         /// <inheritdoc/>
-        public void Push<T>(T data, params (string Key, object Value)[] metadata) where T : class
+        public bool Push<T>(T data, params (string Key, object Value)[] metadata) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
             if(!Changed(data))
             {
-                return;
+                return false;
             }
             Dictionary<string, object> metadataDictionary = null;
             if (metadata != null && metadata.Length > 0)
@@ -107,7 +107,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 }
             }
 
-            _database.Upsert(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
+            return _database.Upsert(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
         }
         /// <inheritdoc/>
         public void Reset(Action<ISnapshotManagerConfigurator> configurator, Action<IDatabaseSchemaBuilder> schemaBuilder)
@@ -125,6 +125,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         /// <inheritdoc/>
         public void Snapshot()
         {
+            Logger.Log("Snapshot manager taking snapshot of database");
             lock (_lock)
             {
                 DatabaseSnapshot = _database.AsReadOnly();
@@ -155,12 +156,12 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         }
         private class ConfigureSnapshotManager : ISnapshotManagerConfigurator
         {
-            public List<object> changeTrackers;
+            public HashSet<object> changeTrackers;
 
             public ISnapshotManagerConfigurator WithChangeTracker<T>(IChangeTracker<T> changeTracker) where T : class
             {
                 changeTracker = Guard.NotNull(changeTracker, nameof(changeTracker));
-                changeTrackers ??= new List<object>();
+                changeTrackers ??= new HashSet<object>();
                 changeTrackers.Add(changeTracker);
                 return this;
             }

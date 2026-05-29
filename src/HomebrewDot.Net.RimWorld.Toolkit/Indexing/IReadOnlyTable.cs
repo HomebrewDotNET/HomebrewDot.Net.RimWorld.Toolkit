@@ -38,7 +38,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
     /// A table that contains indexed data of type T. Each table is associated with a specific type of data, and the database can contain multiple tables for different types of data. The ITable interface provides a way to access and manipulate the data in the table, as well as to manage the indexes that are used to optimize queries on the data.
     /// </summary>
     /// <typeparam name="T">The type of data stored in the table.</typeparam>
-    public interface IReadOnlyTable<out T> : IReadOnlyTable, IEnumerable<IIndexed<T>> where T : class
+    public interface IReadOnlyTable<out T> : IReadOnlyTable, IEnumerable<IIndexed<T>>, IEnumerable<T> where T : class
     {
         /// <summary>
         /// Queries the table for data of type <typeparamref name="T"/> based on the specified search criteria.

@@ -22,28 +22,32 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// <typeparam name="T">The type of the data to be indexed.</typeparam>
         /// <param name="data">The data to be indexed.</param>
         /// <param name="metadata">Optional metadata associated with the data.</param>
-        void Push<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class;
+        /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
+        bool Push<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class;
         /// <summary>
         /// Pushes <paramref name="data"/> to be indexed in the current pending snapshot.
         /// </summary>
         /// <typeparam name="T">The type of the data to be indexed.</typeparam>
         /// <param name="data">The data to be indexed.</param>
         /// <param name="metadata">Optional metadata associated with the data.</param>
-        void Push<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class;
+        /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
+        bool Push<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class;
         /// <summary>
         /// Pushes <paramref name="data"/> to be indexed in the current pending snapshot.
         /// </summary>
         /// <typeparam name="T">The type of the data to be indexed.</typeparam>
         /// <param name="data">The data to be indexed.</param>
         /// <param name="metadata">Optional metadata associated with the data.</param>
-        void Push<T>(T data, params (string Key, object Value)[] metadata) where T : class;
+        /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
+        bool Push<T>(T data, params (string Key, object Value)[] metadata) where T : class;
         /// <summary>
         /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
         /// </summary>
         /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
         /// <param name="data">The data that was destroyed.</param>
         /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
-        void Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class;
+        /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
+        bool Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class;
 
         /// <summary>
         /// Takes a snapshot of the current pending data, making it the new current snapshot and clearing the pending snapshot for new data to be gathered.

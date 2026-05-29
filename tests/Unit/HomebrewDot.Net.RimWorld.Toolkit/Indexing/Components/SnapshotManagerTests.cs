@@ -65,9 +65,12 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var sut = CreateSut();
             _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
                          .Returns((IIndexed<string>)null);
+            _mockDatabase.Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
+                         .Returns(true);
 
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
+            Assert.True(result);
             _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
         }
 
@@ -111,9 +114,24 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var sut = CreateSut();
             sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
 
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
+            Assert.False(result);
             _mockDatabase.Verify(d => d.Upsert(It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Never);
+        }
+
+        [Fact]
+        public void Push_Dict_WhenUpsertReturnsFalse_ReturnsFalse()
+        {
+            var sut = CreateSut();
+            _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
+                         .Returns((IIndexed<string>)null);
+            _mockDatabase.Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
+                         .Returns(false);
+
+            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+
+            Assert.False(result);
         }
 
         // ── Push (KeyValuePair[] overload) ───────────────────────────────────
@@ -192,9 +210,12 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var sut = CreateSut();
             var indexed = new Mock<IIndexed<string>>();
             _mockDatabase.Setup(d => d.Find<string>("hello")).Returns(indexed.Object);
+            _mockDatabase.Setup(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
+                         .Returns(true);
 
-            sut.Destroyed("hello");
+            var result = sut.Destroyed("hello");
 
+            Assert.True(result);
             _mockDatabase.Verify(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
         }
 
@@ -205,10 +226,24 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var indexed = new Mock<IIndexed<string>>();
             var metadata = new Dictionary<string, object> { ["reason"] = "despawned" };
             _mockDatabase.Setup(d => d.Find<string>("hello")).Returns(indexed.Object);
+            _mockDatabase.Setup(d => d.Delete("hello", metadata)).Returns(true);
 
-            sut.Destroyed("hello", metadata);
+            var result = sut.Destroyed("hello", metadata);
 
+            Assert.True(result);
             _mockDatabase.Verify(d => d.Delete("hello", metadata), Times.Once);
+        }
+
+        [Fact]
+        public void Destroyed_WhenDeleteReturnsFalse_ReturnsFalse()
+        {
+            var sut = CreateSut();
+            _mockDatabase.Setup(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
+                         .Returns(false);
+
+            var result = sut.Destroyed("hello");
+
+            Assert.False(result);
         }
 
         // ── Snapshot ─────────────────────────────────────────────────────────

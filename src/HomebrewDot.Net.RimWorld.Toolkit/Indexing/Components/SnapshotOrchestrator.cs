@@ -19,7 +19,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
     {
         // Fields
         private readonly object _lock = new object();
-        private readonly List<IDataGatherer> _dataGatherers = new List<IDataGatherer>();
+        private readonly HashSet<IDataGatherer> _dataGatherers = new HashSet<IDataGatherer>();
         private readonly IHookManager _hookManager;
         private readonly bool _useLongTicks;
         private ISnapshotManager _snapshotManager;
@@ -42,7 +42,6 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             Action<ISnapshotManagerConfigurator> configureManager,
             Action<IDatabaseSchemaBuilder> schemaBuilder)
         {
-            game = Guard.NotNull(game, nameof(game));
             snapshotManager = Guard.NotNull(snapshotManager, nameof(snapshotManager));
 
             lock (_lock)

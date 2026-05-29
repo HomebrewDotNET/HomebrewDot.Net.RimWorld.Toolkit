@@ -5,14 +5,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Collections.Models
+namespace HomebrewDot.Net.RimWorld.Generic.Models
 {
     /// <summary>
     /// Empty implementation of <see cref="IDictionary{TKey, TValue}"/> where all calls will be ignored and return default values.
     /// Used when a dictionary instance is required but no data is available, in that case the singleton instance can be used to avoid unnecessary allocations.
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
+    /// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
     public class NullDictionary<TKey, TValue> : IDictionary<TKey, TValue>, IReadOnlyDictionary<TKey, TValue>
     {
         /// <summary>

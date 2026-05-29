@@ -1,0 +1,71 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using HomebrewDot.Net.RimWorld.Collecting.Components;
+using HomebrewDot.Net.RimWorld.Comparing;
+using HomebrewDot.Net.RimWorld.Indexing;
+using HomebrewDot.Net.RimWorld.Referencing.Models;
+using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+
+namespace HomebrewDot.Net.RimWorld.Referencing.Components
+{
+    /// <summary>
+    /// A <see cref="IReferenceType"/> that resolves property values from <see cref="IIndexed{T}"/>.
+    /// </summary>
+    public class IndexedReferenceType : IReferenceType
+    {
+        // Constants
+        /// <summary>
+        /// The default name for this reference type, which can be used when defining references that should be resolved using this type.
+        /// </summary>
+        public const string DefaultTypeName = "Indexed";
+        // Statics
+        /// <summary>
+        /// The singleton instance of the <see cref="IndexedReferenceType"/>. This can be used wherever an instance of this reference type is needed, without the need to create multiple instances since it is stateless and thread-safe.
+        /// </summary>
+        public static IndexedReferenceType Instance { get; } = new IndexedReferenceType();
+
+        private IndexedReferenceType()
+        {
+            
+        }
+
+        /// <inheritdoc/>
+        public object Resolve(object value, IReadOnlyDictionary<string, object> context)
+        {
+            if(value is null)
+            {
+                return null;
+            }
+            if(context is null)
+            {
+                return null;
+            }
+
+            var propertyName = value.ToString();
+            if (context.TryGetValue(CollectionComparator.ObjectKey, out var obj) && obj is IIndexed<object> indexed)
+            {
+                return indexed.GetValue<object>(propertyName);
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Contains extension methods related to the <see cref="IndexedReferenceType"/>.
+    /// </summary>
+    public static class IndexedReferenceTypeExtensions
+    {
+        /// <summary>
+        /// Fluent syntax for creating a reference definition that uses the <see cref="IndexedReferenceType"/> to resolve a property value from an indexed object. The provided property name will be used as the value for the reference definition, and the type will be set to the default type name of the <see cref="IndexedReferenceType"/>. This allows for easy creation of references that can access properties of indexed objects in a fluent manner.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="propertyName">The name of the property to resolve from the indexed object.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Indexed<TReturn>(this IConditionOperandBuilder<TReturn> builder, string propertyName)
+            => Guard.NotNull(builder, nameof(builder)).Reference(new ReferenceDef() { Type = IndexedReferenceType.DefaultTypeName, Value = Guard.NotNullOrEmpty(propertyName, nameof(propertyName)) });
+    }
+}

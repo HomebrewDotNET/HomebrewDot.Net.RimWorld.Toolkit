@@ -19,18 +19,6 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         private static readonly Action<IDatabaseSchemaBuilder> NoopSchemaConfig = _ => { };
 
         [Fact]
-        public void RebuildIndex_WithNullGame_ThrowsArgumentNullException()
-        {
-            // Arrange
-            var hookManager = new Mock<IHookManager>();
-            var snapshotManager = new Mock<ISnapshotManager>();
-            var sut = new SnapshotOrchestrator(hookManager.Object, useLongTicks: false);
-
-            // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => sut.RebuildIndex(null, false, snapshotManager.Object, null, NoopManagerConfig, NoopSchemaConfig));
-        }
-
-        [Fact]
         public void RebuildIndex_WithNullSnapshotManager_ThrowsArgumentNullException()
         {
             // Arrange

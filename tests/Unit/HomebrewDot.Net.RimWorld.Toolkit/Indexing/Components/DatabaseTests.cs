@@ -75,11 +75,15 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void WithTable_NullTableBuilder_ThrowsArgumentNullException()
+        public void WithTable_WithoutBuilder_StillRegistersTable()
         {
             var db = new Database();
-            Assert.Throws<ArgumentNullException>(() =>
-                db.Deploy(schema => schema.WithTable<string>("Items", null)));
+            db.Deploy(schema => schema.WithTable<string>("Items", null));
+
+            var table = db.GetTable<string>("Items");
+
+            Assert.NotNull(table);
+            Assert.Equal("Items", table.Name);
         }
 
         [Fact]
@@ -353,6 +357,16 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             public string Name { get; set; }
         }
 
+        public class RootEntity
+        {
+            public string Name { get; set; }
+        }
+
+        public class DerivedRootEntity : RootEntity
+        {
+            public bool IsSpecial { get; set; }
+        }
+
         // ── WithTable – name validation ───────────────────────────────────────
 
         [Fact]
@@ -468,7 +482,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             db.Upsert("beta", null);
 
             var table = db.GetTable<string>("Items");
-            var values = table.Select(i => i.Value).OrderBy(v => v).ToList();
+            var values = AsIndexed(table).Select(i => i.Value).OrderBy(v => v).ToList();
 
             Assert.Equal(new[] { "alpha", "beta" }, values);
         }
@@ -653,7 +667,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
-                    tb.WithSubTable<SampleEntity>("SubItems", _ => { }, null)));
+                    tb.WithSubTable<SampleEntity>("SubItems", tableBuilder: _ => { })));
 
             db.Upsert(new SampleEntity { Name = "Alice" }, null);
 
@@ -668,10 +682,68 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Things", tb =>
-                    tb.WithSubTable<SampleEntity>("Labels", _ => { }, null)));
+                    tb.WithSubTable<SampleEntity>("Labels", tableBuilder: _ => { })));
 
             var subTable = db.GetTable<SampleEntity>("Things.Labels");
             Assert.NotNull(subTable);
+        }
+
+        [Fact]
+        public void WithSubTable_WithoutBuilder_StillCreatesSubTable()
+        {
+            var db = new Database();
+            db.Deploy(schema =>
+                schema.WithTable<SampleEntity>("Things", tb =>
+                    tb.WithSubTable<SampleEntity>("Labels")));
+
+            var subTable = db.GetTable<SampleEntity>("Things.Labels");
+
+            Assert.NotNull(subTable);
+            Assert.Equal("Labels", subTable.Name);
+        }
+
+        [Fact]
+        public void WithSubTable_WithDerivedSubType_UpsertAddsToRootAndSubTable()
+        {
+            var db = new Database();
+            db.Deploy(schema =>
+                schema.WithTable<RootEntity>("Root", tb =>
+                    tb.WithSubTable<DerivedRootEntity>("Derived")));
+
+            RootEntity value = new DerivedRootEntity { Name = "derived", IsSpecial = true };
+            db.Upsert(value, null);
+
+            var rootTable = db.GetTable<RootEntity>("Root");
+            var derivedTable = db.GetTable<DerivedRootEntity>("Root.Derived");
+
+            Assert.NotNull(rootTable);
+            Assert.NotNull(derivedTable);
+            Assert.Single(rootTable);
+            Assert.Single(derivedTable);
+            Assert.Equal("derived", AsIndexed(derivedTable).First().Value.Name);
+        }
+
+        [Fact]
+        public void WithSubTable_WithNestedFilterOnDerivedType_OnlyMatchingDerivedItemsAreIncluded()
+        {
+            var db = new Database();
+            db.Deploy(schema =>
+                schema.WithTable<RootEntity>("Root", tb =>
+                    tb.WithSubTable<DerivedRootEntity>("Derived", null, st =>
+                        st.WithSubTable("Special", x => x.IsSpecial))));
+
+            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "special", IsSpecial = true }, null);
+            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "normal", IsSpecial = false }, null);
+            db.Upsert<RootEntity>(new RootEntity { Name = "base" }, null);
+
+            var derivedTable = db.GetTable<DerivedRootEntity>("Root.Derived");
+            var specialTable = db.GetTable<DerivedRootEntity>("Root.Derived.Special");
+
+            Assert.NotNull(derivedTable);
+            Assert.NotNull(specialTable);
+            Assert.Equal(2, AsIndexed(derivedTable).Count());
+            Assert.Single(specialTable);
+            Assert.Equal("special", AsIndexed(specialTable).First().Value.Name);
         }
 
         // ── AsReadOnly – snapshot isolation ──────────────────────────────────
@@ -788,7 +860,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
 
             var snapshot = db.AsReadOnly();
             var table = snapshot.GetTable<string>("Items");
-            var values = table.Select(i => i.Value).OrderBy(v => v).ToList();
+            var values = AsIndexed(table).Select(i => i.Value).OrderBy(v => v).ToList();
 
             Assert.Equal(new[] { "alpha", "beta" }, values);
         }
@@ -908,7 +980,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
-                    tb.WithSubTable<SampleEntity>("Sub", _ => { }, null)));
+                    tb.WithSubTable<SampleEntity>("Sub", tableBuilder: _ => { })));
             db.Upsert(new SampleEntity { Name = "Alice" }, null);
 
             var snapshot = db.AsReadOnly();
@@ -924,7 +996,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
-                    tb.WithSubTable<SampleEntity>("Sub", _ => { }, null)));
+                    tb.WithSubTable<SampleEntity>("Sub", tableBuilder: _ => { })));
 
             var snapshot = db.AsReadOnly();
             var subTable = snapshot.GetTable<SampleEntity>("Items.Sub");
@@ -962,8 +1034,8 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
                     tb.WithSubTable<SampleEntity>("Sub",
-                        sub => sub.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name),
-                        null)));
+                        null,
+                        sub => sub.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name))));
             db.Upsert(new SampleEntity { Name = "Alice" }, null);
 
             var snapshot = db.AsReadOnly();
@@ -972,5 +1044,8 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             Assert.Single(results);
             Assert.Equal("Alice", results.First().Value.Name);
         }
+
+        private static IEnumerable<IIndexed<T>> AsIndexed<T>(IReadOnlyTable<T> table) where T : class
+            => (IEnumerable<IIndexed<T>>)table;
     }
 }

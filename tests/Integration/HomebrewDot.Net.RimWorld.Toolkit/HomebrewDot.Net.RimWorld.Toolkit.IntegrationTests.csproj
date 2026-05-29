@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net472</TargetFramework>
+		<RootNamespace>HomebrewDot.Net.RimWorld.Tests</RootNamespace>
+		<Nullable>disable</Nullable>
+		<LangVersion>latestmajor</LangVersion>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<!-- Output to local drive so .NET Framework doesn't block loading from the mapped J:\ drive -->
+		<OutputPath>$(TEMP)\HomebrewDot.Net.RimWorld.Toolkit.IntegrationTests\$(Configuration)\$(TargetFramework)\</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<RimworldVersion Condition="'$(RIMWORLD_VERSION)' == ''">1.6</RimworldVersion>
+		<RimworldVersion Condition="'$(RIMWORLD_VERSION)' != ''">$(RIMWORLD_VERSION)</RimworldVersion>
+		<HarmonyVersion Condition="'$(HARMONY_VERSION)' == ''">1.5</HarmonyVersion>
+		<HarmonyVersion Condition="'$(HARMONY_VERSION)' != ''">$(HARMONY_VERSION)</HarmonyVersion>
+		<RimworldRoot Condition="'$(RIMWORLD_ROOT)' == ''">C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimworldRoot>
+		<RimworldRoot Condition="'$(RIMWORLD_ROOT)' != ''">$(RIMWORLD_ROOT)</RimworldRoot>
+		<RimworldModsFolder Condition="'$(RIMWORLD_MODS_FOLDER)' == ''">$(RimworldRoot)\Mods</RimworldModsFolder>
+		<RimworldModsFolder Condition="'$(RIMWORLD_MODS_FOLDER)' != ''">$(RIMWORLD_MODS_FOLDER)</RimworldModsFolder>
+		<RimworldWorkshopRoot Condition="'$(RIMWORLD_WORKSHOP_ROOT)' == ''">C:\Program Files (x86)\Steam\steamapps\workshop\content\294100</RimworldWorkshopRoot>
+		<RimworldWorkshopRoot Condition="'$(RIMWORLD_WORKSHOP_ROOT)' != ''">$(RIMWORLD_WORKSHOP_ROOT)</RimworldWorkshopRoot>
+		<RimWorldManaged Condition="'$(RIMWORLD_MANAGED)' == ''">$(RimworldRoot)\RimWorldWin64_Data\Managed</RimWorldManaged>
+		<RimWorldManaged Condition="'$(RIMWORLD_MANAGED)' != ''">$(RIMWORLD_MANAGED)</RimWorldManaged>
+		<HarmonyRoot Condition="'$(RIMWORLD_HARMONY_ROOT)' == ''">$(RimworldWorkshopRoot)\2009463077\$(HarmonyVersion)\Assemblies</HarmonyRoot>
+		<HarmonyRoot Condition="'$(RIMWORLD_HARMONY_ROOT)' != ''">$(RIMWORLD_HARMONY_ROOT)</HarmonyRoot>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="Moq" />
+		<PackageReference Include="xunit"/>
+		<PackageReference Include="xunit.runner.visualstudio">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\src\HomebrewDot.Net.RimWorld.Toolkit\HomebrewDot.Net.RimWorld.Toolkit.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="0Harmony">
+			<HintPath>$(HarmonyRoot)\0Harmony.dll</HintPath>
+		</Reference>
+		<Reference Include="Assembly-CSharp">
+			<HintPath>$(RimWorldManaged)\Assembly-CSharp.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.CoreModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>$(RimWorldManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+</Project>

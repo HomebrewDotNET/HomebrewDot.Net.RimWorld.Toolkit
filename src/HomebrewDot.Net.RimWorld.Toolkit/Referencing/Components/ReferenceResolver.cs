@@ -1,0 +1,70 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using HomebrewDot.Net.RimWorld.Generic.Models;
+using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+
+namespace HomebrewDot.Net.RimWorld.Referencing.Components
+{
+    /// <summary>
+    /// Default implementation of the <see cref="IReferenceResolver"/> interface, which uses a provided dictionary of reference types to resolve references. The resolver can also use reference types provided in the context dictionary, which will take precedence over the reference types provided in the constructor if both are present. 
+    /// This allows for dynamic overriding of reference types on a per-resolution basis, providing flexibility in how references are resolved based on the specific context of each resolution operation.
+    /// </summary>
+    public class ReferenceResolver : IReferenceResolver
+    {
+        // Constants
+        /// <summary>
+        /// The key used in the context dictionary to store the reference types that the resolver can use to resolve references. 
+        /// The value associated with this key should be an <see cref="IReadOnlyDictionary{string, IReferenceType}"/> where the keys are the reference type names and the values are the corresponding <see cref="IReferenceType"/> instances that can resolve references of that type.
+        /// Will take precedence over the reference types provided in the constructor if both are present, allowing for dynamic overriding of reference types on a per-resolution basis. If this key is not present in the context, the resolver will fall back to using the reference types provided in the constructor.
+        /// </summary>
+        public const string ContextReferenceTypesKey = "ReferenceTypes";
+
+        // Fields
+        private readonly IReadOnlyDictionary<string, IReferenceType> _referenceTypes;
+
+        /// <inheritdoc cref="ReferenceResolver"/>
+        /// <param name="referenceTypes">A dictionary of reference types to be used by the resolver. If null, an empty dictionary will be used.</param>
+        public ReferenceResolver(IReadOnlyDictionary<string, IReferenceType> referenceTypes)
+        {
+            _referenceTypes = referenceTypes ?? NullDictionary<string, IReferenceType>.Instance;
+        }
+
+        /// <inheritdoc/>
+        public bool TryResolve(IReference reference, IReadOnlyDictionary<string, object> context, out object result)
+        {
+            reference = Guard.NotNull(reference, nameof(reference));
+            result = null;
+            var priorityReferenceTypes = context != null && context.TryGetValue(ContextReferenceTypesKey, out var referenceTypesObj) && referenceTypesObj is IReadOnlyDictionary<string, IReferenceType> referenceTypesFromContext
+                ? referenceTypesFromContext
+                : null;
+
+            var referenceType = Guard.NotNull(reference.Type, nameof(reference.Type)).Trim() switch
+            {
+                var type when priorityReferenceTypes != null && priorityReferenceTypes.TryGetValue(type, out var referenceTypeFromContext) => referenceTypeFromContext,
+                var type when _referenceTypes.TryGetValue(type, out var referenceTypeFromConstructor) => referenceTypeFromConstructor,
+                _ => null
+            };
+
+            if(referenceType == null)
+            {
+                // Try global services
+                var globalReferenceTypes = Toolkit.Services.GetAllNamed<IReferenceType>();
+                if(globalReferenceTypes.TryGetValue(reference.Type, out var referenceTypeFromGlobal))
+                {
+                    referenceType = referenceTypeFromGlobal;
+                }
+            }
+
+            if(referenceType == null)
+            {
+                return false;
+            }
+
+            result = referenceType.Resolve(reference.Value, context);
+            return true;
+        }
+    }
+}

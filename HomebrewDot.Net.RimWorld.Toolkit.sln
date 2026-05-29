@@ -28,6 +28,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Integration", "Integration", "{28A6993C-471E-82FE-7D9E-AD3B1EC22BD9}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HomebrewDot.Net.RimWorld.Toolkit", "HomebrewDot.Net.RimWorld.Toolkit", "{777A5CFE-D644-7264-813B-75022224EF3F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HomebrewDot.Net.RimWorld.Toolkit.IntegrationTests", "tests\Integration\HomebrewDot.Net.RimWorld.Toolkit\HomebrewDot.Net.RimWorld.Toolkit.IntegrationTests.csproj", "{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -74,6 +80,18 @@ Global
 		{1F93B888-53BF-4E6E-A165-AFC1D9C1BB99}.Release|x64.Build.0 = Release|Any CPU
 		{1F93B888-53BF-4E6E-A165-AFC1D9C1BB99}.Release|x86.ActiveCfg = Release|Any CPU
 		{1F93B888-53BF-4E6E-A165-AFC1D9C1BB99}.Release|x86.Build.0 = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|x64.Build.0 = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Debug|x86.Build.0 = Debug|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|x64.ActiveCfg = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|x64.Build.0 = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|x86.ActiveCfg = Release|Any CPU
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -83,6 +101,9 @@ Global
 		{9D556B49-86D1-93A7-9596-FFAAB74EC556} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{67A51F2F-B3BF-4012-B47C-9D715F84C09E} = {9D556B49-86D1-93A7-9596-FFAAB74EC556}
 		{1F93B888-53BF-4E6E-A165-AFC1D9C1BB99} = {760AB15A-8938-8D9B-BEDE-5CE1484B84C3}
+		{28A6993C-471E-82FE-7D9E-AD3B1EC22BD9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{777A5CFE-D644-7264-813B-75022224EF3F} = {28A6993C-471E-82FE-7D9E-AD3B1EC22BD9}
+		{9FCA61CD-3402-45C0-A3CB-F0218C2C3682} = {777A5CFE-D644-7264-813B-75022224EF3F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A31108FD-B646-49A8-A4C3-082F621ACC66}
