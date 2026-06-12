@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Generic.Models;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Referencing.Components
+namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
     /// Default implementation of the <see cref="IReferenceResolver"/> interface, which uses a provided dictionary of reference types to resolve references. The resolver can also use reference types provided in the context dictionary, which will take precedence over the reference types provided in the constructor if both are present. 
@@ -33,7 +33,7 @@ namespace HomebrewDot.Net.RimWorld.Referencing.Components
         }
 
         /// <inheritdoc/>
-        public bool TryResolve(IReference reference, IReadOnlyDictionary<string, object> context, out object result)
+        public bool TryResolve(object input, IReference reference, IReadOnlyDictionary<string, object> context, out object result)
         {
             reference = Guard.NotNull(reference, nameof(reference));
             result = null;
@@ -63,7 +63,7 @@ namespace HomebrewDot.Net.RimWorld.Referencing.Components
                 return false;
             }
 
-            result = referenceType.Resolve(reference.Value, context);
+            result = referenceType.Resolve(input, reference.Value, context);
             return true;
         }
     }

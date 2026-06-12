@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static HomebrewDot.Net.RimWorld.Indexing.Components.Database;
+using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Base interface for <see cref="IReadOnlyTable"/>
@@ -14,6 +14,11 @@ namespace HomebrewDot.Net.RimWorld.Indexing
     {
         /// <summary>
         /// Unique name of the table. This name is used to identify the table within the database and to access it when performing queries or other operations on the data.
+        /// Includes the full path of the table within the database, including any parent tables.
+        /// </summary>
+        string FullName { get; }
+        /// <summary>
+        /// The short name of the table, which is typically the name of the type of data stored in the table. This name is used for display purposes and may not be unique within the database, as different sub tables can share the same name.
         /// </summary>
         string Name { get; }
         /// <summary>
@@ -24,6 +29,11 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// Sub-tables of the current table. These are tables that contain a subset of the data in the parent table, and can be used for specific queries or operations that require a subset of the data.
         /// </summary>
         IReadOnlyList<IReadOnlyTable> SubTables { get; }
+        /// <summary>
+        /// The current version of the table.
+        /// Gives an indication if the state of the table has changed since the last time it was accessed, allowing for caching of query results and other optimizations based on the stability of the table state.
+        /// </summary>
+        int Version { get; }
 
         /// <summary>
         /// Tries to retrieve an indexed item from the table based on the provided data.
@@ -32,7 +42,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// <param name="data">The data to search for.</param>
         /// <param name="item">The retrieved item, if found.</param>
         /// <returns>True if the item was found; otherwise, false.</returns>
-        internal abstract bool TryFind<T>(T data, out IIndexed<T> item) where T : class;
+        abstract bool TryFind<T>(T data, out IIndexed<T> item) where T : class;
     }
     /// <summary>
     /// A table that contains indexed data of type T. Each table is associated with a specific type of data, and the database can contain multiple tables for different types of data. The ITable interface provides a way to access and manipulate the data in the table, as well as to manage the indexes that are used to optimize queries on the data.

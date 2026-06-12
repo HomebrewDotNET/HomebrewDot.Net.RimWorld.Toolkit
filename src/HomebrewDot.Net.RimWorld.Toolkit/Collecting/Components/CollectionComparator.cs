@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Generic.Models;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Collecting.Components
+namespace HomebrewDot.Net.Rimworld.Collecting.Components
 {
     /// <summary>
     /// Component responsible for comparing an object to a collection definition, including its conditions and referenced sub-collections.
@@ -21,11 +21,6 @@ namespace HomebrewDot.Net.RimWorld.Collecting.Components
         /// Can be used to overwrite the global one for the current collection.
         /// </summary>
         public const string ContextComparatorKey = "Comparator";
-        /// <summary>
-        /// The key used in the context dictionary to retrieve the current item being compared. 
-        /// Used to pass the object being compared to the underlying conditions.
-        /// </summary>
-        public const string ObjectKey = "Item";
 
         // Fields
         private readonly IComparator _comparator;
@@ -44,7 +39,6 @@ namespace HomebrewDot.Net.RimWorld.Collecting.Components
             obj = Guard.NotNull(obj, nameof(obj));
             collections ??= NullDictionary<string, ICollectionDef>.Instance;
             context ??= new Dictionary<string, object>();
-            context[ObjectKey] = obj;
 
             bool hasExclusionCollections = collection.Exclusions != null && collection.Exclusions.Count > 0;
             if (hasExclusionCollections)
@@ -60,7 +54,7 @@ namespace HomebrewDot.Net.RimWorld.Collecting.Components
             if (hasConditions)
             {
                 var comparator = GetComparator(context);
-                conditionsMet = comparator.Compare(collection.Conditions, context);
+                conditionsMet = comparator.Compare(obj, collection.Conditions, context);
             }
             bool hasInclusionCollections = collection.Inclusions != null && collection.Inclusions.Count > 0;
             if(hasInclusionCollections)
@@ -104,7 +98,11 @@ namespace HomebrewDot.Net.RimWorld.Collecting.Components
                 }
 
                 var matches = Matches(subCollection, obj, collections, context);
-                hasAnyTerm = true;
+                if(collectionCondition.Inverted)
+                {
+                    matches = !matches;
+				}
+				hasAnyTerm = true;
                 currentAndGroup = currentAndGroup && matches;
 
                 var endsCurrentGroup = i == collectionConditions.Count - 1 || collectionCondition.IsOr;

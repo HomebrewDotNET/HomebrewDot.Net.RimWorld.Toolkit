@@ -6,17 +6,18 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Eventing.Models;
-using HomebrewDot.Net.RimWorld.Extensions;
-using HomebrewDot.Net.RimWorld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Eventing.Models;
+using HomebrewDot.Net.Rimworld.Extensions;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using RimWorld;
 using Verse;
-using static HomebrewDot.Net.RimWorld.Indexing.Components.Database;
-using static HomebrewDot.Net.RimWorld.Toolkit;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
+using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
+using static HomebrewDot.Net.Rimworld.Toolkit;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
     /// <summary>
     /// Default implementation of <see cref="IDatabase"/>. This class is responsible for storing and managing indexed data, as well as providing methods for querying and manipulating that data.
@@ -67,10 +68,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         private readonly object _lock = new object();
         private readonly Dictionary<Type, Table> _tables = new Dictionary<Type, Table>();
         private readonly Dictionary<string, Table> _tablesByName = new Dictionary<string, Table>(StringComparer.OrdinalIgnoreCase);
-        private Action<IDatabase, IWriteableIndexed<object>> _onInserting;
+        private Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> _onInserting;
         private Action<IDatabase, IIndexed<object>> _onInserted;
-        private Action<IDatabase, IWriteableIndexed<object>, IReadOnlyDictionary<string, object>> _onDeleting;
-        private Action<IDatabase, IIndexed<object>, IReadOnlyDictionary<string, object>> _onDeleted;
+        private Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> _onDeleting;
+        private Action<IDatabase, IReadOnlyDictionary<string, object>, IIndexed<object>> _onDeleted;
         private IReadOnlyDatabase _cachedSnapshot;
 
         // Properties
@@ -119,10 +120,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                     var creator = GetCreatorForType(item.GetType());
                     trackedItem = (ITrackingIndexed<T>)creator(item, metadata);
                 }
-                Invoking.Safe(() => _onInserting?.Invoke(this, trackedItem));
+                Invoking.Safe(() => _onInserting?.Invoke(this, metadata, trackedItem));
                 foreach (var table in _tables.Values)
                 {
-                    if (table.TryAddOrUpdate(trackedItem))
+                    if (table.TryAddOrUpdate(trackedItem, metadata))
                     {
                         anyInserted = true;
                     }
@@ -130,6 +131,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
                 if (anyInserted)
                 {
+                    foreach (var pair in metadata)
+                    {
+                        trackedItem.Set(pair.Key, pair.Value);
+                    }
                     HasChanges = true;
                     _cachedSnapshot = null;
                     Invoking.Safe(() => _onInserted?.Invoke(this, trackedItem));
@@ -151,7 +156,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 {
                     typedItem = existingTracked;
                     metadata ??= NullDictionary<string, object>.Instance;
-                    Invoking.Safe(() => _onDeleting?.Invoke(this, typedItem, metadata));
+                    Invoking.Safe(() => _onDeleting?.Invoke(this, metadata, typedItem));
                     foreach (var table in _tables.Values)
                     {
                         if (table.TryDelete(typedItem, metadata))
@@ -162,7 +167,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 }
                 if (anyDeleted)
                 {
-                    Invoking.Safe(() => _onDeleted?.Invoke(this, typedItem, metadata));
+                    Invoking.Safe(() => _onDeleted?.Invoke(this, metadata, typedItem));
                     HasChanges = true;
                     _cachedSnapshot = null;
                     return true;
@@ -278,6 +283,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             {
                 if (!HasChanges && _cachedSnapshot != null)
                 {
+                    LogVerbose($"Returning cached snapshot of database at version {_cachedSnapshot.Version}");
                     return _cachedSnapshot;
                 }
 
@@ -295,6 +301,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
                 HasChanges = false;
                 Version++;
+                LogVerbose($"Created new snapshot of database at version {Version} with {snapshots.Count} tables");
                 _cachedSnapshot = new ReadOnlyDatabaseSnapshot(Version, snapshots, snapshotsByName);
                 return _cachedSnapshot;
             }
@@ -366,7 +373,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserting(Action<IDatabase, IWriteableIndexed<object>> onInserting)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserting(Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> onInserting)
         {
             onInserting = Guard.NotNull(onInserting, nameof(onInserting));
 
@@ -395,7 +402,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleting(Action<IDatabase, IWriteableIndexed<object>, IReadOnlyDictionary<string, object>> onDeleting)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleting(Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> onDeleting)
         {
             onDeleting = Guard.NotNull(onDeleting, nameof(onDeleting));
             if (_onDeleting is null)
@@ -409,7 +416,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleted(Action<IDatabase, IIndexed<object>, IReadOnlyDictionary<string, object>> onDeleted)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleted(Action<IDatabase, IReadOnlyDictionary<string, object>, IIndexed<object>> onDeleted)
         {
             onDeleted = Guard.NotNull(onDeleted, nameof(onDeleted));
             if (_onDeleted is null)
@@ -607,10 +614,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         private readonly Predicate<T> _filter;
         private readonly Dictionary<string, Dictionary<object, HashSet<ITrackingIndexed<T>>>> _indexes = new Dictionary<string, Dictionary<object, HashSet<ITrackingIndexed<T>>>>();
         private readonly Dictionary<string, HashSet<ITrackingIndexed<T>>> _boolIndexes = new Dictionary<string, HashSet<ITrackingIndexed<T>>>();
-        private Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>> _onInserting;
+        private Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> _onInserting;
         private Action<IDatabase, IReadOnlyTable<T>, IIndexed<T>> _onInserted;
-        private Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>, IReadOnlyDictionary<string, object>> _onDeleting;
-        private Action<IDatabase, IReadOnlyTable<T>, IIndexed<T>, IReadOnlyDictionary<string, object>> _onDeleted;
+        private Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> _onDeleting;
+        private Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IIndexed<T>> _onDeleted;
         private IDatabase _owner;
         private bool _hasChanges = true;
         private SnapshotTable _cachedSnapshot;
@@ -622,6 +629,8 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         public IReadOnlyTable Parent { get; private set; }
         /// <inheritdoc/>
         public override IReadOnlyList<IReadOnlyTable> SubTables => _subTables;
+        /// <inheritdoc/>
+        public override string FullName => $"{Parent?.FullName}{(Parent != null ? TableNameSeparator.ToString() : string.Empty)}{Name}";
 
         /// <inheritdoc cref="Table{T}"/>
         /// <param name="owner">The database that owns this table.</param>
@@ -657,7 +666,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         }
 
         /// <inheritdoc/>
-        internal override bool TryAddOrUpdate<T1>(ITrackingIndexed<T1> item)
+        internal override bool TryAddOrUpdate<T1>(ITrackingIndexed<T1> item, IReadOnlyDictionary<string, object> metadata)
         {
             item = Guard.NotNull(item, nameof(item));
             if (item is ITrackingIndexed<T> tableItem)
@@ -667,12 +676,12 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 {
                     return TryDelete(tableItem, tableItem.Metadata);
                 }
-                Invoking.Safe(() => _onInserting?.Invoke(_owner, this, tableItem));
+                Invoking.Safe(() => _onInserting?.Invoke(_owner, this, metadata, tableItem));
                 _data[tableItem.Value] = tableItem;
                 _hasChanges = true;
                 foreach (var subTable in SubTables.OfType<Table>())
                 {
-                    _ = subTable.TryAddOrUpdate(tableItem);
+                    _ = subTable.TryAddOrUpdate(tableItem, metadata);
                 }
                 Invoking.Safe(() => _onInserted?.Invoke(_owner, this, tableItem));
                 return true;
@@ -691,7 +700,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
         private bool Delete(ITrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata)
         {
-            Invoking.Safe(() => _onDeleting?.Invoke(_owner, this, item, metadata));
+            Invoking.Safe(() => _onDeleting?.Invoke(_owner, this, metadata, item));
             if (_data.Remove(item.Value))
             {
                 _hasChanges = true;
@@ -699,7 +708,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 {
                     _ = subTable.TryDelete(item, metadata);
                 }
-                Invoking.Safe(() => _onDeleted?.Invoke(_owner, this, item, metadata));
+                Invoking.Safe(() => _onDeleted?.Invoke(_owner, this, metadata, item));
                 return true;
             }
             return false;
@@ -730,7 +739,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         }
 
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnDeleted(Action<IDatabase, IReadOnlyTable<T>, IIndexed<T>, IReadOnlyDictionary<string, object>> onDeleted)
+        ITableBuilder<T> ITableBuilder<T>.OnDeleted(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IIndexed<T>> onDeleted)
         {
             onDeleted = Guard.NotNull(onDeleted, nameof(onDeleted));
             if (_onDeleted is null)
@@ -744,7 +753,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnDeleting(Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>, IReadOnlyDictionary<string, object>> onDeleting)
+        ITableBuilder<T> ITableBuilder<T>.OnDeleting(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> onDeleting)
         {
             onDeleting = Guard.NotNull(onDeleting, nameof(onDeleting));
             if (_onDeleting is null)
@@ -772,7 +781,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnInserting(Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>> onInserting)
+        ITableBuilder<T> ITableBuilder<T>.OnInserting(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> onInserting)
         {
             onInserting = Guard.NotNull(onInserting, nameof(onInserting));
             if (_onInserting is null)
@@ -859,7 +868,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                         }
                     }
                 }
-            }).OnDeleted((db, table, indexed, metadata) =>
+            }).OnDeleted((db, table, metadata, indexed) =>
             {
                 Dictionary<object, HashSet<ITrackingIndexed<T>>> index;
                 lock (_indexes)
@@ -920,7 +929,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             }
             else
             {
-                throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(TSub).FullName}'. Multiple source might be using the same name but different types which is a conflict");
+                throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(TSub).FullName}'. Multiple source might be using the same name but different types which is a conflict. Found table {existingSubTable.GetType().FullName}");
             }
             return this;
         }
@@ -944,7 +953,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             }
             else
             {
-                throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(T).FullName}'. Multiple source might be using the same name but different types which is a conflict");
+                throw new InvalidOperationException($"Subtable with name '{name}' already exists but is not of the expected type '{typeof(T).FullName}'. Multiple source might be using the same name but different types which is a conflict. Found table {existingSubTable.GetType().FullName}");
             }
             return this;
         }
@@ -959,8 +968,10 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         {
             if (!_hasChanges && _cachedSnapshot != null)
             {
+                LogVerbose($"Using cached snapshot for table {FullName}");
                 return _cachedSnapshot;
             }
+            Version++;
 
             var dataSnapshot = new Dictionary<T, IIndexed<T>>();
             foreach (var kvp in _data)
@@ -990,7 +1001,8 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 .ToList()
                 .AsReadOnly();
 
-            _cachedSnapshot = new SnapshotTable(Name, IsFiltered, dataSnapshot, indexSnapshot, subTableSnapshots);
+            LogVerbose($"Created new snapshot for table {FullName} with {dataSnapshot.Count} items, {indexSnapshot.Count} indexes and {subTableSnapshots.Count} subtables");
+            _cachedSnapshot = new SnapshotTable(Name, FullName, Version, IsFiltered, dataSnapshot, indexSnapshot, subTableSnapshots);
             _hasChanges = false;
             return _cachedSnapshot;
         }
@@ -1009,9 +1021,15 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             public bool IsFiltered { get; }
             public IReadOnlyList<IReadOnlyTable> SubTables { get; }
 
-            public SnapshotTable(string name, bool isFiltered, Dictionary<T, IIndexed<T>> data, Dictionary<string, Dictionary<object, IIndexed<T>[]>> indexes, IReadOnlyList<IReadOnlyTable> subTables)
+            public string FullName { get; }
+
+            public int Version { get; }
+
+            public SnapshotTable(string name, string fullName, int version, bool isFiltered, Dictionary<T, IIndexed<T>> data, Dictionary<string, Dictionary<object, IIndexed<T>[]>> indexes, IReadOnlyList<IReadOnlyTable> subTables)
             {
                 Name = name;
+                FullName = fullName;
+                Version = version;
                 IsFiltered = isFiltered;
                 _data = data;
                 _indexes = indexes;
@@ -1056,9 +1074,13 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
     public abstract class Table : IReadOnlyTable
     {
         /// <inheritdoc/>
+        public abstract string FullName { get; }
+        /// <inheritdoc/>
         public string Name { get; }
         /// <inheritdoc/>
         public bool IsFiltered { get; }
+        /// <inheritdoc/>
+        public int Version { get; protected set; }
         /// <summary>
         /// Initializes a new instance of the <see cref="Table"/> class with the specified name and filter status.
         /// </summary>
@@ -1076,7 +1098,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         /// <typeparam name="T">The type to attempt to insert.</typeparam>
         /// <param name="item">The item to insert.</param>
         /// <returns>True if the item was successfully added or updated; otherwise, false.</returns>
-        internal abstract bool TryAddOrUpdate<T>(ITrackingIndexed<T> item) where T : class;
+        internal abstract bool TryAddOrUpdate<T>(ITrackingIndexed<T> item, IReadOnlyDictionary<string, object> metadata) where T : class;
         /// <summary>
         /// Tries to delete an item from the table. If an item with the same data exists, it will be removed and the method will return true. Otherwise, it will return false.
         /// </summary>

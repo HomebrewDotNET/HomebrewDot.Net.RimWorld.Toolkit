@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Triggers
+namespace HomebrewDot.Net.Rimworld.Indexing.Triggers
 {
     /// <summary>
     /// Fired the tick before a snapshot is taken by the <see cref="ISnapshotManager"/>. This can be used to prepare any necessary data before the snapshot is taken.

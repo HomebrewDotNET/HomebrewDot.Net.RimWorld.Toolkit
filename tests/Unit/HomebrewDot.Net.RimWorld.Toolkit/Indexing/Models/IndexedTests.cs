@@ -2,9 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Xunit;
-using HomebrewDot.Net.RimWorld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Models
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Models
 {
     public class IndexedTests
     {
@@ -106,6 +107,20 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Models
 
             // Assert
             Assert.True(result);
+        }
+
+        [Fact]
+        public void GetValue_WithExistingBoolProperty_ReturnsPropertyValueAsObject()
+        {
+            // Arrange
+            var subject = new PrimitiveSubject { IsEnabled = true };
+            var indexed = new Indexed<PrimitiveSubject>(subject, EmptyMetadata);
+
+            // Act
+            object result = indexed.GetValue<object>("IsEnabled");
+
+            // Assert
+            Assert.True((bool)result);
         }
 
         [Fact]

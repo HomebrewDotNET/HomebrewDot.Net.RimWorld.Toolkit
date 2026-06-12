@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Models
+namespace HomebrewDot.Net.Rimworld.Comparing.Models
 {
     /// <summary>
     /// Definition of a condition that compares 2 references using a specific operator. 
@@ -29,6 +29,23 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Models
         /// <inheritdoc/>
         IReadOnlyList<IConditionDef> IConditionDef.Conditions => Conditions;
 
+        /// <inheritdoc cref="ConditionDef"/>
+        public ConditionDef()
+        {
+
+        }
+
+        /// <inheritdoc cref="ConditionDef"/>
+        public ConditionDef(IConditionDef conditionDef)
+        {
+            Conditions = conditionDef.Conditions?.Select(c => new ConditionDef(c)).ToArray();
+            ConditionGroupIsOr = conditionDef.ConditionGroupIsOr;
+            Compare = conditionDef.Compare;
+            With = conditionDef.With;
+            To = conditionDef.To;
+            IsOr = conditionDef.IsOr;
+        }
+
         /// <summary>
         /// Converts the current condition definition to a string representation. This method builds a string that represents the condition in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
         /// </summary>
@@ -40,18 +57,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Models
             var isCondition = With != null;
             if (Conditions != null && Conditions.Length > 0)
             {
-                stringBuilder.Append('(');
-                for (int i = 0; i < Conditions.Length; i++)
-                {
-                    var isLast = i == Conditions.Length - 1;
-                    var condition = Conditions[i];
-                    stringBuilder = condition.ToString(stringBuilder);
-                    if (!isLast)
-                    {
-                        stringBuilder.Append(condition.IsOr ? " OR " : " AND ");
-                    }
-                }
-                stringBuilder.Append(')');
+                GroupToString(Conditions, stringBuilder);
                 if (isCondition)
                 {
                     stringBuilder.Append(ConditionGroupIsOr ? " OR " : " AND ");
@@ -81,7 +87,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Models
                 else if (With is IOperator operatorType)
                 {
                     stringBuilder.Append(operatorType.Type);
-                    if(operatorType.Arguments != null && operatorType.Arguments.Count > 0)
+                    if (operatorType.Arguments != null && operatorType.Arguments.Count > 0)
                     {
                         stringBuilder.Append('{');
                         var arguments = operatorType.Arguments.ToArray();
@@ -123,6 +129,43 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Models
         public override string ToString()
         {
             return ToString(null).ToString();
+        }
+
+        /// <summary>
+        /// Converts a group of conditions into a string representation.
+        /// </summary>
+        /// <param name="conditions">The array of conditions to convert.</param>
+        /// <param name="stringBuilder">The StringBuilder to append the string representation to.</param>
+        /// <param name="conditionNextLine">Indicates whether each condition should be on a new line.</param>
+        /// <returns>The StringBuilder with the appended string representation of the conditions.</returns>
+        public static StringBuilder GroupToString(ConditionDef[] conditions, StringBuilder stringBuilder, bool conditionNextLine = true)
+        {
+            stringBuilder ??= new StringBuilder();
+            stringBuilder.Append('(');
+            if(conditionNextLine)
+            {
+                stringBuilder.AppendLine();
+            }
+            for (int i = 0; i < conditions.Length; i++)
+            {
+                var isLast = i == conditions.Length - 1;
+                var condition = conditions[i];
+                stringBuilder = condition.ToString(stringBuilder);
+                if (!isLast)
+                {
+                    stringBuilder.Append(condition.IsOr ? " OR " : " AND ");
+                    if (conditionNextLine)
+                    {
+                        stringBuilder.AppendLine();
+                    }
+                }
+            }
+            if (conditionNextLine)
+            {
+                stringBuilder.AppendLine();
+            }
+            stringBuilder.Append(')');
+            return stringBuilder;
         }
     }
 }

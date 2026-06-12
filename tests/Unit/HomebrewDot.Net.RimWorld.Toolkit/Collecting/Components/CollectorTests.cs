@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 {
     public class CollectorTests
     {

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Components
+namespace HomebrewDot.Net.Rimworld.Comparing.Components
 {
     /// <summary>
     /// An operator type that uses a delegate to perform comparisons. This allows for custom comparison logic to be provided at runtime.

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Generic.Models
+namespace HomebrewDot.Net.Rimworld.Generic.Models
 {
     /// <summary>
     /// Empty implementation of <see cref="IDictionary{TKey, TValue}"/> where all calls will be ignored and return default values.

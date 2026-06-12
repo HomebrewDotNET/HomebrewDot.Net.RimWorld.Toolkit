@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Comparing
+namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
     /// Compares two objects based on provided arguments and global context.

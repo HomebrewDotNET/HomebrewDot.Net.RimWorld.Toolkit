@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Gather game data and pushes it to the <see cref="ISnapshotManager"/> for indexing.

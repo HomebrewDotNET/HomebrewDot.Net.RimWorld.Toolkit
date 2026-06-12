@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
 
-namespace HomebrewDot.Net.RimWorld.Comparing
+namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
     /// Definition of a condition that compares 2 references using a specific operator. 

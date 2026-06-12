@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Hooks.Triggers;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Hooks.Triggers;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Verse;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
     /// <summary>
     /// Default implementation of <see cref="ISnapshotOrchestrator"/> that uses hooks to manage snapshot lifecycles.
@@ -51,6 +51,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
 
                 // Remove all previous hooks to avoid duplicates
                 _hookManager.UnregisterAllBy<OnGameTickTrigger>(this);
+                _hookManager.UnregisterAllBy<MapLifecycleTrigger>(this);
 
                 // Reset gathers if we have them
                 foreach (var gatherer in _dataGatherers)
@@ -97,7 +98,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 Log($"Starting snapshot orchestration for game {game} using {_dataGatherers.Count} data gatherers.");
                 foreach (var gatherer in _dataGatherers)
                 {
-                    Log($"Starting gathering with {gatherer.GetType().FullName}");
+                    LogVerbose($"Starting gathering with {gatherer.GetType().FullName}");
                     try
                     {
                         gatherer.GatherData(game, snapshotManager);
@@ -118,7 +119,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                         return;
                     }
 
-                    Log($"Preparing to take new snapshot");
+                    LogVerbose($"Preparing to take new snapshot");
                     // Notify listeners that we're about to take a snapshot
                     _hookManager.LazyTrigger<PreparingSnapshotTrigger>(() => new PreparingSnapshotTrigger(_snapshotManager));
                     // Subscribe to next tick to take snapshot after all preparations are done
@@ -128,7 +129,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                         {
                             return false;
                         }
-                        Log($"Taking snapshot");
+                        LogVerbose($"Taking snapshot");
                         try
                         {
                             _snapshotManager.Snapshot();
@@ -141,10 +142,20 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                     }, true, priority: byte.MaxValue);
                 });
             }
+
+            Log($"Snapshot orchestrator initialized for game {game} with {_dataGatherers.Count} data gatherers.");
         }
 
         /// <inheritdoc/>
-        ISnapshotOrchestrator ISnapshotOrchestratorBuilder.With(IDataGatherer dataGatherer)
+        public void ForceSnapshot()
+        {
+            Log($"Forcing snapshot for game {_game}. Current version is {_snapshotManager?.DatabaseSnapshot?.Version ?? '?'}");
+            _snapshotManager?.Snapshot();
+            Log($"Snapshot forced for game {_game}. New version is {_snapshotManager?.DatabaseSnapshot?.Version ?? '?'}");
+        }
+
+        /// <inheritdoc/>
+        ISnapshotOrchestratorBuilder ISnapshotOrchestratorBuilder.With(IDataGatherer dataGatherer)
         {
             lock(_lock)
             {

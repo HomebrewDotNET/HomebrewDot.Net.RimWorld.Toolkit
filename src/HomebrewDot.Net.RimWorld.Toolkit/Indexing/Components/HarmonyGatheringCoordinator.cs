@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
     /// <summary>
     /// Coordinates the Harmony patches gating game data.

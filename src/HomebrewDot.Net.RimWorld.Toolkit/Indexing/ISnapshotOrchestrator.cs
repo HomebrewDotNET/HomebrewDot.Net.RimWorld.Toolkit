@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Responsible for orchestrating the gathering of game data and supplying it to the <see cref="ISnapshotManager"/> instances for indexing.
@@ -26,6 +26,11 @@ namespace HomebrewDot.Net.RimWorld.Indexing
             Action<ISnapshotOrchestratorBuilder> configure,
             Action<ISnapshotManagerConfigurator> configureManager,
             Action<IDatabaseSchemaBuilder> schemaBuilder);
+
+        /// <summary>
+        /// Forces an immediate snapshot to be taken.
+        /// </summary>
+        public void ForceSnapshot();
     }
 
     /// <summary>
@@ -38,6 +43,6 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// </summary>
         /// <param name="dataGatherer">The data gatherer to register.</param>
         /// <returns>The current <see cref="ISnapshotOrchestratorBuilder"/> instance for method chaining.</returns>
-        ISnapshotOrchestrator With(IDataGatherer dataGatherer);
+        ISnapshotOrchestratorBuilder With(IDataGatherer dataGatherer);
     }
 }

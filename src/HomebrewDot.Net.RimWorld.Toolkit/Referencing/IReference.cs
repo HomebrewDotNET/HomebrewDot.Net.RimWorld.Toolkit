@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Referencing
+namespace HomebrewDot.Net.Rimworld.Referencing
 {
     /// <summary>
     /// Represents a reference to an object or value that can be resolved at a later time using its type and value.

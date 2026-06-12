@@ -1,31 +1,36 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using HarmonyLib;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Comparing.Components;
-using HomebrewDot.Net.RimWorld.Generic.Models;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Hooks.Triggers;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
-using HomebrewDot.Net.RimWorld.Referencing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
-using HomebrewDot.Net.RimWorld.UI.Settings;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Collecting.Triggers;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Hooks.Triggers;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.UI.Settings;
 using RimWorld;
 using UnityEngine;
 using Verse;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Central access point for all the tools in the HomebrewDot.Net library.
@@ -43,7 +48,7 @@ namespace HomebrewDot.Net.RimWorld
         /// <summary>
         /// The unique identifier for this mod.
         /// </summary>
-        public static string ModId { get; } = typeof(Toolkit).FullName;
+        public static string ModId { get; } = typeof(Toolkit).FullName.ToLower();
         /// <summary>
         /// The Harmony instance used for patching methods.
         /// </summary>
@@ -96,6 +101,7 @@ namespace HomebrewDot.Net.RimWorld
         {
             // Reference types
             Services.Register<IReferenceType>(IndexedReferenceType.Instance, IndexedReferenceType.DefaultTypeName);
+            Services.Register<IReferenceType>(PropertyReferenceType.Instance, PropertyReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(ValueReferenceType.Instance, ValueReferenceType.DefaultTypeName);
 
             // Operator types
@@ -111,29 +117,37 @@ namespace HomebrewDot.Net.RimWorld
             {
                 Services.Register<IOperatorType>(GreaterOperatorType.Instance, alias);
             }
-            foreach(var alias in GreaterOrEqualOperatorType.Aliases)
+            foreach (var alias in GreaterOrEqualOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(GreaterOrEqualOperatorType.Instance, alias);
             }
-            foreach(var alias in LesserOperatorType.Aliases)
+            foreach (var alias in LesserOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(LesserOperatorType.Instance, alias);
             }
-            foreach(var alias in LesserOrEqualOperatorType.Aliases)
+            foreach (var alias in LesserOrEqualOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(LesserOrEqualOperatorType.Instance, alias);
             }
-            foreach(var alias in TrueOperatorType.Aliases)
+            foreach (var alias in TrueOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(TrueOperatorType.Instance, alias);
             }
-            foreach(var alias in FalseOperatorType.Aliases)
+            foreach (var alias in FalseOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(FalseOperatorType.Instance, alias);
             }
-            foreach(var alias in NullOperatorType.Aliases)
+            foreach (var alias in NullOperatorType.Aliases)
             {
                 Services.Register<IOperatorType>(NullOperatorType.Instance, alias);
+            }
+            foreach (var alias in NotNullOperatorType.Aliases)
+            {
+                Services.Register<IOperatorType>(NotNullOperatorType.Instance, alias);
+            }
+            foreach (var alias in MatchOperatorType.Aliases)
+            {
+                Services.Register<IOperatorType>(MatchOperatorType.Instance, alias);
             }
         }
 
@@ -165,9 +179,13 @@ namespace HomebrewDot.Net.RimWorld
                 {
                     lock (_lock)
                     {
+                        if (_manager != null && value is not null)
+                        {
+                            Invoking.Safe(() => _manager.TransferTo(value));
+                        }
                         if (_manager is IDisposable disposable)
                         {
-                            disposable.Dispose();
+                            Invoking.Safe(() => disposable.Dispose());
                         }
                         _manager = value;
                     }
@@ -192,13 +210,22 @@ namespace HomebrewDot.Net.RimWorld
         /// <summary>
         /// Tools for indexing game data using snapshots so it can be accessed in background threads.
         /// </summary>
-        public static class Index
+        public static class Indexing
         {
             // Statics
-            static Index()
+            static Indexing()
             {
-                Hooks.Manager.RegisterHook<OnGameLoadedTrigger>(Instance, (e) => StartIndexing(e.Game))
-                             .RegisterHook<OnSaveLoadedTrigger>(Instance, (e) => StartIndexing(e.Game))
+                Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Instance, (e) =>
+                             {
+                                 StartIndexing(e.Game, true);
+                                 // Take snapshot 1 tick after loading to ensure a quick loading of the snapshot.
+                                 Hooks.Manager.Trigger(new PreparingSnapshotTrigger(Manager));
+                                 Hooks.Manager.RegisterHook<OnGameTickTrigger>(Instance, (tick) =>
+                                 {
+                                     Manager.Snapshot();
+                                     return true;
+                                 }, true, priority: 0);
+                             }, priority: byte.MaxValue)
                              .RegisterHook<ToolkitSettings.Changed>(Instance, e => StartIndexing(Current.Game));
             }
 
@@ -206,11 +233,72 @@ namespace HomebrewDot.Net.RimWorld
             private static readonly object _lock = new object();
             private static ISnapshotOrchestrator _orchestrator;
             private static ISnapshotManager _manager;
-            private static Action<ISnapshotOrchestratorBuilder> _orchestratorConfig = builder => { };
-            private static Action<ISnapshotManagerConfigurator> _managerConfig = configurator => { };
-            private static Action<IDatabaseSchemaBuilder> _schemaConfig = builder => { };
+            private static event Action<ISnapshotOrchestratorBuilder> _orchestratorConfig;
+            private static event Action<ISnapshotManagerConfigurator> _managerConfig;
+            private static event Action<IDatabaseSchemaBuilder> _schemaConfig;
 
             // Properties
+            /// <summary>
+            /// Event that allows for configuring the snapshot orchestrator builder. This event is invoked during the indexing process to allow for dynamic configuration of the orchestrator based on the current game state or other factors. Subscribers to this event can add gatherers, indexers, and other components to the orchestrator builder to customize how the snapshot indexing process works. It's important to note that changes made in this event will only take effect during the next indexing process, so if you need to apply changes immediately, consider using the provided configuration methods and then calling the StartIndexing method to apply those changes without having to wait for the next indexing cycle.
+            /// </summary>
+            public static event Action<ISnapshotOrchestratorBuilder> ConfigureOrchestrator
+            {
+                add
+                {
+                    lock (_lock)
+                    {
+                        _orchestratorConfig += value;
+                    }
+                }
+                remove
+                {
+                    lock (_lock)
+                    {
+                        _orchestratorConfig -= value;
+                    }
+                }
+            }
+            /// <summary>
+            /// Event that allows for configuring the snapshot manager builder. This event is invoked during the indexing process to allow for dynamic configuration of the manager based on the current game state or other factors. Subscribers to this event can customize how the snapshot manager handles incoming data, manages snapshots, and provides access to indexed data. It's important to note that changes made in this event will only take effect during the next indexing process, so if you need to apply changes immediately, consider using the provided configuration methods and then calling the StartIndexing method to apply those changes without having to wait for the next indexing cycle.
+            /// </summary>
+            public static event Action<ISnapshotManagerConfigurator> ConfigureManager
+            {
+                add
+                {
+                    lock (_lock)
+                    {
+                        _managerConfig += value;
+                    }
+                }
+                remove
+                {
+                    lock (_lock)
+                    {
+                        _managerConfig -= value;
+                    }
+                }
+            }
+            /// <summary>
+            /// Event that allows for configuring the database schema builder. This event is invoked during the indexing process to allow for dynamic configuration of the database schema based on the current game state or other factors. Subscribers to this event can define tables, columns, indexes, and other aspects of the database schema to customize how data is stored and accessed in the snapshot database. It's important to note that changes made in this event will only take effect during the next indexing process, so if you need to apply changes immediately, consider using the provided configuration methods and then calling the StartIndexing method to apply those changes without having to wait for the next indexing cycle.
+            /// </summary>
+            public static event Action<IDatabaseSchemaBuilder> ConfigureSchema
+            {
+                add
+                {
+                    lock (_lock)
+                    {
+                        _schemaConfig += value;
+                    }
+                }
+                remove
+                {
+                    lock (_lock)
+                    {
+                        _schemaConfig -= value;
+                    }
+                }
+            }
+
             /// <summary>
             /// The orchestrator responsible for managing the snapshot indexing process. Accessing this property will initialize the orchestrator if it hasn't been already.
             /// </summary>
@@ -313,10 +401,11 @@ namespace HomebrewDot.Net.RimWorld
                 var orchestrator = Orchestrator;
                 try
                 {
-                    orchestrator?.RebuildIndex(game, game == null, Manager, _orchestratorConfig, _managerConfig, _schemaConfig);
+                    orchestrator?.RebuildIndex(game, game == null, Manager, _orchestratorConfig ?? (x => { }), _managerConfig ?? (x => { }), _schemaConfig ?? (x => { }));
                     if (takeSnapshot)
                     {
-                        Manager.Snapshot();
+                        Logging.Log("Taking snapshot immediately after indexing");
+                        orchestrator?.ForceSnapshot();
                     }
                 }
                 catch (Exception ex)
@@ -325,37 +414,481 @@ namespace HomebrewDot.Net.RimWorld
                 }
             }
 
-            /// <summary>
-            /// Configures the snapshot orchestrator using the provided configuration action.
-            /// </summary>
-            /// <param name="configure">The configuration action to apply to the orchestrator builder.</param>
-            public static void Configure(Action<ISnapshotOrchestratorBuilder> configure)
+            public static class Indexers
             {
-                lock (_lock)
+                // Fields
+                private readonly static IDictionary<string, (IIndexer Indexer, Action<IDatabaseSchemaBuilder> Configure)> _indexers = new Dictionary<string, (IIndexer Indexer, Action<IDatabaseSchemaBuilder> Configure)>(StringComparer.OrdinalIgnoreCase);
+
+                /// <summary>
+                /// Registers an indexer with the given name and configuration. If an indexer with the same name already exists, it will be unregistered and replaced with the new one. The indexer will be initialized and its configuration action will be added to the schema configuration event, allowing it to define its own database schema for indexing data. It's important to note that registering a new indexer with the same name as an existing one will replace the existing indexer and its configuration, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
+                /// </summary>
+                /// <param name="name">The name of the indexer. Mainly just used for deduplication. Name should be the property being indexed so when multiple sources want to index the same property, they can use the same name.</param>
+                /// <param name="indexer">The indexer instance to register.</param>
+                public static void RegisterIndexer(string name, IIndexer indexer)
                 {
-                    _orchestratorConfig = _orchestratorConfig += Helpers.Guard.NotNull(configure, nameof(configure));
+                    name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
+                    indexer = Helpers.Guard.NotNull(indexer, nameof(indexer));
+                    lock (_indexers)
+                    {
+                        if (_indexers.TryGetValue(name, out var existing))
+                        {
+                            Toolkit.Indexing.ConfigureSchema -= existing.Configure;
+                            if (existing.Indexer is IDisposable disposable)
+                            {
+                                Invoking.Safe(() => disposable.Dispose());
+                            }
+                        }
+
+                        Invoking.Safe(() =>
+                        {
+                            indexer.Initialize();
+                            var configure = new Action<IDatabaseSchemaBuilder>(x =>
+                            {
+                                x.OnInserting(indexer.Index);
+                            });
+                            Toolkit.Indexing.ConfigureSchema += configure;
+
+                            _indexers[name] = (indexer, configure);
+
+                            Indexing.StartIndexing(Current.Game);
+                        });
+                    }
+                }
+
+                /// <summary>
+                /// Creates and registers a new indexer using the provided builder action to configure it. The indexer will be initialized and its configuration action will be added to the schema configuration event, allowing it to define its own database schema for indexing data. It's important to note that registering a new indexer with the same name as an existing one will replace the existing indexer and its configuration, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
+                /// </summary>
+                /// <typeparam name="T">The type of the objects being indexed.</typeparam>
+                /// <param name="name">The name of the indexer.</param>
+                /// <param name="builder">The action to configure the indexer.</param>
+                public static void BuildIndexer<T>(string name, Action<IIndexerBuilder<T>> builder) where T : class
+                {
+                    name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
+                    builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                    var indexer = new TrackedIndexer<T>();
+                    builder(indexer);
+                    RegisterIndexer(name, indexer);
+                }
+                /// <summary>
+                /// Helper method to create and register a new indexer for a specific property using the provided property expression.
+                /// Property will be watched for changes and will store the value of said property in the metadata.
+                /// </summary>
+                /// <typeparam name="T">The type of the objects being indexed.</typeparam>
+                /// <typeparam name="TProperty">The type of the property being indexed.</typeparam>
+                /// <param name="propertyExpression">The expression representing the property to index.</param>
+                public static void ByProperty<T>(Expression<Func<T, object>> propertyExpression) where T : class
+                {
+                    propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
+                    var memberInfo = Helpers.Expression.GetMember(propertyExpression);
+                    var name = $"{typeof(T).FullName}.{memberInfo.Name}";
+                    var lambda = propertyExpression.Compile();
+                    BuildIndexer<T>(name, builder => builder.Set(memberInfo.Name, x => lambda(x), true));
+                }
+                /// <summary>
+                /// Helper method to create and register a new indexer for a specific nested property using the provided property expression.
+                /// </summary>
+                /// <typeparam name="T">The type of the objects being indexed.</typeparam>
+                /// <typeparam name="TProperty">The type of the nested property being indexed.</typeparam>
+                /// <param name="propertyExpression">The expression representing the nested property to index.</param>
+                /// <param name="metadataKey">The key to use for storing the metadata. If null, the name of the last property in the nested path will be used.</param>
+                public static void ByNestedProperty<T>(Expression<Func<T, object>> propertyExpression, string metadataKey = null) where T : class
+                {
+                    propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
+                    var propertyInfos = Helpers.Expression.GetNestedProperties(propertyExpression);
+                    var name = $"{typeof(T).FullName}.{string.Join(".", propertyInfos.Select(p => p.Name))}";
+                    if (string.IsNullOrEmpty(metadataKey))
+                    {
+                        metadataKey = propertyInfos.Last().Name;
+                    }
+                    var lambda = propertyExpression.Compile();
+                    BuildIndexer<T>(name, builder => builder.Set(metadataKey, x => lambda(x), true));
+                }
+            }
+
+            /// <summary>
+            /// Helper class for working with the <see cref="Def"/> table in the snapshot database.
+            /// </summary>
+            public static class Def
+            {
+                /// <summary>
+                /// The name of the root table that contains all defs in the game.
+                /// </summary>
+                public const string TableName = nameof(Verse.Def);
+
+                /// <summary>
+                /// Configures the schema to include the table for defs.
+                /// </summary>
+                public static void EnsureTable()
+                {
+                    Indexing.ConfigureSchema += ConfigureSchema;
+                }
+                /// <summary>
+                /// Configures the snapshot orchestrator to include the gatherer for defs, which is responsible for collecting all defs in the game and pushing them to the snapshot manager.
+                /// </summary>
+                public static void EnsureGatherer()
+                {
+                    Indexing.ConfigureOrchestrator += ConfigureGathering;
+                }
+                /// <summary>
+                /// Returns the latest snapshot of the table containing all defs in the game.
+                /// </summary>
+                /// <returns>The latest snapshot of the table containing all defs in the game, or null if the table is not available.</returns>
+                public static IReadOnlyTable<Verse.Def> GetTable()
+                {
+                    return Manager.DatabaseSnapshot?.GetTable<Verse.Def>(TableName);
+                }
+                /// <summary>
+                /// Adds addition configuration for the table.
+                /// </summary>
+                /// <param name="builder">The table builder to configure.</param>
+                public static void ConfigureTable(Action<ITableBuilder<Verse.Def>> builder)
+                {
+                    builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                    EnsureTable();
+
+                    Indexing.ConfigureSchema += b => b.WithTable<Verse.Def>(TableName, builder);
+                }
+                private static void ConfigureSchema(IDatabaseSchemaBuilder builder)
+                {
+                    builder.WithTable<Verse.Def>(TableName);
+                }
+                private static void ConfigureGathering(ISnapshotOrchestratorBuilder builder)
+                {
+                    builder.With(DefGatherer.Instance);
+                }
+                /// <summary>
+                /// Helper class for working with the <see cref="Verse.ThingDef"/> table in the snapshot database.
+                /// </summary>
+                public static class Thing
+                {
+                    /// <summary>
+                    /// The name of the root table that contains all thing defs in the game.
+                    /// </summary>
+                    public const string TableName = nameof(Verse.Thing);
+                    /// <summary>
+                    /// The fully qualified name of the table
+                    /// </summary>
+                    public const string FullTableName = $"{Def.TableName}.{TableName}";
+
+                    /// <summary>
+                    /// Configures the schema to include the table for thing defs.
+                    /// </summary>
+                    public static void EnsureTable()
+                    {
+                        Def.EnsureTable();
+                        Def.ConfigureTable(Configure);
+                    }
+                    /// <summary>
+                    /// Adds addition configuration for the table.
+                    /// </summary>
+                    /// <param name="builder">The table builder to configure.</param>
+                    public static void ConfigureTable(Action<ITableBuilder<Verse.ThingDef>> builder)
+                    {
+                        builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                        EnsureTable();
+
+                        Def.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                    }
+                    /// <summary>
+                    /// Returns the latest snapshot of the table containing all thing defs in the game.
+                    /// </summary>
+                    /// <returns>The latest snapshot of the table containing all thing defs in the game, or null if the table is not available.</returns>
+                    public static IReadOnlyTable<Verse.ThingDef> GetTable()
+                    {
+                        return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
+                    }
+                    private static void Configure(ITableBuilder<Verse.Def> builder)
+                    {
+                        builder.WithSubTable<Verse.ThingDef>(TableName);
+                    }
+
+                    /// <summary>
+                    /// Helper class for working with the weapons table.
+                    /// </summary>
+                    public static class Weapon
+                    {
+                        /// <summary>
+                        /// The name of the root table that contains all weapon defs in the game.
+                        /// </summary>
+                        public const string TableName = "Weapon";
+                        /// <summary>
+                        /// The fully qualified name of the table
+                        /// </summary>
+                        public const string FullTableName = $"{Thing.TableName}.{TableName}";
+
+                        /// <summary>
+                        /// Configures the schema to include the table for weapon defs.
+                        /// </summary>
+                        public static void EnsureTable()
+                        {
+                            Thing.EnsureTable();
+                            Thing.ConfigureTable(Configure);
+                        }
+                        /// <summary>
+                        /// Adds addition configuration for the table.
+                        /// </summary>
+                        /// <param name="builder">The table builder to configure.</param>
+                        public static void ConfigureTable(Action<ITableBuilder<Verse.ThingDef>> builder)
+                        {
+                            builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                            EnsureTable();
+
+                            Thing.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                        }
+                        /// <summary>
+                        /// Returns the latest snapshot of the table containing all weapon defs in the game.
+                        /// </summary>
+                        /// <returns>The latest snapshot of the table containing all weapon defs in the game, or null if the table is not available.</returns>
+                        public static IReadOnlyTable<Verse.ThingDef> GetTable()
+                        {
+                            return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
+                        }
+                        private static void Configure(ITableBuilder<Verse.ThingDef> builder)
+                        {
+                            builder.WithSubTable(TableName, x => x.IsWeapon);
+                        }
+
+                        /// <summary>
+                        /// Helper class for working with the melee weapons table.
+                        /// </summary>
+                        public static class Melee
+                        {
+                            /// <summary>
+                            /// The name of the root table that contains all melee weapon defs in the game.
+                            /// </summary>
+                            public const string TableName = "Melee";
+                            /// <summary>
+                            /// The fully qualified name of the table
+                            /// </summary>
+                            public const string FullTableName = $"{Weapon.TableName}.{TableName}";
+
+                            /// <summary>
+                            /// Configures the schema to include the table for melee weapon defs.
+                            /// </summary>
+                            public static void EnsureTable()
+                            {
+                                Weapon.EnsureTable();
+                                Weapon.ConfigureTable(Configure);
+                            }
+                            /// <summary>
+                            /// Adds addition configuration for the table.
+                            /// </summary>
+                            /// <param name="builder">The table builder to configure.</param>
+                            public static void ConfigureTable(Action<ITableBuilder<Verse.ThingDef>> builder)
+                            {
+                                builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                                EnsureTable();
+
+                                Weapon.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                            }
+                            /// <summary>
+                            /// Returns the latest snapshot of the table containing all melee weapon defs in the game.
+                            /// </summary>
+                            /// <returns>The latest snapshot of the table containing all melee weapon defs in the game, or null if the table is not available.</returns>
+                            public static IReadOnlyTable<Verse.ThingDef> GetTable()
+                            {
+                                return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
+                            }
+                            private static void Configure(ITableBuilder<Verse.ThingDef> builder)
+                            {
+                                builder.WithSubTable(TableName, x => x.IsMeleeWeapon);
+                            }
+                        }
+
+                        /// <summary>
+                        /// Helper class for working with the ranged weapons table.
+                        /// </summary>
+                        public static class Ranged
+                        {
+                            /// <summary>
+                            /// The name of the root table that contains all ranged weapon defs in the game.
+                            /// </summary>
+                            public const string TableName = "Ranged";
+                            /// <summary>
+                            /// The fully qualified name of the table
+                            /// </summary>
+                            public const string FullTableName = $"{Weapon.TableName}.{TableName}";
+
+                            /// <summary>
+                            /// Configures the schema to include the table for ranged weapon defs.
+                            /// </summary>
+                            public static void EnsureTable()
+                            {
+                                Weapon.EnsureTable();
+                                Weapon.ConfigureTable(Configure);
+                            }
+                            /// <summary>
+                            /// Adds addition configuration for the table.
+                            /// </summary>
+                            /// <param name="builder">The table builder to configure.</param>
+                            public static void ConfigureTable(Action<ITableBuilder<Verse.ThingDef>> builder)
+                            {
+                                builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                                EnsureTable();
+
+                                Weapon.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                            }
+                            /// <summary>
+                            /// Returns the latest snapshot of the table containing all ranged weapon defs in the game.
+                            /// </summary>
+                            /// <returns>The latest snapshot of the table containing all reanged weapon defs in the game, or null if the table is not available.</returns>
+                            public static IReadOnlyTable<Verse.ThingDef> GetTable()
+                            {
+                                return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
+                            }
+                            private static void Configure(ITableBuilder<Verse.ThingDef> builder)
+                            {
+                                builder.WithSubTable(TableName, x => x.IsRangedWeapon);
+                            }
+                        }
+                    }
+
+                    /// <summary>
+                    /// Helper class for working with the apparel table.
+                    /// </summary>
+                    public static class Apparel
+                    {
+                        /// <summary>
+                        /// The name of the root table that contains all apparel defs in the game.
+                        /// </summary>
+                        public const string TableName = "Apparel";
+                        /// <summary>
+                        /// The fully qualified name of the table
+                        /// </summary>
+                        public const string FullTableName = $"{Thing.TableName}.{TableName}";
+
+                        /// <summary>
+                        /// Configures the schema to include the table for apparel defs.
+                        /// </summary>
+                        public static void EnsureTable()
+                        {
+                            Thing.EnsureTable();
+                            Thing.ConfigureTable(Configure);
+                        }
+                        /// <summary>
+                        /// Adds addition configuration for the table.
+                        /// </summary>
+                        /// <param name="builder">The table builder to configure.</param>
+                        public static void ConfigureTable(Action<ITableBuilder<Verse.ThingDef>> builder)
+                        {
+                            builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                            EnsureTable();
+
+                            Thing.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                        }
+                        /// <summary>
+                        /// Returns the latest snapshot of the table containing all apparel defs in the game.
+                        /// </summary>
+                        /// <returns>The latest snapshot of the table containing all apparel defs in the game, or null if the table is not available.</returns>
+                        public static IReadOnlyTable<Verse.ThingDef> GetTable()
+                        {
+                            return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
+                        }
+                        private static void Configure(ITableBuilder<Verse.ThingDef> builder)
+                        {
+                            builder.WithSubTable(TableName, x => x.IsApparel);
+                        }
+                    }
                 }
             }
             /// <summary>
-            /// Configures the snapshot manager using the provided configuration action.
+            /// Helper class for working with the <see cref="Thing"/> table in the snapshot database.
             /// </summary>
-            /// <param name="configure">The configuration action to apply to the manager builder.</param>
-            public static void ConfigureManager(Action<ISnapshotManagerConfigurator> configure)
+            public static class Thing
             {
-                lock (_lock)
+                /// <summary>
+                /// The name of the root table that contains all things on all active maps.
+                /// </summary>
+                public const string TableName = nameof(Verse.Thing);
+
+                /// <summary>
+                /// Configures the schema to include the table for things.
+                /// </summary>
+                public static void EnsureTable()
                 {
-                    _managerConfig = _managerConfig += Helpers.Guard.NotNull(configure, nameof(configure));
+                    ConfigureSchema += Configure;
                 }
-            }
-            /// <summary>
-            /// Configures the database schema using the provided configuration action.
-            /// </summary>
-            /// <param name="configure">The configuration action to apply to the schema builder.</param>
-            public static void ConfigureSchema(Action<IDatabaseSchemaBuilder> configure)
-            {
-                lock (_lock)
+                /// <summary>
+                /// Configures the snapshot orchestrator to include the gatherer for things, which is responsible for collecting all things on all active maps and pushing them to the snapshot manager.
+                /// </summary>
+                public static void EnsureGatherer()
                 {
-                    _schemaConfig = _schemaConfig += Helpers.Guard.NotNull(configure, nameof(configure));
+                    ConfigureOrchestrator += ConfigureGathering;
+                }
+                /// <summary>
+                /// Adds addition configuration for the table.
+                /// </summary>
+                /// <param name="builder">The table builder to configure.</param>
+                public static void ConfigureTable(Action<ITableBuilder<Verse.Thing>> builder)
+                {
+                    builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                    EnsureTable();
+
+                    ConfigureSchema += b => b.WithTable(TableName, builder);
+                }
+                /// <summary>
+                /// Returns the latest snapshot of the table containing all things on all active maps.
+                /// </summary>
+                /// <returns>The latest snapshot of the table containing all things on all active maps, or null if the table is not available.</returns>
+                public static IReadOnlyTable<Verse.Thing> GetTable()
+                {
+                    return Manager.DatabaseSnapshot?.GetTable<Verse.Thing>(TableName);
+                }
+                private static void Configure(IDatabaseSchemaBuilder builder)
+                {
+                    builder.WithTable<Verse.Thing>(TableName);
+                }
+                private static void ConfigureGathering(ISnapshotOrchestratorBuilder builder)
+                {
+                    builder.With(HarmonyThingGatherer.Instance)
+                           .With(MapThingGatherer.Instance);
+                }
+
+                /// <summary>
+                /// Helper class for working with the filtered <see cref="Thing"/> table for resources in the snapshot database.
+                /// </summary>
+                public static class Resources
+                {
+                    /// <summary>
+                    /// The name of the root table that contains all resources on all active maps.
+                    /// </summary>
+                    public const string TableName = "Resources";
+                    /// <summary>
+                    /// The fully qualified name of the table.
+                    /// </summary>
+                    public const string FullTableName = $"{Thing.TableName}.{TableName}";
+
+                    /// <summary>
+                    /// Configures the schema to include the table for resources.
+                    /// </summary>
+                    public static void EnsureTable()
+                    {
+                        Thing.EnsureTable();
+                        Thing.ConfigureTable(Configure);
+                    }
+                    /// <summary>
+                    /// Adds addition configuration for the table.
+                    /// </summary>
+                    /// <param name="builder">The table builder to configure.</param>
+                    public static void ConfigureTable(Action<ITableBuilder<Verse.Thing>> builder)
+                    {
+                        builder = Helpers.Guard.NotNull(builder, nameof(builder));
+                        EnsureTable();
+
+                        Thing.ConfigureTable(b => b.WithSubTable(TableName, tableBuilder: builder));
+                    }
+                    /// <summary>
+                    /// Returns the latest snapshot of the table containing all resources on all active maps.
+                    /// </summary>
+                    /// <returns>The latest snapshot of the table containing all resources on all active maps, or null if the table is not available.</returns>
+                    public static IReadOnlyTable<Verse.Thing> GetTable()
+                    {
+                        return Manager.DatabaseSnapshot?.GetTable<Verse.Thing>(FullTableName);
+                    }
+                    private static void Configure(ITableBuilder<Verse.Thing> builder)
+                    {
+                        builder.WithSubTable(TableName, x => x.def.CountAsResource);
+                    }
                 }
             }
         }
@@ -414,7 +947,7 @@ namespace HomebrewDot.Net.RimWorld
             {
                 lock (_lock)
                 {
-                    if(_comparator is Comparator collectionComparator)
+                    if (_comparator is Comparator collectionComparator)
                     {
                         _comparator = null;
                     }
@@ -453,6 +986,7 @@ namespace HomebrewDot.Net.RimWorld
                 {
                     _collectionDefinitions[name] = definition;
                 }
+                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, definition, null, true));
             }
             /// <summary>
             /// Adds a new collector with the specified name and collector instance. The collection definition associated with the collector will also be added using the same name. If a collector with the same name already exists, it will be overwritten with the new collector and definition.
@@ -460,7 +994,8 @@ namespace HomebrewDot.Net.RimWorld
             /// <typeparam name="T">The type of items collected by the collector.</typeparam>
             /// <param name="name">The name of the collector.</param>
             /// <param name="collector">The collector instance.</param>
-            public static void Set(string name, ICollector collector)
+            /// <param name="startCollecting">Indicates whether the collector should start collecting immediately.</param>
+            public static void Set(string name, ICollector collector, bool startCollecting = true)
             {
                 name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                 collector = Helpers.Guard.NotNull(collector, nameof(collector));
@@ -470,7 +1005,17 @@ namespace HomebrewDot.Net.RimWorld
                 {
                     _collectors[name] = collector;
                     Set(name, collection);
+                    if (startCollecting)
+                    {
+                        Invoking.Safe(() =>
+                        {
+                            collector.StopCollecting();
+                            collector.StartCollecting(Comparator, _collectionDefinitions);
+                        });
+                    }
                 }
+
+                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, true));
             }
             /// <summary>
             /// Adds a new collector with the specified name and collector instance. The collection definition associated with the collector will also be added using the same name. If a collector with the same name already exists, it will be overwritten with the new collector and definition.
@@ -478,12 +1023,13 @@ namespace HomebrewDot.Net.RimWorld
             /// <typeparam name="T">The type of items collected by the collector.</typeparam>
             /// <param name="name">The name of the collector.</param>
             /// <param name="collector">The collector instance.</param>
-            public static void Set<T>(string name, ICollector<T> collector) where T : class
+            /// <param name="startCollecting">Indicates whether the collector should start collecting immediately.</param>
+            public static void Set<T>(string name, ICollector<T> collector, bool startCollecting = true) where T : class
             {
                 name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                 collector = Helpers.Guard.NotNull(collector, nameof(collector));
 
-                Set(name, (ICollector)collector);
+                Set(name, (ICollector)collector, startCollecting);
             }
             /// <summary>
             /// Removes the collector and collection definition associated with the specified name. If no collector or definition exists with the given name, this method does nothing.
@@ -491,9 +1037,11 @@ namespace HomebrewDot.Net.RimWorld
             /// <param name="name">The name of the collector and collection definition to remove.</param>
             public static void Remove(string name)
             {
+                ICollector collector;
+                ICollectionDef collection;
                 lock (_lock)
                 {
-                    if (_collectors.TryGetValue(name, out var collector))
+                    if (_collectors.TryGetValue(name, out collector))
                     {
                         Invoking.Safe(() => collector.StopCollecting());
                         if (collector is IDisposable disposable)
@@ -502,8 +1050,13 @@ namespace HomebrewDot.Net.RimWorld
                         }
                         _collectors.Remove(name);
                     }
-                    _collectionDefinitions.Remove(name);
+                    if (_collectionDefinitions.TryGetValue(name, out collection))
+                    {
+                        _collectionDefinitions.Remove(name);
+                    }
                 }
+
+                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, false));
             }
 
             /// <summary>
@@ -511,7 +1064,8 @@ namespace HomebrewDot.Net.RimWorld
             /// </summary>
             /// <param name="name">The name of the collection.</param>
             /// <param name="buildAction">A function that takes a collection builder and returns the built collection.</param>
-            public static void Build(string name, Func<ICollectionBuilder, ICollectionBuilder> buildAction)
+            /// <param name="startCollecting"></param>
+            public static void Build(string name, Func<ICollectionBuilder, ICollectionBuilder> buildAction, bool startCollecting = true)
             {
                 name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                 buildAction = Helpers.Guard.NotNull(buildAction, nameof(buildAction));
@@ -519,12 +1073,30 @@ namespace HomebrewDot.Net.RimWorld
                 var builder = new CollectionBuilder();
                 _ = buildAction(builder);
                 var collection = Guard.NotNull(builder.Collection, nameof(builder.Collection));
-                if(builder.TryBuildCollector(collection, out var collector))
+                if (builder.TryBuildCollector(collection, out var collector))
                 {
-                    Set(name, collector);
+                    Set(name, collector, startCollecting);
                     return;
                 }
                 Set(name, collection);
+            }
+            /// <summary>
+            /// Creates (but doesn't add) a new collection (and optionally a collector) using the specified build action. This can be useful if you want to build a collection and collector but need to perform additional configuration or setup before adding it to the toolkit. The returned collection and collector will not be registered in the toolkit, so you will need to call the appropriate methods to add them if you want to use them within the toolkit's collection management system.
+            /// </summary>
+            /// <param name="buildAction">A function that takes a collection builder and returns the built collection.</param>
+            /// <returns>A tuple containing the collection definition and the collector (if any).</returns>
+            public static (ICollectionDef Collection, ICollector Collector) BuildOnly(Func<ICollectionBuilder, ICollectionBuilder> buildAction)
+            {
+                buildAction = Helpers.Guard.NotNull(buildAction, nameof(buildAction));
+
+                var builder = new CollectionBuilder();
+                _ = buildAction(builder);
+                var collection = Guard.NotNull(builder.Collection, nameof(builder.Collection));
+                if (builder.TryBuildCollector(collection, out var collector))
+                {
+                    return (collection, collector);
+                }
+                return (collection, null);
             }
             /// <summary>
             /// Retrieves the collection definition associated with the specified name. If no collection definition exists with the given name, this method returns null.
@@ -558,8 +1130,9 @@ namespace HomebrewDot.Net.RimWorld
         {
             // Fields
             private static readonly object _lock = new object();
-            private static readonly Dictionary<Type, List<object>> _services = new Dictionary<Type, List<object>>();
-            private static readonly Dictionary<Type, Dictionary<string, object>> _namedServices = new Dictionary<Type, Dictionary<string, object>>();
+            private static readonly Dictionary<Type, object> _services = new Dictionary<Type, object>();
+            private static readonly Dictionary<Type, object> _serviceCache = new Dictionary<Type, object>();
+            private static readonly Dictionary<Type, object> _namedServices = new Dictionary<Type, object>();
 
             /// <summary>
             /// Registers a service instance that can be used by other tools.
@@ -574,18 +1147,25 @@ namespace HomebrewDot.Net.RimWorld
                 {
                     if (!_services.TryGetValue(typeof(T), out var serviceList))
                     {
-                        serviceList = new List<object>();
+                        serviceList = new List<T>();
                         _services[typeof(T)] = serviceList;
                     }
-                    serviceList.Add(service);
+                    var typedServiceList = (List<T>)serviceList;
+                    typedServiceList.Add(service);
+                    if (_serviceCache.ContainsKey(typeof(T)))
+                    {
+                        _serviceCache.Remove(typeof(T));
+                    }
                     if (!string.IsNullOrWhiteSpace(name))
                     {
+                        Dictionary<string, T> typedServiceDict;
                         if (!_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                         {
-                            namedServiceDict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                            namedServiceDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
                             _namedServices[typeof(T)] = namedServiceDict;
                         }
-                        namedServiceDict[name] = service;
+                        typedServiceDict = (Dictionary<string, T>)namedServiceDict;
+                        typedServiceDict[name] = service;
                     }
                 }
             }
@@ -599,15 +1179,16 @@ namespace HomebrewDot.Net.RimWorld
             {
                 lock (_lock)
                 {
-                    bool wasRemoved = _services.TryGetValue(typeof(T), out var serviceSet) && serviceSet.Remove(service);
+                    bool wasRemoved = _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
                     if (wasRemoved)
                     {
-                        if(_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
+                        if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                         {
-                            var namesToRemove = namedServiceDict.Where(kvp => kvp.Value.Equals(service)).Select(kvp => kvp.Key).ToList();
+                            var typedServiceDict = (Dictionary<string, T>)namedServiceDict;
+                            var namesToRemove = typedServiceDict.Where(kvp => kvp.Value.Equals(service)).Select(kvp => kvp.Key).ToList();
                             foreach (var name in namesToRemove)
                             {
-                                namedServiceDict.Remove(name);
+                                typedServiceDict.Remove(name);
                             }
                         }
                     }
@@ -624,10 +1205,10 @@ namespace HomebrewDot.Net.RimWorld
             {
                 lock (_lock)
                 {
-                    if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && namedServiceDict.TryGetValue(name, out var service))
+                    if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && ((Dictionary<string, T>)namedServiceDict).TryGetValue(name, out var service))
                     {
-                        namedServiceDict.Remove(name);
-                        return _services.TryGetValue(typeof(T), out var serviceSet) && serviceSet.Remove(service);
+                        ((Dictionary<string, T>)namedServiceDict).Remove(name);
+                        return _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
                     }
                     return false;
                 }
@@ -640,16 +1221,41 @@ namespace HomebrewDot.Net.RimWorld
             /// <returns>An enumerable collection of services of the specified type.</returns>
             public static IEnumerable<T> GetAll<T>(bool includeNamed = false)
             {
+                if (!includeNamed)
+                {
+                    if (_serviceCache.TryGetValue(typeof(T), out var cachedServices))
+                    {
+                        return (IEnumerable<T>)cachedServices;
+                    }
+                    else
+                    {
+                        lock (_lock)
+                        {
+                            if (!_serviceCache.TryGetValue(typeof(T), out cachedServices))
+                            {
+                                var services = _services.TryGetValue(typeof(T), out var serviceList)
+                                    ? ((IEnumerable<T>)serviceList).ToArray()
+                                    : Array.Empty<T>();
+                                _serviceCache[typeof(T)] = services;
+                                return services;
+                            }
+                            else
+                            {
+                                return (IEnumerable<T>)cachedServices;
+                            }
+                        }
+                    }
+                }
                 lock (_lock)
                 {
                     var services = _services.TryGetValue(typeof(T), out var serviceList)
-                        ? serviceList.OfType<T>().ToList()
+                        ? ((IEnumerable<T>)serviceList).ToList()
                         : new List<T>();
                     if (includeNamed)
                     {
-                        if(_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
+                        if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                         {
-                            services.AddRange(namedServiceDict.Values.OfType<T>());
+                            services.AddRange(((Dictionary<string, T>)namedServiceDict).Values);
                         }
                     }
                     return services;
@@ -667,33 +1273,36 @@ namespace HomebrewDot.Net.RimWorld
                 {
                     if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                     {
-                        return namedServiceDict.Where(kvp => kvp.Value is T).ToDictionary(kvp => kvp.Key, kvp => (T)kvp.Value, StringComparer.OrdinalIgnoreCase);
+                        return (Dictionary<string, T>)namedServiceDict;
                     }
-                    return NullDictionary<string, T>.Instance;
                 }
+                return NullDictionary<string, T>.Instance;
             }
 
             /// <summary>
-            /// Retrieves the first registered service of the specified type. If no service of the given type is registered, this method returns null.
+            /// Retrieves the last registered service of the specified type. If no service of the given type is registered, this method returns null.
             /// </summary>
             /// <typeparam name="T">The type of the service to retrieve.</typeparam>
             /// <param name="name">The optional name of the service to retrieve. If provided, the method will first attempt to find a service with the specified name and type before falling back to searching for any service of the given type.</param>
-            /// <returns>The first registered service of the specified type, or null if none is found.</returns>
+            /// <returns>The last registered service of the specified type, or null if none is found.</returns>
             public static T Get<T>(string name = null)
             {
-                lock (_lock)
+                if(name != null)
                 {
-                    if(name != null)
+                    var allNamed = GetAllNamed<T>();
+                    if (allNamed.TryGetValue(name, out var namedService))
                     {
-                        if(_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && namedServiceDict.TryGetValue(name, out var service) && service is T typedService)
-                        {
-                            return typedService;
-                        }
+                        return namedService;
                     }
-                    return _services.TryGetValue(typeof(T), out var serviceList)
-                        ? serviceList.OfType<T>().LastOrDefault()
-                        : default(T);
                 }
+
+                var all = GetAll<T>(false);
+                if (all != null)
+                {
+                    return all.LastOrDefault();
+                }
+
+                return default;
             }
             /// <summary>
             /// Retrieves the first registered service of the specified type. If no service of the given type is registered, this method throws an InvalidOperationException.
@@ -703,24 +1312,31 @@ namespace HomebrewDot.Net.RimWorld
             /// <exception cref="InvalidOperationException">Thrown if no service of the specified type is registered.</exception>
             public static T GetRequired<T>(string name = null)
             {
+                var service = Get<T>(name);
+                if (service == null)
+                {
+                    throw new InvalidOperationException($"No service of type {typeof(T)}{(name != null ? $" with name '{name}'" : "")} is registered.");
+                }
+                return service;
+            }
+
+            private static bool RemoveService<T>(List<T> serviceSet, T service)
+            {
                 lock (_lock)
                 {
-                    if(name != null)
+                    if (serviceSet.Remove(service))
                     {
-                        if(_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && namedServiceDict.TryGetValue(name, out var service) && service is T typedService)
+                        _serviceCache.Remove(typeof(T));
+                        if (service is IDisposable disposable)
                         {
-                            return typedService;
+                            Helpers.Invoking.Safe(() =>
+                            {
+                                disposable.Dispose();
+                            });
                         }
-                        throw new InvalidOperationException($"No service of type {typeof(T)} with name '{name}' is registered.");
+                        return true;
                     }
-                    var foundService = _services.TryGetValue(typeof(T), out var serviceList)
-                        ? serviceList.OfType<T>().LastOrDefault()
-                        : default(T);
-                    if (foundService == null)
-                    {
-                        throw new InvalidOperationException($"No service of type {typeof(T)} is registered.");
-                    }
-                    return foundService;
+                    return false;
                 }
             }
         }
@@ -941,6 +1557,428 @@ namespace HomebrewDot.Net.RimWorld
                     var targetConstructors = targetGenericType.GetConstructors();
                     return targetConstructors[constructorIndex];
                 }
+                /// <summary>
+                /// Extracts the property from <paramref name="expression"/> and returns the corresponding property for the specified generic type. The expression must be a property access for a generic type, otherwise an exception will be thrown. The generic type in the declaring type will be replaced with the provided target generic type when searching for the corresponding property.
+                /// </summary>
+                /// <typeparam name="T">The type containing the property.</typeparam>
+                /// <typeparam name="TProperty">The type of the property.</typeparam>
+                /// <param name="expression">The expression representing the property access.</param>
+                /// <returns>The <see cref="PropertyInfo"/> of the corresponding property for the specified generic type.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static PropertyInfo GetProperty<T, TProperty>(Expression<Func<T, TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    if (expression.Body is MemberExpression memberExpression && memberExpression.Member is PropertyInfo propertyInfo)
+                    {
+                        return propertyInfo;
+                    }
+                    throw new ArgumentException("Expression must be a property access.", nameof(expression));
+                }
+                /// <summary>
+                /// Extracts the property from <paramref name="expression"/>. The expression must be a property access, otherwise an exception will be thrown.
+                /// </summary>
+                /// <typeparam name="TProperty">The type of the property.</typeparam>
+                /// <param name="expression">The expression representing the property access.</param>
+                /// <returns>The <see cref="PropertyInfo"/> of the corresponding property.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static PropertyInfo GetProperty<TProperty>(Expression<Func<TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    if (expression.Body is MemberExpression memberExpression && memberExpression.Member is PropertyInfo propertyInfo)
+                    {
+                        return propertyInfo;
+                    }
+                    throw new ArgumentException("Expression must be a property access.", nameof(expression));
+                }
+                /// <summary>
+                /// Extracts the nested properties from <paramref name="expression"/>. The expression must be a nested property access (e.g. x => x.Property1.Property2), otherwise an exception will be thrown. The returned array will contain the properties in the order they are accessed (e.g. [Property1, Property2]). This can be useful for scenarios where you need to access or manipulate nested properties dynamically, such as in data binding or serialization scenarios.
+                /// </summary>
+                /// <typeparam name="TProperty">The type of the final property being accessed.</typeparam>
+                /// <param name="expression">The expression representing the nested property access.</param>
+                /// <returns>An array of <see cref="PropertyInfo"/> objects representing the nested properties.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static PropertyInfo[] GetNestedProperties<TProperty>(Expression<Func<TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    var properties = new List<PropertyInfo>();
+                    System.Linq.Expressions.Expression currentExpression = expression.Body;
+                    while (currentExpression is MemberExpression memberExpression)
+                    {
+                        if (memberExpression.Member is PropertyInfo propertyInfo)
+                        {
+                            properties.Add(propertyInfo);
+                            currentExpression = memberExpression.Expression;
+                        }
+                        else
+                        {
+                            throw new ArgumentException("Expression must be a nested property access.", nameof(expression));
+                        }
+                    }
+                    properties.Reverse();
+                    return properties.ToArray();
+                }
+                /// <summary>
+                /// Extracts the nested properties from <paramref name="expression"/>. The expression must be a nested property access (e.g. x => x.Property1.Property2), otherwise an exception will be thrown. The returned array will contain the properties in the order they are accessed (e.g. [Property1, Property2]). This can be useful for scenarios where you need to access or manipulate nested properties dynamically, such as in data binding or serialization scenarios.
+                /// </summary>
+                /// <typeparam name="T">The type of the object containing the nested properties.</typeparam>
+                /// <typeparam name="TProperty">The type of the final property being accessed.</typeparam>
+                /// <param name="expression">The expression representing the nested property access.</param>
+                /// <returns>An array of <see cref="PropertyInfo"/> objects representing the nested properties.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static PropertyInfo[] GetNestedProperties<T, TProperty>(Expression<Func<T, TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    var properties = new List<PropertyInfo>();
+                    System.Linq.Expressions.Expression currentExpression = expression.Body;
+                    while (currentExpression is MemberExpression memberExpression)
+                    {
+                        if (memberExpression.Member is PropertyInfo propertyInfo)
+                        {
+                            properties.Add(propertyInfo);
+                            currentExpression = memberExpression.Expression;
+                        }
+                        else
+                        {
+                            throw new ArgumentException("Expression must be a nested property access.", nameof(expression));
+                        }
+                    }
+                    properties.Reverse();
+                    return properties.ToArray();
+                }
+                /// <summary>
+                /// Extracts the member (property, field, or method) from <paramref name="expression"/>. The expression must be a member access or method call, otherwise an exception will be thrown. This method can be used to retrieve the <see cref="MemberInfo"/> of a member accessed in a lambda expression, which can be useful for scenarios such as data binding, serialization, or dynamic code generation where you need to work with members of a type in a more dynamic way.
+                /// </summary>
+                /// <typeparam name="T">The type containing the member.</typeparam>
+                /// <typeparam name="TMember">The type of the member.</typeparam>
+                /// <param name="expression">The expression representing the member access or method call.</param>
+                /// <returns>The <see cref="MemberInfo"/> of the accessed member.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static MemberInfo GetMember<T, TMember>(Expression<Func<T, TMember>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+
+                    if (expression.Body is MemberExpression memberExpression)
+                    {
+                        return memberExpression.Member;
+                    }
+                    else if (expression.Body is MethodCallExpression methodCallExpression)
+                    {
+                        return methodCallExpression.Method;
+                    }
+                    else if (expression.Body is UnaryExpression unaryExpression)
+                    {
+                        if (unaryExpression.Operand is MemberExpression innerMemberExpression)
+                        {
+                            return innerMemberExpression.Member;
+                        }
+                        else if (unaryExpression.Operand is MethodCallExpression innerMethodCallExpression)
+                        {
+                            return innerMethodCallExpression.Method;
+                        }
+                    }
+                    throw new ArgumentException("Expression must be a member call.", nameof(expression));
+                }
+                /// <summary>
+                /// Extracts the member (property, field, or method) from <paramref name="expression"/>. The expression must be a member access or method call, otherwise an exception will be thrown. This method can be used to retrieve the <see cref="MemberInfo"/> of a member accessed in a lambda expression, which can be useful for scenarios such as data binding, serialization, or dynamic code generation where you need to work with members of a type in a more dynamic way.
+                /// </summary>
+                /// <typeparam name="TMember">The type of the member.</typeparam>
+                /// <param name="expression">The expression representing the member access or method call.</param>
+                /// <returns>The <see cref="MemberInfo"/> of the accessed member.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                /// <exception cref="ArgumentException"></exception>
+                public static MemberInfo GetMember<TMember>(Expression<Func<TMember>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+
+                    if (expression.Body is MemberExpression memberExpression)
+                    {
+                        return memberExpression.Member;
+                    }
+                    else if (expression.Body is MethodCallExpression methodCallExpression)
+                    {
+                        return methodCallExpression.Method;
+                    }
+                    else if (expression.Body is UnaryExpression unaryExpression)
+                    {
+                        if (unaryExpression.Operand is MemberExpression innerMemberExpression)
+                        {
+                            return innerMemberExpression.Member;
+                        }
+                        else if (unaryExpression.Operand is MethodCallExpression innerMethodCallExpression)
+                        {
+                            return innerMethodCallExpression.Method;
+                        }
+                    }
+                    throw new ArgumentException("Expression must be a member call.", nameof(expression));
+                }
+                /// <summary>
+                /// Extracts the nested members (properties, fields, or methods) from <paramref name="expression"/>. The expression must be a nested member access or method call (e.g. x => x.Member1.Member2()), otherwise an exception will be thrown. The returned array will contain the members in the order they are accessed (e.g. [Member1, Member2]). This can be useful for scenarios where you need to access or manipulate nested members dynamically, such as in data binding, serialization, or dynamic code generation scenarios.
+                /// </summary>
+                /// <typeparam name="T">The type of the parameter in the expression.</typeparam>
+                /// <typeparam name="TProperty">The type of the property or method return value.</typeparam>
+                /// <param name="expression">The expression representing the nested member access or method call.</param>
+                /// <returns>An array of <see cref="MemberInfo"/> representing the nested members in the order they are accessed.</returns>
+                /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
+                public static MemberInfo[] GetNestedMembers<T, TProperty>(Expression<Func<T, TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    var members = new List<MemberInfo>();
+                    System.Linq.Expressions.Expression currentExpression = expression.Body;
+                    while (currentExpression != null)
+                    {
+                        if (currentExpression is MemberExpression memberExpression)
+                        {
+                            members.Add(memberExpression.Member);
+                            currentExpression = memberExpression.Expression;
+                        }
+                        else if (currentExpression is MethodCallExpression methodCallExpression)
+                        {
+                            members.Add(methodCallExpression.Method);
+                            currentExpression = methodCallExpression.Object;
+                        }
+                        else if (currentExpression is UnaryExpression unaryExpression)
+                        {
+                            currentExpression = unaryExpression.Operand;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    members.Reverse();
+                    return members.ToArray();
+                }
+                /// <summary>
+                /// Extracts the nested members (properties, fields, or methods) from <paramref name="expression"/>. The expression must be a nested member access or method call (e.g. x => x.Member1.Member2()), otherwise an exception will be thrown. The returned array will contain the members in the order they are accessed (e.g. [Member1, Member2]). This can be useful for scenarios where you need to access or manipulate nested members dynamically, such as in data binding, serialization, or dynamic code generation scenarios.
+                /// </summary>
+                /// <typeparam name="TProperty">The type of the property or method return value.</typeparam>
+                /// <param name="expression">The expression representing the nested member access or method call.</param>
+                /// <returns>An array of <see cref="MemberInfo"/> representing the nested members in the order they are accessed.</returns>
+                /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
+                public static MemberInfo[] GetNestedMembers<TProperty>(Expression<Func<TProperty>> expression)
+                {
+                    if (expression == null) throw new ArgumentNullException(nameof(expression));
+                    var members = new List<MemberInfo>();
+
+                    System.Linq.Expressions.Expression currentExpression = expression.Body;
+                    while (currentExpression != null)
+                    {
+                        if (currentExpression is MemberExpression memberExpression)
+                        {
+                            members.Add(memberExpression.Member);
+                            currentExpression = memberExpression.Expression;
+                        }
+                        else if (currentExpression is MethodCallExpression methodCallExpression)
+                        {
+                            members.Add(methodCallExpression.Method);
+                            currentExpression = methodCallExpression.Object;
+                        }
+                        else if (currentExpression is UnaryExpression unaryExpression)
+                        {
+                            currentExpression = unaryExpression.Operand;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    members.Reverse();
+                    return members.ToArray();
+                }
+            }
+
+            /// <summary>
+            /// Helper class for traversing object hierarchies, such as finding fields or properties of a certain type in an object and its nested objects. The generic version allows for specifying the type to search for, while the non-generic version can be used for more general traversal without a specific target type.
+            /// </summary>
+            /// <typeparam name="T">The type to search for.</typeparam>
+            public static class Traversing<T>
+            {
+                private static ConcurrentDictionary<string, Func<T, object>> _getters = new ConcurrentDictionary<string, Func<T, object>>();
+
+                /// <summary>
+                /// Tries to get a compiled getter function for the specified property name. The method first checks if a getter for the property name already exists in the cache. If it does, it returns it. If not, it attempts to find a property or field with the given name in the type T using reflection. If found, it creates a lambda expression to access that member, compiles it into a delegate, caches it for future use, and returns it. If no matching property or field is found, it caches a null value for that property name and returns false.
+                /// </summary>
+                /// <param name="propertyName">The name of the property or field to get the getter for.</param>
+                /// <param name="getter">The compiled getter function if found; otherwise, null.</param>
+                /// <returns>True if a getter was found or created; otherwise, false.</returns>
+                public static bool TryGetPropertyGetter(string propertyName, out Func<T, object> getter)
+                {
+                    if (!_getters.TryGetValue(propertyName, out getter))
+                    {
+                        var parameter = System.Linq.Expressions.Expression.Parameter(typeof(T), "x");
+                        System.Linq.Expressions.Expression getMember = null;
+                        if (ToolkitConstants.ObjectCache<T>.IndexedProperties.TryGetValue(propertyName, out var propertyInfo))
+                        {
+                            getMember = System.Linq.Expressions.Expression.Property(parameter, propertyInfo);
+                        }
+                        else if (ToolkitConstants.ObjectCache<T>.IndexedFields.TryGetValue(propertyName, out var fieldInfo))
+                        {
+                            getMember = System.Linq.Expressions.Expression.Field(parameter, fieldInfo);
+                        }
+
+                        if (getMember == null)
+                        {
+                            _getters[propertyName] = null;
+                            getter = null;
+                            return false;
+                        }
+
+                        var lambda = System.Linq.Expressions.Expression.Lambda<Func<T, object>>(System.Linq.Expressions.Expression.Convert(getMember, typeof(object)), parameter);
+                        getter = lambda.Compile();
+                        _getters[propertyName] = getter;
+                    }
+
+                    return getter != null;
+                }
+            }
+
+            /// <summary>
+            /// Helper class for traversing object hierarchies, such as finding fields or properties of a certain type in an object and its nested objects.
+            /// </summary>
+            public static class Traversing
+            {
+                private static ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object>>> _typeGetters = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object>>>();
+                private static readonly BindingFlags PublicStatic = BindingFlags.Public | BindingFlags.Static;
+
+                /// <summary>
+                /// Traverses the object hierarchy of the provided object to find a property or field with the specified name and returns its value. The method first checks if a getter for the property name already exists in the cache for the object's type. If it does, it uses it to get the value. If not, it attempts to find a property or field with the given name in the object's type using reflection. If found, it creates a lambda expression to access that member, compiles it into a delegate, caches it for future use, and uses it to get the value. If no matching property or field is found, it caches a null value for that property name and returns null.
+                /// </summary>
+                /// <param name="obj">The object whose hierarchy is to be traversed.</param>
+                /// <param name="propertyName">The name of the property or field to find.</param>
+                /// <returns>The value of the property or field if found; otherwise, null.</returns>
+                public static object Traverse(object obj, string propertyName)
+                {
+                    if (obj == null) return null;
+                    if (string.IsNullOrWhiteSpace(propertyName)) return null;
+
+                    var objType = obj.GetType();
+                    var gettersForType = _typeGetters.GetOrAdd(objType, _ => new ConcurrentDictionary<string, Func<object, object>>());
+                    var memberName = propertyName.Trim();
+                    if (!gettersForType.TryGetValue(memberName, out var getter))
+                    {
+                        var typedTraversingType = typeof(Traversing<>).MakeGenericType(objType);
+                        var tryGetPropertyGetterMethod = typedTraversingType.GetMethod(nameof(Traversing<object>.TryGetPropertyGetter), PublicStatic);
+                        if (tryGetPropertyGetterMethod == null)
+                        {
+                            gettersForType[memberName] = null;
+                            return null;
+                        }
+
+                        var parameters = new object[] { memberName, null };
+                        if ((bool)tryGetPropertyGetterMethod.Invoke(null, parameters) && parameters[1] is Delegate typedGetter)
+                        {
+                            // Build an object-based wrapper by first casting to Func<T, object> and then invoking it.
+                            var typedGetterDelegateType = typeof(Func<,>).MakeGenericType(objType, typeof(object));
+                            var objectParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "x");
+                            var castedObject = System.Linq.Expressions.Expression.Convert(objectParameter, objType);
+                            var castedTypedGetter = System.Linq.Expressions.Expression.Convert(
+                                System.Linq.Expressions.Expression.Constant(typedGetter),
+                                typedGetterDelegateType);
+                            var invocation = System.Linq.Expressions.Expression.Invoke(castedTypedGetter, castedObject);
+                            var lambda = System.Linq.Expressions.Expression.Lambda<Func<object, object>>(invocation, objectParameter);
+                            getter = lambda.Compile();
+                        }
+                        else
+                        {
+                            getter = null;
+                        }
+
+                        gettersForType[memberName] = getter;
+                    }
+                    if (getter == null)
+                    {
+                        return null;
+                    }
+                    return getter(obj);
+                }
+
+                /// <summary>
+                /// Traverses the object hierarchy of the provided object to find a property or field with the specified name at each level of the provided property path and returns its value. The method iteratively calls the Traverse method for each property name in the path, starting from the initial object and using the result of each traversal as the input for the next. If at any point a property or field is not found or if any intermediate value is null, the method returns null.
+                /// </summary>
+                /// <param name="obj">The object whose hierarchy is to be traversed.</param>
+                /// <param name="propertyPath">An array of property or field names representing the path to traverse.</param>
+                /// <returns>The value of the property or field at the end of the path if found; otherwise, null.</returns>
+                public static object TraversePath(object obj, params string[] propertyPath)
+                {
+                    if (propertyPath == null || propertyPath.Length == 0)
+                    {
+                        return obj;
+                    }
+
+                    object currentObj = obj;
+                    foreach (var propertyName in propertyPath)
+                    {
+                        if (string.IsNullOrWhiteSpace(propertyName))
+                        {
+                            continue;
+                        }
+
+                        if (currentObj == null) return null;
+                        currentObj = Traverse(currentObj, propertyName);
+                    }
+                    return currentObj;
+                }
+
+                /// <summary>
+                /// Traverses the provided <paramref name="obj"/> using a single delimited path.
+                /// </summary>
+                /// <param name="obj">The root object to traverse.</param>
+                /// <param name="propertyPath">The path to traverse, using '.' as delimiter.</param>
+                /// <returns>The value at the end of the path, or null when not found.</returns>
+                public static object TraversePath(object obj, string propertyPath)
+                {
+                    return TraversePath(obj, SplitPath(propertyPath));
+                }
+
+                /// <summary>
+                /// Attempts to traverse <paramref name="obj"/> using a single delimited path.
+                /// </summary>
+                /// <param name="obj">The root object to traverse.</param>
+                /// <param name="propertyPath">The path to traverse, using '.' as delimiter.</param>
+                /// <param name="value">The resolved value if successful; otherwise null.</param>
+                /// <returns>True if a non-null value was resolved; otherwise false.</returns>
+                public static bool TryTraversePath(object obj, string propertyPath, out object value)
+                {
+                    value = TraversePath(obj, propertyPath);
+                    return value != null;
+                }
+
+                /// <summary>
+                /// Attempts to traverse <paramref name="obj"/> using path segments.
+                /// </summary>
+                /// <param name="obj">The root object to traverse.</param>
+                /// <param name="propertyPath">Path segments that represent the traversal path.</param>
+                /// <param name="value">The resolved value if successful; otherwise null.</param>
+                /// <returns>True if a non-null value was resolved; otherwise false.</returns>
+                public static bool TryTraversePath(object obj, IEnumerable<string> propertyPath, out object value)
+                {
+                    value = TraversePath(obj, propertyPath?.ToArray());
+                    return value != null;
+                }
+
+                /// <summary>
+                /// Splits a dot-delimited property path into its segments.
+                /// </summary>
+                /// <param name="propertyPath">The path to split.</param>
+                /// <returns>The normalized path segments.</returns>
+                public static string[] SplitPath(string propertyPath)
+                {
+                    if (string.IsNullOrWhiteSpace(propertyPath))
+                    {
+                        return Array.Empty<string>();
+                    }
+
+                    return propertyPath
+                        .Split(new[] { '.' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(x => x.Trim())
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToArray();
+                }
             }
 
             /// <summary>
@@ -965,6 +2003,18 @@ namespace HomebrewDot.Net.RimWorld
                 /// </summary>
                 public static void LogError(string message)
                     => Write(() => Verse.Log.Error(message), "ERROR", message);
+
+                /// <summary>
+                /// Logs a verbose message with fallback to console output.
+                /// </summary>
+                public static void LogVerbose(string message)
+                    => Write(() =>
+                    {
+                        if (Toolkit.Settings.Verbose)
+                        {
+                            Verse.Log.Message(message);
+                        }
+                    }, "DBG", message);
 
                 private static void Write(Action verseLogger, string level, string message)
                 {
@@ -1021,6 +2071,11 @@ namespace HomebrewDot.Net.RimWorld
         /// Can cause issues since snapshots can be really outdated by the time they're used. So can cause users of the snapshot to make decisions based on outdated information which can lead to bad/unintended outcomes.
         /// </summary>
         public bool SlowGatheringEnabled = false;
+        /// <summary>
+        /// Enables verbose logging for the toolkit, which can help with debugging and understanding the internal workings of the toolkit. 
+        /// This will log detailed information about the gathering process, including what is being gathered and when, as well as any potential issues or errors that occur during gathering. Use this option if you want to get insights into how the toolkit is operating or if you're trying to troubleshoot any problems with data gathering. Keep in mind that enabling verbose logging may result in a large amount of log output, so it's generally recommended to use this option only when needed for debugging purposes.
+        /// </summary>
+        public bool Verbose = false;
 
         /// <inheritdoc cref="ToolkitSettings"/>
         public ToolkitSettings()
@@ -1045,8 +2100,12 @@ namespace HomebrewDot.Net.RimWorld
 
             Scribe_Values.Look(ref DynamicGatheringEnabled, nameof(DynamicGatheringEnabled), defaultValue: false);
             Scribe_Values.Look(ref SlowGatheringEnabled, nameof(SlowGatheringEnabled), defaultValue: false);
+            Scribe_Values.Look(ref Verbose, nameof(Verbose), defaultValue: false);
 
-            Toolkit.Hooks.Manager.Trigger(new Changed(this));
+            if (Scribe.mode == LoadSaveMode.Saving)
+            {
+                Toolkit.Hooks.Manager.Trigger(new Changed(this));
+            }
         }
 
         /// <summary>

@@ -2,13 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests
+namespace HomebrewDot.Net.Rimworld.Tests
 {
     public class ToolkitCollectingTests
     {
@@ -65,7 +65,7 @@ namespace HomebrewDot.Net.RimWorld.Tests
         public void Remove_WithCollector_StopsAndDisposesCollectorAndRemovesEntries()
         {
             var collector = new TrackingCollector(new CollectionDef());
-            Toolkit.Collecting.Set("delta", collector);
+            Toolkit.Collecting.Set("delta", collector, false);
 
             Toolkit.Collecting.Remove("delta");
 
@@ -104,8 +104,8 @@ namespace HomebrewDot.Net.RimWorld.Tests
         {
             var collectorA = new TrackingCollector(new CollectionDef());
             var collectorB = new TrackingCollector(new CollectionDef());
-            Toolkit.Collecting.Set("A", collectorA);
-            Toolkit.Collecting.Set("B", collectorB);
+            Toolkit.Collecting.Set("A", collectorA, false);
+            Toolkit.Collecting.Set("B", collectorB, false);
 
             var comparator = new TrackingComparator();
             Toolkit.Collecting.Comparator = comparator;
@@ -243,6 +243,10 @@ namespace HomebrewDot.Net.RimWorld.Tests
         {
             private readonly List<T> _typedItems = new List<T>();
 
+            public event Action<T> OnCollected;
+            public event Action<T> OnRemoved;
+            public event Action<IReadOnlyCollection<T>> OnClear;
+
             public TrackingCollector(ICollectionDef definition) : base(definition)
             {
             }
@@ -263,6 +267,11 @@ namespace HomebrewDot.Net.RimWorld.Tests
             public bool Contains(T obj) => obj != null && _typedItems.Contains(obj);
 
             public bool CanCollect(T obj, IReadOnlyDictionary<string, object> context) => obj != null;
+
+            public bool Remove(T obj)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 }

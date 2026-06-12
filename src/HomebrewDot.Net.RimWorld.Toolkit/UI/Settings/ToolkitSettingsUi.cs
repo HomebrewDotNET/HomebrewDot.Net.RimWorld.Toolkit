@@ -3,7 +3,7 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.UI.Settings
+namespace HomebrewDot.Net.Rimworld.UI.Settings
 {
     /// <summary>
     /// Renders the Toolkit mod settings window and coordinates tab selection.

@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld;
+using HarmonyLib;
+using HomebrewDot.Net.Rimworld;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
+namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 {
     /// <summary>
     /// Triggers that fires events during the lifecycle of the game, such as when a game is loaded.
@@ -16,6 +17,18 @@ namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
     {
         // Statics
         private static bool _hasTriggered = false;
+
+        // Fields
+        private readonly Game _game;
+
+        /// <summary>
+        /// Creates the game trigger component for the current game instance.
+        /// </summary>
+        /// <param name="game">The game instance that owns this component.</param>
+        public GameTriggers(Game game)
+        {
+            _game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
+        }
 
         /// <summary>
         /// Static constructor to register the trigger with the game's event system.
@@ -30,6 +43,17 @@ namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
                     Toolkit.Hooks.Manager.Trigger(new OnGameLoadedTrigger(Current.Game));
                 }
             });
+
+            var harmony = Toolkit.Harmony;
+            var postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoSingleTick_Postfix));
+            harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(postfix));
+            var prefix = AccessTools.Method(typeof(Patches), nameof(Patches.LoadGame_Prefix));
+            harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.LoadGame)), prefix: new HarmonyMethod(prefix));
+        }
+
+        public override void FinalizeInit()
+        {
+            base.FinalizeInit();
         }
 
 
@@ -46,18 +70,9 @@ namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
             Toolkit.Hooks.Manager.Trigger(new OnSaveLoadedTrigger(Current.Game, true));
         }
 
-        /// <inheritdoc/>
-        public override void GameComponentTick()
-        {
-            base.GameComponentTick();
-            if(Current.Game != null)
-            {
-                Toolkit.Hooks.Manager.LazyTrigger(() => new OnGameTickTrigger(Current.Game, TickerType.Normal));
-                var tickManager = Current.Game.tickManager;
-            }
-        }
-
-
+        /// <summary>
+        /// Contains Harmony patches related to game lifecycle events, such as ticking, to trigger corresponding events in the toolkit after the original game methods are executed.
+        /// </summary>
         public static class Patches
         {
             /// <summary>
@@ -79,8 +94,18 @@ namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
                     }
                 }
             }
+
+            /// <summary>
+            /// Harmony prefix patch for the Game's LoadGame method to trigger a game loading event before the game starts loading, allowing subscribers to perform actions or preparations before the game data is loaded.
+            /// </summary>
+            /// <param name="__instance"></param>
+            public static void LoadGame_Prefix(Game __instance)
+            {
+                Toolkit.Hooks.Manager.Trigger(new OnSaveLoadingTrigger(__instance));
+            }
         }
     }
+
     /// <summary>
     /// Fired when the game is loaded for the first time. 
     /// </summary>
@@ -93,6 +118,24 @@ namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
         public Game Game { get; }
 
         internal OnGameLoadedTrigger(Game game)
+        {
+            Game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
+        }
+    }
+
+
+    /// <summary>
+    /// Fired when the game is loading for the first time. 
+    /// </summary>
+    public class OnSaveLoadingTrigger
+    {
+        // Properties
+        /// <summary>
+        /// The current game instance that is loading, providing access to game data.
+        /// </summary>
+        public Game Game { get; }
+
+        internal OnSaveLoadingTrigger(Game game)
         {
             Game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
         }

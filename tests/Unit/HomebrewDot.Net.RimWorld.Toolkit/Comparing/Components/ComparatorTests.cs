@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Comparing.Components;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
-using HomebrewDot.Net.RimWorld.Referencing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
-using HomebrewDot.Net.RimWorld.Referencing.Models;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Referencing.Models;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 {
     public class ComparatorTests
     {
@@ -18,7 +18,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
         {
             var sut = new Comparator(null, null, null, null);
 
-            Assert.Throws<InvalidOperationException>(() => sut.Compare(new ConditionDef(), null));
+            Assert.Throws<InvalidOperationException>(() => sut.Compare(null, new ConditionDef(), null));
         }
 
         [Fact]
@@ -34,7 +34,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 compareStringToReference: null,
                 toStringToReference: null);
 
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = 5,
                 With = "eq",
@@ -66,7 +66,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 },
             };
 
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = "a",
                 With = "eq",
@@ -95,7 +95,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 compareStringToReference: null,
                 toStringToReference: null);
 
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = 10,
                 With = new OperatorDef
@@ -136,7 +136,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 To = "y",
             };
 
-            var result = sut.Compare(condition, null);
+            var result = sut.Compare(null, condition, null);
 
             Assert.True(result);
         }
@@ -167,7 +167,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 },
             };
 
-            var result = sut.Compare(condition, null);
+            var result = sut.Compare(null, condition, null);
 
             Assert.True(result);
         }
@@ -198,7 +198,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 },
             };
 
-            var result = sut.Compare(condition, null);
+            var result = sut.Compare(null, condition, null);
 
             Assert.False(result);
         }
@@ -208,13 +208,13 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
         {
             var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
             var resolver = new Mock<IReferenceResolver>();
-            resolver.Setup(r => r.TryResolve(It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
-                .Returns((IReference reference, IReadOnlyDictionary<string, object> _, out object result) =>
+            resolver.Setup(r => r.TryResolve(It.IsAny<object>(), It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
+                .Returns((object input, IReference reference, IReadOnlyDictionary<string, object> _, out object result) =>
                 {
                     result = reference.Value;
                     return true;
                 });
-            var rawType = new DelegateReferenceType((raw, _) => raw);
+            var rawType = new DelegateReferenceType((input, raw, _) => raw);
             var sut = new Comparator(
                 resolver.Object,
                 new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase)
@@ -223,7 +223,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 }
             );
 
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = "abc",
                 With = "eq",
@@ -238,8 +238,8 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
         {
             var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
             var resolver = new Mock<IReferenceResolver>();
-            resolver.Setup(r => r.TryResolve(It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
-                .Returns((IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
+            resolver.Setup(r => r.TryResolve(It.IsAny<object>(), It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
+                .Returns((object input, IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
                 {
                     result = null;
                     return false;
@@ -254,7 +254,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 null,
                 null);
 
-            Assert.Throws<InvalidOperationException>(() => sut.Compare(new ConditionDef
+            Assert.Throws<InvalidOperationException>(() => sut.Compare(null, new ConditionDef
             {
                 Compare = new ReferenceDef { Type = "x", Value = "a" },
                 With = "eq",
@@ -268,7 +268,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
             var sut = new Comparator(null, null, null, null);
 
             Assert.Throws<ArgumentNullException>(() =>
-                sut.Compare((System.Collections.Generic.IReadOnlyList<IConditionDef>)null, null));
+                sut.Compare(null, (System.Collections.Generic.IReadOnlyList<IConditionDef>)null, null));
         }
 
         [Fact]
@@ -276,7 +276,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
         {
             var sut = new Comparator(null, null, null, null);
 
-            var result = sut.Compare(System.Array.Empty<ConditionDef>(), null);
+            var result = sut.Compare(null, System.Array.Empty<ConditionDef>(), null);
 
             Assert.False(result);
         }
@@ -289,7 +289,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase) { ["eq"] = equals },
                 null, null);
 
-            var result = sut.Compare(new[]
+            var result = sut.Compare(null, new[]
             {
                 new ConditionDef { Compare = 1, With = "eq", To = 1 },
             }, null);
@@ -305,7 +305,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                 new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase) { ["eq"] = equals },
                 null, null);
 
-            var result = sut.Compare(new[]
+var result = sut.Compare(null, new[]
             {
                 new ConditionDef { Compare = 1, With = "eq", To = 2 },
             }, null);
@@ -319,16 +319,16 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
             var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
 
             var constructorResolver = new Mock<IReferenceResolver>();
-            constructorResolver.Setup(r => r.TryResolve(It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
-                .Returns((IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
+            constructorResolver.Setup(r => r.TryResolve(It.IsAny<object>(), It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
+                .Returns((object input, IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
                 {
                     result = "from-constructor";
                     return true;
                 });
 
             var contextResolver = new Mock<IReferenceResolver>();
-            contextResolver.Setup(r => r.TryResolve(It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
-                .Returns((IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
+            contextResolver.Setup(r => r.TryResolve(It.IsAny<object>(), It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
+                .Returns((object input, IReference _, IReadOnlyDictionary<string, object> __, out object result) =>
                 {
                     result = "from-context";
                     return true;
@@ -345,7 +345,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
             };
 
             // Both Compare and To are references; result will be "from-context" == "from-context" -> true
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = new ReferenceDef { Type = "x", Value = "a" },
                 With = "eq",
@@ -355,6 +355,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
             Assert.True(result);
             // Constructor resolver should not have been called
             constructorResolver.Verify(r => r.TryResolve(
+                It.IsAny<object>(),
                 It.IsAny<IReference>(),
                 It.IsAny<IReadOnlyDictionary<string, object>>(),
                 out It.Ref<object>.IsAny), Times.Never);
@@ -365,8 +366,8 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
         {
             var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
             var resolver = new Mock<IReferenceResolver>();
-            resolver.Setup(r => r.TryResolve(It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
-                .Returns((IReference reference, IReadOnlyDictionary<string, object> _, out object result) =>
+            resolver.Setup(r => r.TryResolve(It.IsAny<object>(), It.IsAny<IReference>(), It.IsAny<IReadOnlyDictionary<string, object>>(), out It.Ref<object>.IsAny))
+                .Returns((object input, IReference reference, IReadOnlyDictionary<string, object> _, out object result) =>
                 {
                     result = reference.Value;
                     return true;
@@ -385,10 +386,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
                     ((cond, ctx, str) => new ReferenceDef { Type = "raw", Value = "converted:" + str }),
             };
 
-            // "hello" gets converted to ReferenceDef{Value="converted:hello"}, resolved to "converted:hello"
-            // "converted:hello" on the To side is a plain string (no converter for To), so comparison fails
-            // unless we use a condition where both sides produce the same final value
-            var result = sut.Compare(new ConditionDef
+            var result = sut.Compare(null, new ConditionDef
             {
                 Compare = "abc",
                 With = "eq",

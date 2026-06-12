@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 {
     public class DatabaseTests
     {
@@ -309,7 +309,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnInserting((database, item) => capturedItem = item.Value);
+                schema.OnInserting((database, meta, item) => capturedItem = item.Value);
             });
 
             db.Upsert("hello", null);
@@ -525,7 +525,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleting((database, indexed, meta) => capturedBefore = indexed);
+                schema.OnDeleting((database, meta, indexed) => capturedBefore = indexed);
             });
             db.Upsert("hello", null);
 
@@ -542,7 +542,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleted((database, indexed, meta) => capturedAfter = indexed);
+                schema.OnDeleted((database, meta, indexed) => capturedAfter = indexed);
             });
             db.Upsert("hello", null);
 
@@ -560,7 +560,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnInserting((database, table, item) => capturedItem = item.Value)));
+                    tb.OnInserting((database, table, meta, item) => capturedItem = item.Value)));
 
             db.Upsert("hello", null);
 
@@ -574,7 +574,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleting((database, table, indexed, meta) => capturedBefore = indexed)));
+                    tb.OnDeleting((database, table, meta, indexed) => capturedBefore = indexed)));
             db.Upsert("hello", null);
 
             db.Delete("hello", null);
@@ -590,7 +590,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleted((database, table, indexed, meta) => capturedAfter = indexed)));
+                    tb.OnDeleted((database, table, meta, indexed) => capturedAfter = indexed)));
             db.Upsert("hello", null);
 
             db.Delete("hello", null);

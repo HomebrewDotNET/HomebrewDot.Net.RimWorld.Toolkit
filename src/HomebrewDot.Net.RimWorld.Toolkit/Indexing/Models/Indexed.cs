@@ -5,10 +5,11 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
-using TLC = HomebrewDot.Net.RimWorld.ToolkitConstants;
+using HomebrewDot.Net.Rimworld.Extensions;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
+using TLC = HomebrewDot.Net.Rimworld.ToolkitConstants;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing.Models
 {
     /// <summary>
     /// Default implementation of IIndexed<T>. Uses compiled linq expressions for fast access to value properties and metadata.
@@ -66,18 +67,30 @@ namespace HomebrewDot.Net.RimWorld.Indexing
             var propertyNameExpression = Expression.Constant(propertyName, typeof(string));
             var resultVariable = Expression.Variable(typeof(TValue), "result");
             var assignDefault = Expression.Assign(resultVariable, Expression.Default(typeof(TValue)));
+            var actualValueType = typeof(TValue).GetActualType();
+            var valueTypeConstant = Expression.Constant(actualValueType, typeof(Type));
+            var valueDefault = Expression.Default(actualValueType);
 
             Expression accessorExpression = null;
             Expression changeTypeCall;
             if (TLC.ObjectCache<T>.IndexedProperties.TryGetValue(propertyName, out var propertyInfo))
             {
                 var propertyAccess = Expression.Property(instanceParameter, propertyInfo);
-                if (!typeof(TValue).IsAssignableFrom(propertyInfo.PropertyType))
+                var propertyType = propertyInfo.PropertyType;
+                if (!typeof(TValue).IsAssignableFrom(propertyInfo.PropertyType) || (propertyType.IsValueType && !actualValueType.IsValueType))
                 {
-                    var ifNotNull = Expression.NotEqual(propertyAccess, Expression.Constant(null, propertyInfo.PropertyType));
-                    changeTypeCall = Expression.Call(TLC.Reflections.ConvertChangeType, Expression.Convert(propertyAccess, typeof(object)), Expression.Constant(typeof(TValue), typeof(Type)));
-                    var IfNotNullThenConvertElseDefault = Expression.Condition(ifNotNull, changeTypeCall, Expression.Default(typeof(TValue)));
-                    accessorExpression = Expression.Assign(resultVariable, Expression.Convert(IfNotNullThenConvertElseDefault, typeof(TValue)));
+                    var changeTypeArgument = Expression.Convert(propertyAccess, typeof(object));
+                    changeTypeCall = Expression.Call(TLC.Reflections.ConvertChangeType, changeTypeArgument, valueTypeConstant);
+                    if (propertyType.IsValueType)
+                    {
+                        accessorExpression = Expression.Assign(resultVariable, Expression.Convert(changeTypeCall, actualValueType));
+                    }
+                    else
+                    {
+                        var ifNotNull = Expression.NotEqual(propertyAccess, Expression.Constant(null, propertyInfo.PropertyType));
+                        var IfNotNullThenConvertElseDefault = Expression.Condition(ifNotNull, changeTypeCall, valueDefault);
+                        accessorExpression = Expression.Assign(resultVariable, Expression.Convert(IfNotNullThenConvertElseDefault, actualValueType));
+                    }
                 }
                 else
                 {
@@ -87,12 +100,22 @@ namespace HomebrewDot.Net.RimWorld.Indexing
             if(accessorExpression == null && TLC.ObjectCache<T>.IndexedFields.TryGetValue(propertyName, out var fieldInfo))
             {
                 var fieldAccess = Expression.Field(instanceParameter, fieldInfo);
+                var fieldType = fieldInfo.FieldType;
                 if (!typeof(TValue).IsAssignableFrom(fieldInfo.FieldType))
                 {
-                    var ifNotNull = Expression.NotEqual(fieldAccess, Expression.Constant(null, fieldInfo.FieldType));
-                    changeTypeCall = Expression.Call(TLC.Reflections.ConvertChangeType, Expression.Convert(fieldAccess, typeof(object)), Expression.Constant(typeof(TValue), typeof(Type)));
-                    var IfNotNullThenConvertElseDefault = Expression.Condition(ifNotNull, changeTypeCall, Expression.Default(typeof(TValue)));
-                    accessorExpression = Expression.Assign(resultVariable, Expression.Convert(IfNotNullThenConvertElseDefault, typeof(TValue)));
+                    var changeTypeArgument = Expression.Convert(fieldAccess, typeof(object));
+                    changeTypeCall = Expression.Call(TLC.Reflections.ConvertChangeType, changeTypeArgument, valueTypeConstant);
+                    if (fieldType.IsValueType)
+                    {
+                        accessorExpression = Expression.Assign(resultVariable, Expression.Convert(changeTypeCall, actualValueType));
+                    }
+                    else
+                    {
+
+                        var ifNotNull = Expression.NotEqual(fieldAccess, Expression.Constant(null, fieldInfo.FieldType));
+                        var IfNotNullThenConvertElseDefault = Expression.Condition(ifNotNull, changeTypeCall, valueDefault);
+                        accessorExpression = Expression.Assign(resultVariable, Expression.Convert(IfNotNullThenConvertElseDefault, actualValueType));
+                    }
                 }
                 else
                 {
@@ -109,7 +132,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
             changeTypeCall = Expression.Call(TLC.Reflections.ConvertChangeType, tempVariable, Expression.Constant(typeof(TValue), typeof(Type)));
             var convertNotAssignable = Expression.Convert(changeTypeCall, typeof(TValue));
             Expression assignFromMetadata;
-            var isNonNullableValueType = typeof(TValue).IsValueType && Nullable.GetUnderlyingType(typeof(TValue)) == null;
+            var isNonNullableValueType = actualValueType.IsValueType;
             if (isNonNullableValueType)
             {
                 assignFromMetadata = Expression.IfThenElse(

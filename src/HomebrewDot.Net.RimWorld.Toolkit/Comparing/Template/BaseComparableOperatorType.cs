@@ -4,9 +4,9 @@ using System.Linq;
 using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Template
+namespace HomebrewDot.Net.Rimworld.Comparing.Template
 {
     /// <summary>
     /// Base class for operator types using combination of native operator and fallback on IComparable.

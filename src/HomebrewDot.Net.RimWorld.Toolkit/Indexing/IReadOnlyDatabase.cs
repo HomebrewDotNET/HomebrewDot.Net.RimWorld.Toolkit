@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Database containing tables with indexed data.

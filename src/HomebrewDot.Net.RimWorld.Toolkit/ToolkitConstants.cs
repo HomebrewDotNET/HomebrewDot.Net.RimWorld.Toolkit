@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Contains constant/readonly values used across the toolkit.
@@ -81,6 +81,23 @@ namespace HomebrewDot.Net.RimWorld
             /// Name of the internal tick methods of things.
             /// </summary>
             public const string TickMethod = "Tick";
+            /// <summary>
+            /// Method on <see cref="ThingOwner"/> that is called when a thing is added to a container, which can be used to track the current container of a thing.
+            /// </summary>
+            public const string NotifyAddedmethod = "NotifyAdded";
+            /// <summary>
+            /// Method on <see cref="ThingOwner"/> that is called when a thing is removed from a container, which can be used to track the last container of a thing before it was removed.
+            /// </summary>
+            public const string NotifyRemovedMethod = "NotifyRemoved";
+
+            /// <summary>
+            /// Key of the metadata that contains the current container of a thing.
+            /// </summary>
+            public const string ContainerMetadata = "Thing__Container";
+            /// <summary>
+            /// Key of the metadata that contains the current holder of a thing.
+            /// </summary>
+            public const string HolderMetadata = "Thing__Holder";
         }
 
         /// <summary>

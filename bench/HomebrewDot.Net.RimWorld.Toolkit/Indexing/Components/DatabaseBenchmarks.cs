@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Order;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
 
 namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
 {

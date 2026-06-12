@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Generic;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
+using HomebrewDot.Net.Rimworld.Generic;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Hooks.Triggers;
 
-namespace HomebrewDot.Net.RimWorld.Hooks
+namespace HomebrewDot.Net.Rimworld.Hooks
 {
     /// <summary>
     /// Default implementation of <see cref="IHookManager"/>.
@@ -52,11 +54,14 @@ namespace HomebrewDot.Net.RimWorld.Hooks
             if (_orderedHooks.TryGetValue(typeof(T), out handlers) && handlers.Length > 0)
             {
                 T arg = argFactory();
+                bool log = !(arg is OnGameTickTrigger tickTrigger && tickTrigger.TickerType == Verse.TickerType.Normal);
+                if(log) LogVerbose($"Lazily triggering hooks of type {typeof(T).FullName}");
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     var handler = handlers[i];
                     if (handler is IHook<T> hook)
                     {
+                        if (log) LogVerbose($"Lazily triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                         try
                         {
                             if (hook.OnTrigger(arg) && hook.Once)
@@ -91,6 +96,7 @@ namespace HomebrewDot.Net.RimWorld.Hooks
 
             lock (hooks)
             {
+                LogVerbose($"Registering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                 var owner = Guard.NotNull(hook.Owner, nameof(hook.Owner));
                 HashSet<IHandler> ownerHooks;
                 if (!_owners.TryGetValue(owner, out ownerHooks))
@@ -120,18 +126,42 @@ namespace HomebrewDot.Net.RimWorld.Hooks
             }
         }
         /// <inheritdoc/>
+        public void TransferTo(IHookManager newManager)
+        {
+            newManager = Guard.NotNull(newManager, nameof(newManager));
+
+            foreach (var kvp in _hooks)
+            {
+                var hookType = kvp.Key;
+                var handlers = kvp.Value;
+                foreach (var handler in handlers)
+                {
+                    if (handler is IHandler hook)
+                    {
+                        var registerMethod = typeof(IHookManager).GetMethod("RegisterHook").MakeGenericMethod(hookType);
+                        registerMethod.Invoke(newManager, new object[] { hook });
+                    }
+                }
+            }
+        }
+
+        /// <inheritdoc/>
         public void Trigger<T>(T arg)
         {
             arg = Guard.NotNull(arg, nameof(arg));
 
             IHandler[] handlers;
+           
             if (_orderedHooks.TryGetValue(typeof(T), out handlers))
             {
+                bool log = !(arg is OnGameTickTrigger tickTrigger && tickTrigger.TickerType == Verse.TickerType.Normal);
+                if (log) Logging.LogVerbose($"Triggering hooks of type {typeof(T).FullName} with argument: {arg}");
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     var handler = handlers[i];
                     if (handler is IHook<T> hook)
                     {
+                        if(log) LogVerbose($"Triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                         try
                         {
                             if (hook.OnTrigger(arg) && hook.Once)
@@ -185,6 +215,7 @@ namespace HomebrewDot.Net.RimWorld.Hooks
             {
                 lock (hooks)
                 {
+                    LogVerbose($"Unregistering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                     hooks.Remove(hook);
 
                     HashSet<IHandler> ownerHooks;

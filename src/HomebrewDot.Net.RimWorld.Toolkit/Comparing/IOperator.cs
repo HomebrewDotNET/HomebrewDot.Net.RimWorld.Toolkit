@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Comparing
+namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
     /// Defines how to compare 2 objects using a specific operator and arguments. The <see cref="Type"/> property indicates the kind of comparison to perform, while the <see cref="Arguments"/> property provides any additional information needed for the comparison specific to that operator. This interface can be implemented by various classes that define specific operators and their associated arguments for comparison logic.

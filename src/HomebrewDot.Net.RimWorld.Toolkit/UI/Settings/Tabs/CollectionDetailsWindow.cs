@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using HomebrewDot.Net.RimWorld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.UI.Components;
 using UnityEngine;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Popup that shows details for a collection, including rules and collected contents.
@@ -83,6 +85,14 @@ namespace HomebrewDot.Net.RimWorld
                 RefreshData();
             }
             Widgets.Label(recollectRect.ContractedBy(4f), "Restart Collection");
+
+            var exportRect = new Rect(recollectRect.xMax + 8f, buttonRowRect.y, 180f, buttonRowRect.height);
+            Widgets.DrawMenuSection(exportRect);
+            if (Widgets.ButtonInvisible(exportRect))
+            {
+                DebugExportUtility.ExportCollection(_collectionName, _definition, _collector);
+            }
+            Widgets.Label(exportRect.ContractedBy(4f), "Export Collection");
 
             cursorY = buttonRowRect.yMax + 8f;
 
@@ -343,6 +353,10 @@ namespace HomebrewDot.Net.RimWorld
             {
                 lines.Add("Collection definition not found.");
                 return lines;
+            }
+            if(definition is CollectionDef concreteDef)
+            {
+                return concreteDef.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.None).ToList();
             }
 
             if (definition.Conditions != null && definition.Conditions.Count > 0)

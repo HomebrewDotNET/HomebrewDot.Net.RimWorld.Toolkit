@@ -6,7 +6,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Template
+namespace HomebrewDot.Net.Rimworld.Comparing.Template
 {
     /// <summary>
     /// Base class for creating operator types that use native C# operators (e.g. ==, !=, >, <, etc.).

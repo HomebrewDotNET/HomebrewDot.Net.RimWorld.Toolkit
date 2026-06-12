@@ -4,13 +4,14 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Generic.Models;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
-using Logger = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
+using Verse;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
+using Logger = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
     /// <summary>
     /// Default implementation of <see cref="ISnapshotManager"/>.
@@ -52,16 +53,52 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
             }
         }
         /// <inheritdoc/>
+        public IReadOnlyDatabase Database => _database;
+
+        /// <inheritdoc/>
         public bool Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
             return _database.Delete(data, metadata);
         }
+
+        public bool Destroyed<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class
+        {
+            data = Guard.NotNull(data, nameof(data));
+            Dictionary<string, object> metadataDictionary = null;
+            if (metadata != null && metadata.Length > 0)
+            {
+                metadataDictionary ??= new Dictionary<string, object>(metadata.Length, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < metadata.Length; i++)
+                {
+                    var kvp = metadata[i];
+                    metadataDictionary[kvp.Key] = kvp.Value;
+                }
+            }
+            return _database.Delete(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
+        }
+        /// <inheritdoc/>
+        public bool Destroyed<T>(T data, params (string Key, object Value)[] metadata) where T : class
+        {
+            data = Guard.NotNull(data, nameof(data));
+            Dictionary<string, object> metadataDictionary = null;
+            if (metadata != null && metadata.Length > 0)
+            {
+                metadataDictionary ??= new Dictionary<string, object>(metadata.Length, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < metadata.Length; i++)
+                {
+                    var kvp = metadata[i];
+                    metadataDictionary[kvp.Key] = kvp.Value;
+                }
+            }
+            return _database.Delete(data, (IReadOnlyDictionary<string, object>)metadataDictionary ?? NullDictionary<string, object>.Instance);
+        }
+
         /// <inheritdoc/>
         public bool Push<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
-            if(!Changed(data))
+            if (!Changed(data, () => metadata))
             {
                 return false;
             }
@@ -71,7 +108,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         public bool Push<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
-            if(!Changed(data))
+            if (!Changed(data, () => metadata))
             {
                 return false;
             }
@@ -92,7 +129,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
         public bool Push<T>(T data, params (string Key, object Value)[] metadata) where T : class
         {
             data = Guard.NotNull(data, nameof(data));
-            if(!Changed(data))
+            if (!Changed(data, () => metadata != null ? metadata.Select(m => new KeyValuePair<string, object>(m.Key, m.Value)) : null))
             {
                 return false;
             }
@@ -120,32 +157,51 @@ namespace HomebrewDot.Net.RimWorld.Indexing.Components
                 configurator?.Invoke(config);
                 _changeTrackers = config.changeTrackers?.ToArray();
                 _database.Deploy(schemaBuilder);
+                DatabaseSnapshot = _database.AsReadOnly();
             }
         }
         /// <inheritdoc/>
         public void Snapshot()
         {
-            Logger.Log("Snapshot manager taking snapshot of database");
+            Logger.LogVerbose($"Snapshot manager taking snapshot of database. Current version {DatabaseSnapshot?.Version ?? '?'}");
+            var snapshot = _database.AsReadOnly();
             lock (_lock)
             {
-                DatabaseSnapshot = _database.AsReadOnly();
+                if(snapshot.Version == DatabaseSnapshot?.Version)
+                {
+                    Logger.LogVerbose("Snapshot manager detected no changes in database since last snapshot. Skipping update.");
+                    return;
+                }
+                DatabaseSnapshot = snapshot;
             }
-            _hookManager.LazyTrigger(() => new OnSnapshotTakenTrigger(DatabaseSnapshot));
+            _hookManager.LazyTrigger(() => new OnSnapshotTakenTrigger(snapshot));
+            Logger.LogVerbose($"Snapshot manager completed snapshot of database. New version {snapshot?.Version ?? '?'}");
         }
 
-        private bool Changed<T>(T data) where T : class
+        private bool Changed<T>(T data, Func<IEnumerable<KeyValuePair<string, object>>> metadataProvider) where T : class
         {
-            var existing = DatabaseSnapshot.Find<T>(data);
+            var existing = Database.Find<T>(data);
             if (existing == null) return true;
             var changeTrackers = _changeTrackers;
             if (changeTrackers == null || changeTrackers.Length == 0) return true;
+            var metadata = metadataProvider?.Invoke();
+            if (metadata != null)
+            {
+                foreach (var pair in metadata)
+                {
+                    if (!existing.Metadata.TryGetValue(pair.Key, out var existingValue) || !Equals(existingValue, pair.Value))
+                    {
+                        return true;
+                    }
+                }
+            }
 
-            for(int i = 0; i < changeTrackers.Length; i++)
+            for (int i = 0; i < changeTrackers.Length; i++)
             {
                 var tracker = changeTrackers[i];
                 if (tracker is IChangeTracker<T> typedTracker)
                 {
-                    if (typedTracker.HasChanged(data,existing))
+                    if (typedTracker.HasChanged(data, existing, DatabaseSnapshot.Find<T>(data)))
                     {
                         return true;
                     }

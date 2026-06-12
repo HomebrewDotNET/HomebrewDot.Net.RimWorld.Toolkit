@@ -3,11 +3,12 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using HomebrewDot.Net.RimWorld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.UI.Components;
 using UnityEngine;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Popup that shows details for a snapshot table, including its sub-tables and table contents.
@@ -22,8 +23,11 @@ namespace HomebrewDot.Net.RimWorld
         private readonly IconGrid<IIndexed<object>> _rowGrid;
 
         private IReadOnlyTable _currentTable;
+        private List<IIndexed<object>> _allRows = new List<IIndexed<object>>();
         private List<IIndexed<object>> _rows = new List<IIndexed<object>>();
         private bool _rowsTruncated;
+        private string _searchText = string.Empty;
+        private string _orderByPath = string.Empty;
         private Vector2 _rowGridScroll = Vector2.zero;
         private Vector2 _subTableScroll = Vector2.zero;
 
@@ -103,7 +107,35 @@ namespace HomebrewDot.Net.RimWorld
             }
             Widgets.Label(refreshRect.ContractedBy(4f), "Refresh");
 
+            var exportRect = new Rect(refreshRect.xMax + 8f, buttonRowRect.y, 140f, buttonRowRect.height);
+            Widgets.DrawMenuSection(exportRect);
+            if (Widgets.ButtonInvisible(exportRect))
+            {
+                DebugExportUtility.ExportSnapshotTable(_currentTable);
+            }
+            Widgets.Label(exportRect.ContractedBy(4f), "Export Table");
+
             cursorY = buttonRowRect.yMax + 8f;
+
+            var searchLabelRect = new Rect(inRect.x, cursorY, 120f, 30f);
+            Widgets.Label(searchLabelRect, "Search");
+            var searchRect = new Rect(searchLabelRect.xMax + 6f, cursorY, inRect.width - 126f, 30f);
+            var previousSearchText = _searchText;
+            _searchText = Widgets.TextField(searchRect, _searchText ?? string.Empty);
+            cursorY = searchRect.yMax + 4f;
+
+            var orderByLabelRect = new Rect(inRect.x, cursorY, 120f, 30f);
+            Widgets.Label(orderByLabelRect, "Order by path");
+            var orderByRect = new Rect(orderByLabelRect.xMax + 6f, cursorY, inRect.width - 126f, 30f);
+            var previousOrderByPath = _orderByPath;
+            _orderByPath = Widgets.TextField(orderByRect, _orderByPath ?? string.Empty);
+            cursorY = orderByRect.yMax + 8f;
+
+            if (!string.Equals(previousSearchText, _searchText, StringComparison.Ordinal)
+                || !string.Equals(previousOrderByPath, _orderByPath, StringComparison.Ordinal))
+            {
+                ApplyRowFilteringAndOrdering();
+            }
 
             var subTablesLabelRect = new Rect(inRect.x, cursorY, inRect.width, 22f);
             Widgets.Label(subTablesLabelRect, "Sub-Tables");
@@ -455,8 +487,106 @@ namespace HomebrewDot.Net.RimWorld
 
         private void RefreshRows()
         {
-            _rows = EnumerateRows(_currentTable, MaxDisplayedRows, out _rowsTruncated);
+            _allRows = EnumerateRows(_currentTable, MaxDisplayedRows, out _rowsTruncated);
+            ApplyRowFilteringAndOrdering();
             _rowGridScroll = Vector2.zero;
+        }
+
+        private void ApplyRowFilteringAndOrdering()
+        {
+            IEnumerable<IIndexed<object>> query = _allRows;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                query = query.Where(MatchesSearch);
+            }
+
+            var sortPath = Toolkit.Helpers.Traversing.SplitPath(_orderByPath);
+            if (sortPath.Length > 0)
+            {
+                query = query
+                    .OrderBy(x => GetSortValue(x, sortPath), SortValueComparer.Instance)
+                    .ThenBy(GetDisplayName, StringComparer.OrdinalIgnoreCase);
+            }
+
+            _rows = query.ToList();
+        }
+
+        private bool MatchesSearch(IIndexed<object> row)
+        {
+            var term = _searchText?.Trim();
+            if (string.IsNullOrEmpty(term))
+            {
+                return true;
+            }
+
+            if (ContainsInsensitive(GetDisplayName(row), term))
+            {
+                return true;
+            }
+
+            if (ContainsInsensitive(BuildRowPreview(row), term))
+            {
+                return true;
+            }
+
+            return ContainsInsensitive(row?.Value?.GetType().FullName, term);
+        }
+
+        private static bool ContainsInsensitive(string input, string searchTerm)
+        {
+            if (string.IsNullOrEmpty(input) || string.IsNullOrEmpty(searchTerm))
+            {
+                return false;
+            }
+
+            return input.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static object GetSortValue(IIndexed<object> row, string[] path)
+        {
+            if (row?.Value == null || path == null || path.Length == 0)
+            {
+                return null;
+            }
+
+            return Toolkit.Helpers.Traversing.TraversePath(row.Value, path);
+        }
+
+        private sealed class SortValueComparer : IComparer<object>
+        {
+            public static readonly SortValueComparer Instance = new SortValueComparer();
+
+            public int Compare(object x, object y)
+            {
+                if (ReferenceEquals(x, y))
+                {
+                    return 0;
+                }
+
+                if (x == null)
+                {
+                    return 1;
+                }
+
+                if (y == null)
+                {
+                    return -1;
+                }
+
+                if (x is IComparable comparable)
+                {
+                    try
+                    {
+                        return comparable.CompareTo(y);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return string.CompareOrdinal(x.ToString(), y.ToString());
+            }
         }
 
         private static List<IIndexed<object>> EnumerateRows(IReadOnlyTable table, int maxRows, out bool truncated)

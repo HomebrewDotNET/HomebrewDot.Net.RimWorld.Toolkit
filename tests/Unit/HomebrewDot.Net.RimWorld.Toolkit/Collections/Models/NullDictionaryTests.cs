@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Generic.Models;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Collections.Models
+namespace HomebrewDot.Net.Rimworld.Tests.Collections.Models
 {
     public class NullDictionaryTests
     {

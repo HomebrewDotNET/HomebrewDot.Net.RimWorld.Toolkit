@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Represents a read-only index that provides access to indexed data of type <typeparamref name="T"/> based on input data of type <typeparamref name="TSearch"/>. The index is designed to be immutable and thread-safe, allowing for concurrent read operations without the need for synchronization. It may also support filtering, which allows it to contain only a subset of the data based on specific criteria.

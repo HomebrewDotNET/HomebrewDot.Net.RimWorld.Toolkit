@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace HomebrewDot.Net.RimWorld.UI.Settings
+namespace HomebrewDot.Net.Rimworld.UI.Settings
 {
     /// <summary>
     /// Contract for a renderable settings tab in the Toolkit settings UI.

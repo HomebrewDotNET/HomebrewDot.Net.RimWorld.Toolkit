@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Comparing.Template;
-using HomebrewDot.Net.RimWorld.Referencing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
-using HomebrewDot.Net.RimWorld.Referencing.Models;
+using HomebrewDot.Net.Rimworld.Comparing.Template;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Referencing.Models;
 using RimWorld;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Comparing
+namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
     /// Fluent builder interface for creating <see cref="IConditionDef"/>(s).
@@ -112,6 +112,12 @@ namespace HomebrewDot.Net.RimWorld.Comparing
         /// Continue chaining more conditions to the current condition chain with a logical OR operator. The next condition added to the chain will be combined with the previous conditions using a logical OR, meaning at least one condition in the chain must be true for the entire chain to evaluate to true.
         /// </summary>
         IConditionBuilder<TReturn> Or { get; }
+        /// <summary>
+        /// Continue chaining more conditions to the current condition chain with either a logical AND or OR operator based on the provided boolean value. If the 'and' parameter is true, the next condition will be combined with a logical AND; if false, it will be combined with a logical OR. This allows for dynamically choosing the logical operator when chaining conditions based on runtime logic or parameters.
+        /// </summary>
+        /// <param name="and">True to use a logical AND, false to use a logical OR.</param>
+        /// <returns>The fluent return type.</returns>
+        IConditionBuilder<TReturn> AndOr(bool and);
     }
 
     /// <summary>

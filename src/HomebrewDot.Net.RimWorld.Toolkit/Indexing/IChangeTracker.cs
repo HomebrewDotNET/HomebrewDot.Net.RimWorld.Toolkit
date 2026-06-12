@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Used by a <see cref="ISnapshotManager"/> to see if any changes have occurred to a <typeparamref name="T"/> since the last snapshot was taken. This is used to determine whether a new snapshot needs to be taken or if the current snapshot can be reused.
@@ -16,8 +16,9 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// Determines if any changes have occurred to the given <paramref name="current"/> value since the last snapshot was taken, as represented by the <paramref name="previous"/> indexed value. If this method returns true, a new snapshot will be taken; if it returns false, the current snapshot will be reused.
         /// </summary>
         /// <param name="current">The current value to check for changes.</param>
-        /// <param name="previous">The previous indexed value to compare against.</param>
+        /// <param name="previous">The current version in the pending snapshot to be.</param>
+        /// <param name="snapshot">The previous version in the current snapshot. Can be null if <paramref name="previous"/> hasn't been snapshotted yet.</param>
         /// <returns>True if changes have occurred; otherwise, false.</returns>
-        bool HasChanged(T current, IIndexed<T> previous);
+        bool HasChanged(T current, IIndexed<T> previous, IIndexed<T> snapshot = null);
     }
 }

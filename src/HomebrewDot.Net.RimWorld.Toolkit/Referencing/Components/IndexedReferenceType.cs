@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Referencing.Models;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Referencing.Models;
+using UnityEngine;
+using static HomebrewDot.Net.Rimworld.Toolkit;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Referencing.Components
+namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
     /// A <see cref="IReferenceType"/> that resolves property values from <see cref="IIndexed{T}"/>.
@@ -33,7 +35,7 @@ namespace HomebrewDot.Net.RimWorld.Referencing.Components
         }
 
         /// <inheritdoc/>
-        public object Resolve(object value, IReadOnlyDictionary<string, object> context)
+        public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
         {
             if(value is null)
             {
@@ -45,9 +47,34 @@ namespace HomebrewDot.Net.RimWorld.Referencing.Components
             }
 
             var propertyName = value.ToString();
-            if (context.TryGetValue(CollectionComparator.ObjectKey, out var obj) && obj is IIndexed<object> indexed)
+            if (input != null)
             {
-                return indexed.GetValue<object>(propertyName);
+                var splitProperties = Helpers.Traversing.SplitPath(propertyName);
+                if (input is IIndexed<object> indexed)
+                {
+                    if (splitProperties.Length == 1)
+                    {
+                        return indexed.GetValue<object>(propertyName);
+                    }
+                    else
+                    {
+                        if (indexed.GetValue<object>(splitProperties[0]) is object nestedObj)
+                        {
+                            var remainingPath = splitProperties.Skip(1).ToArray();
+                            return Helpers.Traversing.TraversePath(nestedObj, remainingPath);
+                        }
+                    }
+                }
+                else
+                {
+                    Logging.LogVerbose($"Input object is not of type IIndexed<object>. Falling back on property reference.");
+                    return Helpers.Traversing.TraversePath(input, splitProperties);
+                }
+            }
+            else
+            {
+                Logging.LogVerbose($"Input object is required for resolving property '{value}'.");
+                return null;
             }
             return null;
         }

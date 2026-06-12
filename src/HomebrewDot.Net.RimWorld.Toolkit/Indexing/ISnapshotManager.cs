@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Responsible for managing the current and pending snapshots of game data, and processing new data for the pending snapshot.
@@ -12,7 +12,13 @@ namespace HomebrewDot.Net.RimWorld.Indexing
     public interface ISnapshotManager
     {
         /// <summary>
+        /// The current synchronous database of indexed data. This database is read-only and represents the current state.
+        /// Should NOT be accessed from background threads as it is managed by the main thread.
+        /// </summary>
+        public IReadOnlyDatabase Database { get; }
+        /// <summary>
         /// The current snapshot of indexed data. This snapshot is read-only and represents the state of the indexed data at the last snapshot point.
+        /// Can be accessed from background threads.
         /// </summary>
         public IReadOnlyDatabase DatabaseSnapshot { get; }
 
@@ -48,6 +54,22 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
         /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
         bool Destroyed<T>(T data, IReadOnlyDictionary<string, object> metadata = null) where T : class;
+        /// <summary>
+        /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
+        /// </summary>
+        /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
+        /// <param name="data">The data that was destroyed.</param>
+        /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
+        bool Destroyed<T>(T data, params KeyValuePair<string, object>[] metadata) where T : class;
+        /// <summary>
+        /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
+        /// </summary>
+        /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
+        /// <param name="data">The data that was destroyed.</param>
+        /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
+        bool Destroyed<T>(T data, params (string Key, object Value)[] metadata) where T : class;
 
         /// <summary>
         /// Takes a snapshot of the current pending data, making it the new current snapshot and clearing the pending snapshot for new data to be gathered.

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
 
-namespace HomebrewDot.Net.RimWorld.Hooks
+namespace HomebrewDot.Net.Rimworld.Hooks
 {
     /// <summary>
     /// Simple hook that uses delegates to trigger an action when a specific event occurs and contains basic error handling. This is intended for simple hooks that don't require complex state management or multiple triggers.

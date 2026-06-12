@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Comparing
+namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
     /// Compares 2 values based on the provided arguments and global context. The operator type can be used to determine the specific comparison logic that should be applied when comparing the left and right values, allowing for various types of comparisons (e.g., equality, greater than, less than, etc.) depending on the operator's purpose and the types of objects being compared.

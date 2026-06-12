@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Referencing.Components
+namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
     /// A reference type that simply returns the value it is given.
@@ -28,7 +28,7 @@ namespace HomebrewDot.Net.RimWorld.Referencing.Components
         }
 
         /// <inheritdoc/>
-        public object Resolve(object value, IReadOnlyDictionary<string, object> context)
+        public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
             => value;
     }
 }

@@ -1,8 +1,8 @@
 using Verse;
 using UnityEngine;
-using HomebrewDot.Net.RimWorld.UI.Settings;
+using HomebrewDot.Net.Rimworld.UI.Settings;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// User-facing settings tab.
@@ -31,6 +31,13 @@ namespace HomebrewDot.Net.RimWorld
                 ref slowGathering,
                 "Use TickLong instead of TickRare for snapshots. Lower load, but snapshots are older.");
             Toolkit.Settings.SlowGatheringEnabled = slowGathering;
+
+            var verbose = Toolkit.Settings.Verbose;
+            listing.CheckboxLabeled(
+                "Verbose Logging",
+                ref verbose,
+                "Enable verbose logging for debugging purposes.");
+            Toolkit.Settings.Verbose = verbose;
 
             listing.End();
         }

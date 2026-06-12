@@ -2,16 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.Serialization;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Hooks.Triggers;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Hooks.Triggers;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Verse;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 {
     public class SnapshotOrchestratorTests
     {

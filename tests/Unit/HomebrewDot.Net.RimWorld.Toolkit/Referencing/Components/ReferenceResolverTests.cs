@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Referencing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
-using HomebrewDot.Net.RimWorld.Referencing.Models;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Referencing.Models;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
 {
     public class ReferenceResolverTests
     {
@@ -16,7 +16,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         private static Mock<IReferenceType> MockType(object returns)
         {
             var mock = new Mock<IReferenceType>();
-            mock.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
+            mock.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Returns(returns);
             return mock;
         }
@@ -28,7 +28,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         {
             // Should not throw; falls back to empty dictionary
             var sut = new ReferenceResolver(null);
-            var result = sut.TryResolve(Ref("anything"), null, out _);
+            var result = sut.TryResolve(null, Ref("anything"), null, out _);
             Assert.False(result);
         }
 
@@ -38,14 +38,14 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         public void TryResolve_WithNullReference_ThrowsArgumentNullException()
         {
             var sut = new ReferenceResolver(null);
-            Assert.Throws<ArgumentNullException>(() => sut.TryResolve(null, null, out _));
+            Assert.Throws<ArgumentNullException>(() => sut.TryResolve(null, null, null, out _));
         }
 
         [Fact]
         public void TryResolve_WithUnknownType_ReturnsFalse()
         {
             var sut = new ReferenceResolver(new Dictionary<string, IReferenceType>());
-            var result = sut.TryResolve(Ref("unknown"), null, out var resolved);
+            var result = sut.TryResolve(null, Ref("unknown"), null, out var resolved);
 
             Assert.False(result);
             Assert.Null(resolved);
@@ -60,7 +60,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 ["mytype"] = refType.Object,
             });
 
-            var result = sut.TryResolve(Ref("mytype", "input"), null, out var resolved);
+            var result = sut.TryResolve(null, Ref("mytype", "input"), null, out var resolved);
 
             Assert.True(result);
             Assert.Equal("resolved-value", resolved);
@@ -85,7 +85,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 },
             };
 
-            sut.TryResolve(Ref("mytype"), context, out var resolved);
+            sut.TryResolve(null, Ref("mytype"), context, out var resolved);
 
             Assert.Equal("from-context", resolved);
         }
@@ -108,7 +108,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 },
             };
 
-            var result = sut.TryResolve(Ref("mytype"), context, out var resolved);
+            var result = sut.TryResolve(null, Ref("mytype"), context, out var resolved);
 
             Assert.True(result);
             Assert.Equal("from-constructor", resolved);
@@ -123,7 +123,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 ["mytype"] = refType.Object,
             });
 
-            var result = sut.TryResolve(Ref("  mytype  "), null, out var resolved);
+            var result = sut.TryResolve(null, Ref("  mytype  "), null, out var resolved);
 
             Assert.True(result);
             Assert.Equal("result", resolved);
@@ -132,13 +132,15 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         [Fact]
         public void TryResolve_PassesValueAndContextToReferenceType()
         {
+            object capturedInput = null;
             object capturedValue = null;
             IReadOnlyDictionary<string, object> capturedContext = null;
 
             var refType = new Mock<IReferenceType>();
-            refType.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
-                .Callback<object, IReadOnlyDictionary<string, object>>((v, ctx) =>
+            refType.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .Callback<object, object, IReadOnlyDictionary<string, object>>((input, v, ctx) =>
                 {
+                    capturedInput = input;
                     capturedValue = v;
                     capturedContext = ctx;
                 })
@@ -150,8 +152,9 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
             });
 
             var context = new Dictionary<string, object> { ["key"] = "val" };
-            sut.TryResolve(Ref("mytype", "the-value"), context, out _);
+            sut.TryResolve("input", Ref("mytype", "the-value"), context, out _);
 
+            Assert.Equal("input", capturedInput);
             Assert.Equal("the-value", capturedValue);
             Assert.Same(context, capturedContext);
         }
@@ -171,7 +174,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 [ReferenceResolver.ContextReferenceTypesKey] = "not-a-dictionary",
             };
 
-            var result = sut.TryResolve(Ref("mytype"), context, out var resolved);
+            var result = sut.TryResolve(null, Ref("mytype"), context, out var resolved);
 
             Assert.True(result);
             Assert.Equal("from-constructor", resolved);

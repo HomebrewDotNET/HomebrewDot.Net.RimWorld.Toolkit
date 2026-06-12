@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Referencing
+namespace HomebrewDot.Net.Rimworld.Tests.Referencing
 {
     [Trait("Category", "Integration")]
     public class ReferenceResolverIntegrationTests

@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
 
-namespace HomebrewDot.Net.RimWorld.Collecting
+namespace HomebrewDot.Net.Rimworld.Collecting
 {
     /// <summary>
     /// Collects objects of type <typeparamref name="T"/> based on a <see cref="CollectionDef"/>
@@ -15,12 +15,31 @@ namespace HomebrewDot.Net.RimWorld.Collecting
     public interface ICollector<T> : ICollector where T : class
     {
         /// <summary>
+        /// Raised when an object of type <typeparamref name="T"/> is collected. The event handler receives the collected object as a parameter.
+        /// </summary>
+        public event Action<T> OnCollected;
+        /// <summary>
+        /// Raised when an object of type <typeparamref name="T"/> is removed from the collector. The event handler receives the removed object as a parameter.
+        /// </summary>
+        public event Action<T> OnRemoved;
+        /// <summary>
+        /// Raised when the collector is cleared of all collected objects. The event handler receives an array of all objects that were collected before the clear operation as a parameter.
+        /// </summary>
+        public event Action<IReadOnlyCollection<T>> OnClear;
+
+        /// <summary>
         /// Collects the specified object of type <typeparamref name="T"/> if it matches the collection definition. The context parameter provides additional information that may be needed for collection, such as the source of the object or any relevant metadata. Returns true if the object was collected; otherwise, returns false.
         /// </summary>
         /// <param name="obj">The object to collect.</param>
         /// <param name="context">A dictionary of additional information that may be needed for collection.</param>
         /// <returns>True if the object was collected; otherwise, false.</returns>
         bool Collect(T obj, IReadOnlyDictionary<string, object> context);
+        /// <summary>
+        /// Removes the specified object of type <typeparamref name="T"/> from the collector if it is currently collected.
+        /// </summary>
+        /// <param name="obj">The object to remove.</param>
+        /// <returns>True if the object was removed; otherwise, false.</returns>
+        bool Remove(T obj);
         /// <summary>
         /// Returns all collected objects of type <typeparamref name="T"/> so far. The collection should not be modified by the caller.
         /// </summary>
@@ -69,6 +88,10 @@ namespace HomebrewDot.Net.RimWorld.Collecting
         /// Removes all collected objects of type <typeparamref name="T"/> from the collector. After this method is called, the collector should be empty and <see cref="Count"/> should return 0.
         /// </summary>
         void Clear();
+        /// <summary>
+        /// Returns all collected objects of type <typeparamref name="T"/> so far. The collection should not be modified by the caller.
+        /// </summary>
+        /// <returns>A read-only collection of all collected objects of type <typeparamref name="T"/>.</returns>
         IReadOnlyCollection<object> GetAll();
     }
 }

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Eventing.Models
+namespace HomebrewDot.Net.Rimworld.Eventing.Models
 {
     /// <summary>
     /// Allows for subscribing to and invoking callbacks with arguments of type <typeparamref name="TArgs"/>.

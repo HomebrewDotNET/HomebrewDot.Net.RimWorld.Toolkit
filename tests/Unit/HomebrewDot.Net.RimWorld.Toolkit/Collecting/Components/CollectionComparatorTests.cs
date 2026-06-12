@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Comparing.Components;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 {
     public class CollectionComparatorTests
     {
@@ -30,7 +30,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void Matches_WithExclusionMatch_ReturnsFalseEvenWhenConditionsPass()
         {
             var comparator = new Mock<IComparator>();
-            comparator.Setup(c => c.Compare(It.IsAny<ConditionDef>(), It.IsAny<IReadOnlyDictionary<string, object>>())).Returns(true);
+            comparator.Setup(c => c.Compare(It.IsAny<object>(), It.IsAny<ConditionDef>(), It.IsAny<IReadOnlyDictionary<string, object>>())).Returns(true);
 
             var excluded = new CollectionDef { Conditions = new[] { new ConditionDef { Compare = 1, With = "eq", To = 1 } } };
             var root = new CollectionDef
@@ -55,7 +55,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         {
             var conditionComparator = new Mock<IComparator>();
             conditionComparator
-                .SetupSequence(c => c.Compare(It.IsAny<ConditionDef>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .SetupSequence(c => c.Compare(It.IsAny<object>(), It.IsAny<ConditionDef>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Returns(false)
                 .Returns(true);
 
@@ -86,7 +86,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         {
             var conditionComparator = new Mock<IComparator>();
             conditionComparator
-                .SetupSequence(c => c.Compare(It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .SetupSequence(c => c.Compare(It.IsAny<object>(), It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Returns(true)
                 .Returns(false);
 
@@ -117,7 +117,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         {
             var comparator = new Mock<IComparator>();
             comparator
-                .SetupSequence(c => c.Compare(It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .SetupSequence(c => c.Compare(It.IsAny<object>(), It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Returns(false)
                 .Returns(true);
 

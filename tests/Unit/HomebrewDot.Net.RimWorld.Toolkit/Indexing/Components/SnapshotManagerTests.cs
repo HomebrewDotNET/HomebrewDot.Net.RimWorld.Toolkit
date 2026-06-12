@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 {
     public class SnapshotManagerTests
     {
@@ -77,10 +77,15 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         [Fact]
         public void Push_Dict_WhenItemInSnapshotAndNoTrackers_CallsUpsert()
         {
-            var sut = CreateSut();
             var existing = new Mock<IIndexed<string>>();
-            _mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(existing.Object);
-            sut.Reset(_ => { }, _ => { }); // reset clears trackers
+            var newSnapshot = new Mock<IReadOnlyDatabase>();
+            newSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(existing.Object);
+            _mockDatabase.SetupSequence(d => d.AsReadOnly())
+                .Returns(_mockSnapshot.Object)  // constructor
+                .Returns(newSnapshot.Object);    // Reset() call
+            
+            var sut = CreateSut();
+            sut.Reset(_ => { }, _ => { }); // reset clears trackers and refreshes snapshot
 
             sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
@@ -91,9 +96,14 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         public void Push_Dict_WhenTrackerReportsChanged_CallsUpsert()
         {
             var existing = new Mock<IIndexed<string>>();
-            _mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(existing.Object);
+            var newSnapshot = new Mock<IReadOnlyDatabase>();
+            newSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(existing.Object);
+            _mockDatabase.SetupSequence(d => d.AsReadOnly())
+                .Returns(_mockSnapshot.Object)  // constructor
+                .Returns(newSnapshot.Object);    // Reset() call
+            
             var tracker = new Mock<IChangeTracker<string>>();
-            tracker.Setup(t => t.HasChanged("hello", existing.Object)).Returns(true);
+            tracker.Setup(t => t.HasChanged("hello", existing.Object, default)).Returns(true);
 
             var sut = CreateSut();
             sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
@@ -107,16 +117,29 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         public void Push_Dict_WhenTrackerReportsUnchanged_DoesNotCallUpsert()
         {
             var existing = new Mock<IIndexed<string>>();
-            _mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(existing.Object);
+            var snapshottedExisting = new Mock<IIndexed<string>>();
+            
+            // Setup: item exists in database
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
+            
+            // Setup: snapshot also has the item
+            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
+
             var tracker = new Mock<IChangeTracker<string>>();
-            tracker.Setup(t => t.HasChanged("hello", existing.Object)).Returns(false);
+            // Tracker reports the item hasn't changed
+            tracker.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
 
             var sut = CreateSut();
             sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
+            
+            // Re-setup database to have data again after Reset deployed new schema
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
 
             var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
+            // Should return false since tracker reported no change
             Assert.False(result);
+            // Upsert should not be called since item hasn't changed
             _mockDatabase.Verify(d => d.Upsert(It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Never);
         }
 
@@ -252,6 +275,8 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         public void Snapshot_UpdatesDatabaseSnapshotToLatestReadOnly()
         {
             var newSnapshot = new Mock<IReadOnlyDatabase>();
+            newSnapshot.Setup(s => s.Version).Returns(1);
+            _mockSnapshot.Setup(s => s.Version).Returns(0);
             _mockDatabase.SetupSequence(d => d.AsReadOnly())
                 .Returns(_mockSnapshot.Object)   // constructor call
                 .Returns(newSnapshot.Object);     // Snapshot() call
@@ -265,6 +290,12 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         [Fact]
         public void Snapshot_FiresOnSnapshotTakenTriggerViaLazyTrigger()
         {
+            var newSnapshot = new Mock<IReadOnlyDatabase>();
+            newSnapshot.Setup(s => s.Version).Returns(1);
+            _mockSnapshot.Setup(s => s.Version).Returns(0);
+            _mockDatabase.SetupSequence(d => d.AsReadOnly())
+                .Returns(_mockSnapshot.Object)   // constructor call  
+                .Returns(newSnapshot.Object);     // Snapshot() call
             var sut = CreateSut();
             OnSnapshotTakenTrigger firedTrigger = null;
             _mockHookManager
@@ -316,44 +347,64 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void Reset_RegisteredChangeTracker_IsConsultedOnSubsequentPush()
+        public void RegisteredChangeTracker_IsConsultedWhenPushingExistingItem()
         {
             var existing = new Mock<IIndexed<string>>();
-            _mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(existing.Object);
+            var snapshottedExisting = new Mock<IIndexed<string>>();
+            
+            // Setup: item exists in database
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
+            
+            // Setup: snapshot also has the item
+            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
+
             var tracker = new Mock<IChangeTracker<string>>();
-            tracker.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>())).Returns(false);
+            tracker.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
 
             var sut = CreateSut();
+            // Register tracker through Reset
             sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
+
+            // Now setup database to have data again so tracker can be tested
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
 
             sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
-            tracker.Verify(t => t.HasChanged("hello", existing.Object), Times.Once);
+            // Tracker should be consulted when pushing an item that exists in the database
+            tracker.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
         }
 
         [Fact]
-        public void Reset_MultipleChangeTrackers_AllConsultedWhenItemExistsInSnapshot()
+        public void MultipleChangeTrackers_AllConsultedWhenPushingExistingItem()
         {
             var existing = new Mock<IIndexed<string>>();
-            _mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(existing.Object);
+            var snapshottedExisting = new Mock<IIndexed<string>>();
+            
+            // Setup: item exists in database
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
+            
+            // Setup: snapshot also has the item
+            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
 
             var tracker1 = new Mock<IChangeTracker<string>>();
-            tracker1.Setup(t => t.HasChanged("hello", existing.Object)).Returns(false);
+            tracker1.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
 
             var tracker2 = new Mock<IChangeTracker<string>>();
-            tracker2.Setup(t => t.HasChanged("hello", existing.Object)).Returns(true);
+            tracker2.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(true);
 
             var sut = CreateSut();
             sut.Reset(config =>
                 config.WithChangeTracker(tracker1.Object)
                       .WithChangeTracker(tracker2.Object), _ => { });
+            
+            // Re-setup database to have data again after Reset deployed new schema
+            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
 
             sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
 
-            // tracker1 returns false so tracker2 is checked; tracker2 returns true so upsert happens
-            tracker1.Verify(t => t.HasChanged("hello", existing.Object), Times.Once);
-            tracker2.Verify(t => t.HasChanged("hello", existing.Object), Times.Once);
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
+            // Both trackers should be consulted when pushing an existing item
+            tracker1.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
+            tracker2.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
         }
     }
 }

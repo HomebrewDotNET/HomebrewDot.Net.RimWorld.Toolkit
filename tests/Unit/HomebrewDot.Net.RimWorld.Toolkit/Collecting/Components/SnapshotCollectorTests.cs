@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Hooks;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 {
     public class SnapshotCollectorTests
     {
@@ -31,7 +31,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         private SnapshotCollector<string> CreateSut(
             Func<IReadOnlyDatabase, IEnumerable<IIndexed<string>>> getThingsToPush = null)
         {
-            return new SnapshotCollector<string>(_mockCollector.Object, _mockHookManager.Object, getThingsToPush);
+            return new SnapshotCollector<string>(_mockCollector.Object, _mockHookManager.Object, s => s.Version, getThingsToPush);
         }
 
         // ── Constructor ───────────────────────────────────────────────────────
@@ -101,6 +101,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void OnTrigger_PushesEachItemFromSnapshotToInnerCollector()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             var item1 = new Mock<IIndexed<string>>();
             var item2 = new Mock<IIndexed<string>>();
             var items = new[] { item1.Object, item2.Object };
@@ -117,6 +118,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void OnTrigger_ReturnsTrue()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
 
             var result = sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
@@ -128,6 +130,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void OnTrigger_SetsSnapshotEnablingSubsequentCanCollect()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             var indexed = new Mock<IIndexed<string>>();
             mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(indexed.Object);
             _mockCollector.Setup(c => c.CanCollect(indexed.Object, It.IsAny<IReadOnlyDictionary<string, object>>())).Returns(true);
@@ -142,6 +145,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void OnTrigger_WhenSnapshotCannotFindItem_CanCollectReturnsFalse()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             mockSnapshot.Setup(s => s.Find<string>("hello")).Returns((IIndexed<string>)null);
 
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
@@ -156,6 +160,7 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
         public void Contains_WhenSnapshotFindsItemAndInnerCollectorContainsIt_ReturnsTrue()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             var indexed = new Mock<IIndexed<string>>();
             mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(indexed.Object);
             _mockCollector.Setup(c => c.Contains(indexed.Object)).Returns(true);

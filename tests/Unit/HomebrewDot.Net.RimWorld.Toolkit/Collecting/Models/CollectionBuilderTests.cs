@@ -1,15 +1,15 @@
 using System;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
-using HomebrewDot.Net.RimWorld.Comparing.Template;
-using HomebrewDot.Net.RimWorld.Referencing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Comparing.Template;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Models
+namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Models
 {
     public class CollectionBuilderTests
     {

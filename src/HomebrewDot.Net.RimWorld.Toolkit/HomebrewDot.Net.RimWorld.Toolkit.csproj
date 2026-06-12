@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<TargetFramework>net472</TargetFramework>
 		<AssemblyName>HomebrewDot.Net.Rimworld.Toolkit</AssemblyName>
-		<RootNamespace>HomebrewDot.Net.RimWorld</RootNamespace>
+		<RootNamespace>HomebrewDot.Net.Rimworld</RootNamespace>
 		<Nullable>disable</Nullable>
 		<LangVersion>latestmajor</LangVersion>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

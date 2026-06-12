@@ -4,13 +4,13 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
-using HomebrewDot.Net.RimWorld.Referencing;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Referencing;
 using RimWorld;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Models
+namespace HomebrewDot.Net.Rimworld.Comparing.Models
 {
     /// <summary>
     /// Model for fluently building a condition for comparing objects using <see cref="IConditionBuilder{TReturn}"/>
@@ -238,6 +238,14 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Models
             _rightOperand = null;
             _isOr = false;
             _groupConditions = null;
+        }
+
+        IConditionBuilder<TReturn> IConditionChainBuilder<TReturn>.AndOr(bool and)
+        {
+            if(and)
+                return ((IConditionChainBuilder<TReturn>)this).And;
+            else
+                return ((IConditionChainBuilder<TReturn>)this).Or;
         }
     }
     /// <summary>

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Collecting.Models;
+using HomebrewDot.Net.Rimworld.Collecting.Models;
 
-namespace HomebrewDot.Net.RimWorld.Collecting
+namespace HomebrewDot.Net.Rimworld.Collecting
 {
     /// <summary>
     /// Defines a contract for comparing a collection definition against a given object and context to determine if they match.

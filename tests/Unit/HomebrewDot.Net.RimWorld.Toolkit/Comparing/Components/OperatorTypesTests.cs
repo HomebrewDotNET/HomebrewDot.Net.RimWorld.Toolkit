@@ -1,8 +1,8 @@
 using System;
 using Xunit;
-using HomebrewDot.Net.RimWorld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Comparing.Components;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 {
     public class OperatorTypesTests
     {
@@ -80,6 +80,79 @@ namespace HomebrewDot.Net.RimWorld.Tests.Comparing.Components
             Assert.Contains("<=", LesserOrEqualOperatorType.Aliases);
             Assert.Contains("true", TrueOperatorType.Aliases);
             Assert.Contains("false", FalseOperatorType.Aliases);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Compare_WithMatchingRegex_ReturnsTrue()
+        {
+            var result = MatchOperatorType.Instance.Compare("Hello World", @"^Hello.*", null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Compare_WithNonMatchingRegex_ReturnsFalse()
+        {
+            var result = MatchOperatorType.Instance.Compare("Hello World", @"^Goodbye.*", null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Compare_WithNullLeft_ReturnsFalse()
+        {
+            var result = MatchOperatorType.Instance.Compare(null, @"^Test", null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Compare_WithNullRight_ReturnsFalse()
+        {
+            var result = MatchOperatorType.Instance.Compare("Test", null, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Compare_WithBothNull_ReturnsFalse()
+        {
+            var result = MatchOperatorType.Instance.Compare(null, null, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void MatchOperatorType_Aliases_ContainExpectedAliases()
+        {
+            Assert.Contains("Match", MatchOperatorType.Aliases);
+            Assert.Contains("Matches", MatchOperatorType.Aliases);
+            Assert.Contains("Regex", MatchOperatorType.Aliases);
+        }
+
+        [Fact]
+        public void NotNullOperatorType_Compare_WithNonNullLeft_ReturnsTrue()
+        {
+            var result = NotNullOperatorType.Instance.Compare("something", null, null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void NotNullOperatorType_Compare_WithNullLeft_ReturnsFalse()
+        {
+            var result = NotNullOperatorType.Instance.Compare(null, null, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void NotNullOperatorType_Compare_WithValueType_ReturnsTrue()
+        {
+            var result = NotNullOperatorType.Instance.Compare(42, null, null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void NotNullOperatorType_Aliases_ContainExpectedAliases()
+        {
+            Assert.Contains("NotNull", NotNullOperatorType.Aliases);
+            Assert.Contains("IsNotNull", NotNullOperatorType.Aliases);
+            Assert.Contains("Defined", NotNullOperatorType.Aliases);
+            Assert.Contains("Any", NotNullOperatorType.Aliases);
         }
     }
 }

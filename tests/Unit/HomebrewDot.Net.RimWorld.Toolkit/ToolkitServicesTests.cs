@@ -3,11 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests
+namespace HomebrewDot.Net.Rimworld.Tests
 {
     public class ToolkitServicesTests
     {
         private interface ITestService
+        {
+            string Value { get; }
+        }
+
+        private interface ISecondTestService
         {
             string Value { get; }
         }
@@ -54,7 +59,8 @@ namespace HomebrewDot.Net.RimWorld.Tests
         [Fact]
         public void GetRequired_WithNameWhenMissing_ThrowsInvalidOperationException()
         {
-            Assert.Throws<InvalidOperationException>(() => Toolkit.Services.GetRequired<ITestService>("does_not_exist"));
+            // Use a unique type that no other test registers to avoid static state pollution
+            Assert.Throws<InvalidOperationException>(() => Toolkit.Services.GetRequired<ISecondTestService>("does_not_exist"));
         }
 
         [Fact]

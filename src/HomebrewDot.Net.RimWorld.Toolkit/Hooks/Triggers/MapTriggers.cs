@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld.Hooks.Triggers
+namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 {
     /// <summary>
     /// Game component that triggers <see cref="MapTriggers"/>.

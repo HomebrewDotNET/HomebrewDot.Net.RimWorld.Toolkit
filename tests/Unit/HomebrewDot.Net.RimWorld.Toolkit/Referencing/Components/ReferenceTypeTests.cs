@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
 {
     public class DelegateReferenceTypeTests
     {
@@ -24,13 +24,13 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         public void Resolve_InvokesProvidedDelegate()
         {
             var called = false;
-            var sut = new DelegateReferenceType((v, ctx) =>
+            var sut = new DelegateReferenceType((input, v, ctx) =>
             {
                 called = true;
                 return v;
             });
 
-            sut.Resolve("input", null);
+            sut.Resolve("input", null, null);
 
             Assert.True(called);
         }
@@ -38,19 +38,22 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         [Fact]
         public void Resolve_ForwardsValueAndContextToDelegate()
         {
+            object capturedInput = null;
             object capturedValue = null;
             IReadOnlyDictionary<string, object> capturedContext = null;
 
-            var sut = new DelegateReferenceType((v, ctx) =>
+            var sut = new DelegateReferenceType((input, v, ctx) =>
             {
+                capturedInput = input;
                 capturedValue = v;
                 capturedContext = ctx;
                 return v;
             });
 
             var context = new Dictionary<string, object> { ["k"] = "v" };
-            sut.Resolve("my-value", context);
+            sut.Resolve("my-input", "my-value", context);
 
+            Assert.Equal("my-input", capturedInput);
             Assert.Equal("my-value", capturedValue);
             Assert.Same(context, capturedContext);
         }
@@ -59,9 +62,9 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         public void Resolve_ReturnsWhateverDelegateReturns()
         {
             var expected = new object();
-            var sut = new DelegateReferenceType((_, __) => expected);
+            var sut = new DelegateReferenceType((_, __, ___) => expected);
 
-            var result = sut.Resolve(null, null);
+            var result = sut.Resolve(null, null, null);
 
             Assert.Same(expected, result);
         }
@@ -74,47 +77,41 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
         [Fact]
         public void Resolve_WithNullValue_ReturnsNull()
         {
-            var result = IndexedReferenceType.Instance.Resolve(null, new Dictionary<string, object>());
+            var result = IndexedReferenceType.Instance.Resolve(null, null, new Dictionary<string, object>());
             Assert.Null(result);
         }
 
         [Fact]
         public void Resolve_WithNullContext_ReturnsNull()
         {
-            var result = IndexedReferenceType.Instance.Resolve("Property", null);
+            var result = IndexedReferenceType.Instance.Resolve(null, "Property", null);
             Assert.Null(result);
         }
 
-        // ── Resolve: no ObjectKey in context ──────────────────────────────────
+        // ── Resolve: no input ─────────────────────────────────────────────────
 
         [Fact]
-        public void Resolve_WithNoObjectKeyInContext_ReturnsNull()
+        public void Resolve_WithNoInput_ReturnsNull()
         {
-            var context = new Dictionary<string, object> { ["other"] = "value" };
-            var result = IndexedReferenceType.Instance.Resolve("Name", context);
+            var result = IndexedReferenceType.Instance.Resolve(null, "Name", new Dictionary<string, object>());
             Assert.Null(result);
         }
 
-        // ── Resolve: ObjectKey present with IIndexed<object> ─────────────────
+        // ── Resolve: input present with IIndexed<object> ─────────────────
 
         [Fact]
-        public void Resolve_WithObjectKeyContainingIIndexed_CallsGetValue()
+        public void Resolve_WithIIndexedInput_CallsGetValue()
         {
             var indexed = new Mock<IIndexed<object>>();
             indexed.Setup(i => i.GetValue<object>("Name")).Returns("Alice");
 
-            var context = new Dictionary<string, object>
-            {
-                [CollectionComparator.ObjectKey] = indexed.Object,
-            };
-
-            var result = IndexedReferenceType.Instance.Resolve("Name", context);
+            var result = IndexedReferenceType.Instance.Resolve(indexed.Object, "Name", new Dictionary<string, object>());
 
             Assert.Equal("Alice", result);
         }
 
         [Fact]
-        public void Resolve_WithObjectKeyContainingIIndexed_PassesPropertyNameFromValue()
+        public void Resolve_WithIIndexedInput_PassesPropertyNameFromValue()
         {
             string capturedProperty = null;
             var indexed = new Mock<IIndexed<object>>();
@@ -122,25 +119,15 @@ namespace HomebrewDot.Net.RimWorld.Tests.Referencing.Components
                 .Callback<string>(p => capturedProperty = p)
                 .Returns((object)null);
 
-            var context = new Dictionary<string, object>
-            {
-                [CollectionComparator.ObjectKey] = indexed.Object,
-            };
-
-            IndexedReferenceType.Instance.Resolve("MyProperty", context);
+            IndexedReferenceType.Instance.Resolve(indexed.Object, "MyProperty", new Dictionary<string, object>());
 
             Assert.Equal("MyProperty", capturedProperty);
         }
 
         [Fact]
-        public void Resolve_WithObjectKeyContainingNonIIndexed_ReturnsNull()
+        public void Resolve_WithNonIIndexedInput_ReturnsNull()
         {
-            var context = new Dictionary<string, object>
-            {
-                [CollectionComparator.ObjectKey] = "not-an-indexed-object",
-            };
-
-            var result = IndexedReferenceType.Instance.Resolve("Name", context);
+            var result = IndexedReferenceType.Instance.Resolve("not-an-indexed-object", "Name", new Dictionary<string, object>());
 
             Assert.Null(result);
         }

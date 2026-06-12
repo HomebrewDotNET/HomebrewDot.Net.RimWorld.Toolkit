@@ -1,8 +1,8 @@
 using System;
 using Xunit;
-using Guard = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Guard;
+using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Helpers
+namespace HomebrewDot.Net.Rimworld.Tests.Helpers
 {
     public class GuardTests
     {

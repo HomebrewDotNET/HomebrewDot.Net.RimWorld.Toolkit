@@ -1,10 +1,10 @@
 using System;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Triggers;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Triggers
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Triggers
 {
     public class OnSnapshotTakenTriggerTests
     {

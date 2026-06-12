@@ -6,10 +6,10 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Verse;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers.Logging;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 
-namespace HomebrewDot.Net.RimWorld.Indexing.Components
+namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
     /// <summary>
     /// Reads from <see cref="DefDatabase{T}"/> and pushes it to the snapshot manager for indexing.

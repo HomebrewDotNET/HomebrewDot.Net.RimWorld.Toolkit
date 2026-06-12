@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Extensions
+namespace HomebrewDot.Net.Rimworld.Extensions
 {
     /// <summary>
     /// Contains extension methods for the <see cref="Type"/>.
@@ -34,6 +34,19 @@ namespace HomebrewDot.Net.RimWorld.Extensions
                 distance++;
             }
             return -1; // Not found in the inheritance hierarchy
+        }
+
+        /// <summary>
+        /// Returns the actual type of the specified type, which is the underlying type if the specified type is a nullable type, or the specified type itself if it is not a nullable type. This method is useful for working with nullable types, as it allows you to easily get the underlying type without having to check if the type is nullable first.
+        /// </summary>
+        /// <param name="type">The type for which to get the actual type.</param>
+        /// <returns>The actual type of the specified type.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="type"/> is null.</exception>
+        public static Type GetActualType(this Type type)
+        {
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            var underlyingType = Nullable.GetUnderlyingType(type);
+            return underlyingType ?? type;
         }
     }
 }

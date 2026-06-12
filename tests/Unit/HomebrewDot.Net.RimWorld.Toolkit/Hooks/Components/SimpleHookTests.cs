@@ -1,8 +1,8 @@
 using System;
 using Xunit;
-using HomebrewDot.Net.RimWorld.Hooks;
+using HomebrewDot.Net.Rimworld.Hooks;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Hooks.Components
+namespace HomebrewDot.Net.Rimworld.Tests.Hooks.Components
 {
     public class SimpleHookTests
     {

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Comparing.Template;
+using HomebrewDot.Net.Rimworld.Comparing.Template;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Components
+namespace HomebrewDot.Net.Rimworld.Comparing.Components
 {
     /// <summary>
     /// Operator that checks if the left value is less than the right value.

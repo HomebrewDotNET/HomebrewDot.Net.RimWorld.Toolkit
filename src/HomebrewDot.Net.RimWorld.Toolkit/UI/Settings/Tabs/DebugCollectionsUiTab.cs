@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Collecting;
-using HomebrewDot.Net.RimWorld.Collecting.Components;
-using HomebrewDot.Net.RimWorld.Comparing;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Referencing.Components;
-using HomebrewDot.Net.RimWorld.UI.Settings;
+using HomebrewDot.Net.Rimworld.Collecting;
+using HomebrewDot.Net.Rimworld.Collecting.Components;
+using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.UI.Settings;
 using UnityEngine;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Developer tab that visualizes configured collections and collectors.
@@ -94,7 +94,7 @@ namespace HomebrewDot.Net.RimWorld
         private static void DrawActions(Rect rect)
         {
             const float buttonGap = 8f;
-            var buttonWidth = (rect.width - buttonGap) / 2f;
+            var buttonWidth = (rect.width - buttonGap * 2f) / 3f;
 
             var loadRect = new Rect(rect.x, rect.y, buttonWidth, rect.height);
             Widgets.DrawMenuSection(loadRect);
@@ -111,17 +111,25 @@ namespace HomebrewDot.Net.RimWorld
                 Toolkit.Collecting.StartCollection();
             }
             Widgets.Label(refreshRect.ContractedBy(4f), "Restart Collection");
+
+            var exportRect = new Rect(refreshRect.xMax + buttonGap, rect.y, buttonWidth, rect.height);
+            Widgets.DrawMenuSection(exportRect);
+            if (Widgets.ButtonInvisible(exportRect))
+            {
+                DebugExportUtility.ExportCollections(Toolkit.Collecting.GetAllDefinitions(), Toolkit.Collecting.GetAllCollectors());
+            }
+            Widgets.Label(exportRect.ContractedBy(4f), "Export Collections");
         }
 
         private static void LoadDebugCollections()
         {
-            var collectionTable = $"{nameof(Def)}.{nameof(ThingDef)}.Weapon.Ranged";
-            var getThings = new Func<IReadOnlyDatabase, IEnumerable<IIndexed<ThingDef>>>(s => s.GetTable<ThingDef>(collectionTable));
+            var getVersion = new Func<IReadOnlyDatabase, int>(s => s.GetTable<ThingDef>(Toolkit.Indexing.Def.Thing.Weapon.Ranged.FullTableName).Version);
+            var getThings = new Func<IReadOnlyDatabase, IEnumerable<IIndexed<ThingDef>>>(s => s.GetTable<ThingDef>(Toolkit.Indexing.Def.Thing.Weapon.Ranged.FullTableName));
             Toolkit.Collecting.Build("Snipers", b => b.Compare.Indexed(ToolkitConstants.Stats.Weapon.Def.Range).With.GreaterThanOrEqual().To.Value(30)
-                                                      .CollectFromSnapshot(getThings)
+                                                      .CollectFromSnapshot(getVersion, getThings)
                                     );
             Toolkit.Collecting.Build("ShortRange", b => b.Compare.Indexed(ToolkitConstants.Stats.Weapon.Def.Range).With.LessThanOrEqual(15)
-                                                         .CollectFromSnapshot(getThings)
+                                                         .CollectFromSnapshot(getVersion, getThings)
                                     );
             Toolkit.Collecting.StartCollection();
         }

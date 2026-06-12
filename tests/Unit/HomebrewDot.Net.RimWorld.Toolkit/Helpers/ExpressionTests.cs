@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Xunit;
-using ExpressionHelper = HomebrewDot.Net.RimWorld.Toolkit.Helpers.Expression;
+using ExpressionHelper = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Expression;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Helpers
+namespace HomebrewDot.Net.Rimworld.Tests.Helpers
 {
     public class ExpressionTests
     {

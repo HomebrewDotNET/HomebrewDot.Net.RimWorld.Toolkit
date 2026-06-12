@@ -5,7 +5,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Indexing
+namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
     /// Database containing tables with indexed data.
@@ -63,7 +63,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// </summary>
         /// <param name="onInserting">The delegate that will be called before an item is inserted.</param>
         /// <returns>The current <see cref="IDatabaseSchemaBuilder"/> instance for chaining.</returns>
-        IDatabaseSchemaBuilder OnInserting(Action<IDatabase, IWriteableIndexed<object>> onInserting);
+        IDatabaseSchemaBuilder OnInserting(Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> onInserting);
         /// <summary>
         /// Defines a callback to be invoked after an item has been inserted into the database.
         /// </summary>
@@ -75,13 +75,13 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// </summary>
         /// <param name="onDeleting">The delegate that will be called before an item is deleted.</param>
         /// <returns>The current <see cref="IDatabaseSchemaBuilder"/> instance for chaining.</returns>
-        IDatabaseSchemaBuilder OnDeleting(Action<IDatabase, IWriteableIndexed<object>, IReadOnlyDictionary<string, object>> onDeleting);
+        IDatabaseSchemaBuilder OnDeleting(Action<IDatabase, IReadOnlyDictionary<string, object>, IWriteableIndexed<object>> onDeleting);
         /// <summary>
         /// Defines a callback to be invoked after an item has been deleted from the database.
         /// </summary>
         /// <param name="onDeleted">The delegate that will be called after an item has been deleted.</param>
         /// <returns>The current <see cref="IDatabaseSchemaBuilder"/> instance for chaining.</returns>
-        IDatabaseSchemaBuilder OnDeleted(Action<IDatabase, IIndexed<object>, IReadOnlyDictionary<string, object>> onDeleted);
+        IDatabaseSchemaBuilder OnDeleted(Action<IDatabase, IReadOnlyDictionary<string, object>, IIndexed<object>> onDeleted);
     }
     /// <summary>
     /// Used to configure the schema of a table in a <see cref="IDatabase"/>.
@@ -112,7 +112,7 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// </summary>
         /// <param name="onInserting">The delegate that will be called before an item is inserted.</param>
         /// <returns>The current <see cref="ITableBuilder{T}"/> instance for chaining.</returns>
-        ITableBuilder<T> OnInserting(Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>> onInserting);
+        ITableBuilder<T> OnInserting(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> onInserting);
         /// <summary>
         /// Defines a callback to be invoked after an item has been inserted into the table.
         /// </summary>
@@ -124,13 +124,13 @@ namespace HomebrewDot.Net.RimWorld.Indexing
         /// </summary>
         /// <param name="onDeleting">The delegate that will be called before an item is deleted.</param>
         /// <returns>The current <see cref="ITableBuilder{T}"/> instance for chaining.</returns>
-        ITableBuilder<T> OnDeleting(Action<IDatabase, IReadOnlyTable<T>, IWriteableIndexed<T>, IReadOnlyDictionary<string, object>> onDeleting);
+        ITableBuilder<T> OnDeleting(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IWriteableIndexed<T>> onDeleting);
         /// <summary>
         /// Defines a callback to be invoked after an item has been deleted from the table.
         /// </summary>
         /// <param name="onDeleted">The delegate that will be called after an item has been deleted.</param>
         /// <returns>The current <see cref="ITableBuilder{T}"/> instance for chaining.</returns>
-        ITableBuilder<T> OnDeleted(Action<IDatabase, IReadOnlyTable<T>, IIndexed<T>, IReadOnlyDictionary<string,object>> onDeleted);
+        ITableBuilder<T> OnDeleted(Action<IDatabase, IReadOnlyTable<T>, IReadOnlyDictionary<string, object>, IIndexed<T>> onDeleted);
         /// <summary>
         /// Defines an index on the table. The index will be named <paramref name="name"/>, and the provided <paramref name="propertySelector"/> function will be used to extract the indexed property from items in the table. The optional <paramref name="filter"/> predicate can be used to specify a condition that items must satisfy to be included in the index. If no filter is provided, all items will be included in the index.
         /// </summary>

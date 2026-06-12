@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Hooks
+namespace HomebrewDot.Net.Rimworld.Hooks
 {
     /// <summary>
     /// Manages the registration and invocation of hooks within the toolkit, allowing external code to subscribe to various game events and trigger custom behavior in response.
@@ -49,6 +49,11 @@ namespace HomebrewDot.Net.RimWorld.Hooks
         /// <typeparam name="T">The type of event to trigger.</typeparam>
         /// <param name="argFactory">A function that creates the event argument.</param>
         void LazyTrigger<T>(Func<T> argFactory);
+        /// <summary>
+        /// Transfers all hooks from this manager to <paramref name="newManager"/>, effectively moving the responsibility of managing and invoking these hooks to the new manager. After this operation, this manager will no longer have any registered hooks, and all hooks will be managed by the new manager.
+        /// </summary>
+        /// <param name="newManager">The new manager for the hooks.</param>
+        void TransferTo(IHookManager newManager);
     }
 
     /// <summary>

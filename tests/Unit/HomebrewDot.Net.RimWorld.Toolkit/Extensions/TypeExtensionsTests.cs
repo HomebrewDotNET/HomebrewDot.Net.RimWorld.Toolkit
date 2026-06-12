@@ -1,8 +1,8 @@
 using System;
-using HomebrewDot.Net.RimWorld.Extensions;
+using HomebrewDot.Net.Rimworld.Extensions;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Extensions
+namespace HomebrewDot.Net.Rimworld.Tests.Extensions
 {
     public class TypeExtensionsTests
     {

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Generic;
+using HomebrewDot.Net.Rimworld.Generic;
 
-namespace HomebrewDot.Net.RimWorld.Hooks
+namespace HomebrewDot.Net.Rimworld.Hooks
 {
     /// <summary>
     /// Represents a hook that will be invoked when a certain trigger occurs. Hooks are used to execute custom code in response to specific events or conditions in the game.

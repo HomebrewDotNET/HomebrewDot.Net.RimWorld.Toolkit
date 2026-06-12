@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HomebrewDot.Net.RimWorld.Comparing.Models;
-using HomebrewDot.Net.RimWorld.Generic.Models;
-using HomebrewDot.Net.RimWorld.Referencing;
-using static HomebrewDot.Net.RimWorld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Generic.Models;
+using HomebrewDot.Net.Rimworld.Referencing;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
-namespace HomebrewDot.Net.RimWorld.Comparing.Components
+namespace HomebrewDot.Net.Rimworld.Comparing.Components
 {
     /// <summary>
     /// Default implementation of the <see cref="IComparator"/> interface, which evaluates conditions defined in <see cref="ConditionDef"/> instances against a given context.
@@ -70,7 +70,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
         }
 
         /// <inheritdoc/>
-        public bool Compare(IConditionDef condition, IReadOnlyDictionary<string, object> context)
+        public bool Compare(object input, IConditionDef condition, IReadOnlyDictionary<string, object> context)
         {
             condition = Guard.NotNull(condition, nameof(condition));
             context ??= NullDictionary<string, object>.Instance;
@@ -80,7 +80,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
             bool groupResult = true;
             if (isGroupCondition)
             {
-                groupResult = Compare(condition.Conditions, context);
+                groupResult = Compare(input, condition.Conditions, context);
             }
             if (!isCondition)
             {
@@ -103,16 +103,16 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
                 return false;
             }
 
-            var compareValue = ResolveValue(condition, condition.Compare, _compareStringToReference, CompareStringToReferenceKey, context);
+            var compareValue = ResolveValue(input, condition, condition.Compare, _compareStringToReference, CompareStringToReferenceKey, context);
             var withValue = GetOperatorType(condition, condition.With, context, out var operatorArguments);
-            var toValue = ResolveValue(condition, condition.To, _toStringToReference, ToStringToReferenceKey, context);
+            var toValue = ResolveValue(input, condition, condition.To, _toStringToReference, ToStringToReferenceKey, context);
 
             var conditionResult = withValue.Compare(compareValue, toValue, operatorArguments, context);
 
             return isGroupCondition ? (condition.ConditionGroupIsOr ? groupResult || conditionResult : groupResult && conditionResult) : conditionResult;
         }
         /// <inheritdoc/>
-        public bool Compare(IReadOnlyList<IConditionDef> conditions, IReadOnlyDictionary<string, object> context)
+        public bool Compare(object input, IReadOnlyList<IConditionDef> conditions, IReadOnlyDictionary<string, object> context)
         {
             conditions = Guard.NotNull(conditions, nameof(conditions));
             context ??= NullDictionary<string, object>.Instance;
@@ -127,7 +127,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
             for (int i = 0; i < conditions.Count; i++)
             {
                 var subCondition = conditions[i];
-                var subResult = Compare(subCondition, context);
+                var subResult = Compare(input, subCondition, context);
                 hasAnyTerm = true;
                 currentAndGroup = currentAndGroup && subResult;
 
@@ -146,7 +146,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
 
             return hasAnyTerm && anyAndGroupPassed;
         }
-        private object ResolveValue(IConditionDef condition, object obj, Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> stringResolver, string stringResolverContextKey, IReadOnlyDictionary<string, object> context)
+        private object ResolveValue(object input, IConditionDef condition, object obj, Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> stringResolver, string stringResolverContextKey, IReadOnlyDictionary<string, object> context)
         {
             if(context.TryGetValue(stringResolverContextKey, out var resolverObj) && resolverObj is Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> resolverFromContext)
             {
@@ -168,7 +168,7 @@ namespace HomebrewDot.Net.RimWorld.Comparing.Components
                 {
                     throw new InvalidOperationException($"Cannot resolve reference of type '{reference.Type}' because no reference resolver was provided.");
                 }
-                if (!resolver.TryResolve(reference, context, out var resolved))
+                if (!resolver.TryResolve(input, reference, context, out var resolved))
                 {
                     throw new InvalidOperationException($"Failed to resolve reference of type '{reference.Type}' with value '{reference.Value}'.");
                 }

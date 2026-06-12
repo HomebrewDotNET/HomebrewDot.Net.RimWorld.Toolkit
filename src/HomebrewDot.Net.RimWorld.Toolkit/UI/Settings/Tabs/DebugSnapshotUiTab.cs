@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using HomebrewDot.Net.RimWorld.Indexing;
-using HomebrewDot.Net.RimWorld.Indexing.Components;
-using HomebrewDot.Net.RimWorld.UI.Settings;
+using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.UI.Settings;
 using RimWorld;
 using UnityEngine;
 using Verse;
 
-namespace HomebrewDot.Net.RimWorld
+namespace HomebrewDot.Net.Rimworld
 {
     /// <summary>
     /// Developer tab that visualizes current snapshot tables.
@@ -36,7 +36,7 @@ namespace HomebrewDot.Net.RimWorld
         /// <inheritdoc/>
         public void Draw(Rect rect)
         {
-            var snapshot = Toolkit.Index.Manager?.DatabaseSnapshot;
+            var snapshot = Toolkit.Indexing.Manager?.DatabaseSnapshot;
             if (snapshot == null)
             {
                 Widgets.Label(rect, "No snapshot available.");
@@ -46,6 +46,28 @@ namespace HomebrewDot.Net.RimWorld
             var headerRect = new Rect(rect.x, rect.y, rect.width, 42f);
             Widgets.Label(headerRect, $"Snapshot Version: {snapshot.Version}\nTables (name + best-effort count):");
 
+            const float actionGap = 8f;
+            var actionRowRect = new Rect(rect.x, headerRect.yMax + 2f, rect.width, 32f);
+            var actionButtonWidth = Mathf.Min(200f, (actionRowRect.width - actionGap) / 2f);
+
+            var loadRect = new Rect(actionRowRect.x, actionRowRect.y, actionButtonWidth, actionRowRect.height);
+            Widgets.DrawMenuSection(loadRect);
+            if (Widgets.ButtonInvisible(loadRect))
+            {
+                Toolkit.Indexing.ConfigureSchema += Index_ConfigureSchema;
+                Toolkit.Indexing.StartIndexing(Current.Game, true);
+                snapshot = Toolkit.Indexing.Manager?.DatabaseSnapshot;
+            }
+            Widgets.Label(loadRect.ContractedBy(4f), "Load Debug Tables");
+
+            var exportRect = new Rect(loadRect.xMax + actionGap, actionRowRect.y, actionButtonWidth, actionRowRect.height);
+            Widgets.DrawMenuSection(exportRect);
+            if (Widgets.ButtonInvisible(exportRect))
+            {
+                DebugExportUtility.ExportSnapshotTableSet(snapshot);
+            }
+            Widgets.Label(exportRect.ContractedBy(4f), "Export Tables");
+
             var tableEntries = BuildTableEntries(snapshot);
             var hasTables = tableEntries.Count != 0;
 
@@ -53,23 +75,14 @@ namespace HomebrewDot.Net.RimWorld
             const float emptyStateListGap = 8f;
             if (!hasTables)
             {
-                var emptyStateRect = new Rect(rect.x, headerRect.yMax + 6f, rect.width, emptyStateButtonHeight);
-                var buttonRect = new Rect(emptyStateRect.x, emptyStateRect.y, Mathf.Min(280f, emptyStateRect.width), emptyStateRect.height);
-                Widgets.DrawMenuSection(buttonRect);
-                if (Widgets.ButtonInvisible(buttonRect))
-                {
-                    Toolkit.Index.Configure(x => x.With(DefGatherer.Instance));
-                    Toolkit.Index.ConfigureSchema(LoadDebugTables);
-                    Toolkit.Index.StartIndexing(Current.Game, true);
-                    snapshot = Toolkit.Index.Manager?.DatabaseSnapshot;
-                }
-                Widgets.Label(buttonRect.ContractedBy(4f), "Load Debug Tables");
+                var emptyStateRect = new Rect(rect.x, actionRowRect.yMax + 6f, rect.width, emptyStateButtonHeight);
+                Widgets.Label(emptyStateRect, "No tables loaded yet. Use 'Load Debug Tables'.");
                 tableEntries = BuildTableEntries(snapshot);
                 hasTables = tableEntries.Count != 0;
             }
 
             var topOffset = hasTables ? 0f : emptyStateButtonHeight + emptyStateListGap;
-            var outRect = new Rect(rect.x, headerRect.yMax + 6f + topOffset, rect.width, Mathf.Max(0f, rect.height - headerRect.height - 6f - topOffset));
+            var outRect = new Rect(rect.x, actionRowRect.yMax + 6f + topOffset, rect.width, Mathf.Max(0f, rect.height - (actionRowRect.yMax - rect.y) - 6f - topOffset));
             var viewRect = new Rect(0f, 0f, outRect.width - 16f, Mathf.Max(outRect.height, tableEntries.Count == 0 ? 28f : tableEntries.Count * 24f + 6f));
 
             Widgets.BeginScrollView(outRect, ref _debugOverviewScroll, viewRect);
@@ -107,45 +120,42 @@ namespace HomebrewDot.Net.RimWorld
             Widgets.EndScrollView();
         }
 
+        private void Index_ConfigureSchema(IDatabaseSchemaBuilder obj)
+        {
+            throw new NotImplementedException();
+        }
+
         private static void LoadDebugTables(IDatabaseSchemaBuilder builder)
-            => builder.WithTable<Def>(nameof(Def), t => t.WithSubTable<ThingDef>(nameof(ThingDef), null, st => st.WithSubTable("Weapon", x => x.IsWeapon, wst => wst.WithSubTable("Melee", x => x.IsMeleeWeapon)
-                                                                                                                                                                    .WithSubTable("Ranged", x => x.IsRangedWeapon, rw => rw.OnInserting((d, tb, x) =>
-                                                                                                                                                                    {
-                                                                                                                                                                        var def = x.Value;
-                                                                                                                                                                        var range = def.Verbs?.Max(v => v.range) ?? 0f;
-                                                                                                                                                                        x.Set(ToolkitConstants.Stats.Weapon.Def.Range, range);
-                                                                                                                                                                    }))
-                                                                                                                              )
-                                                                                                                 .WithSubTable("Apparel", x => x.IsApparel)
-                                                                                )
-                                                         .WithSubTable<PawnKindDef>(nameof(PawnKindDef))
-                                                         .WithSubTable<RecipeDef>(nameof(RecipeDef))
-                                                         .WithSubTable<ResearchProjectDef>(nameof(ResearchProjectDef))
-                                                         .WithSubTable<IncidentDef>(nameof(IncidentDef))
-                                                         .WithSubTable<WorldObjectDef>(nameof(WorldObjectDef))
-                                                         .WithSubTable<BiomeDef>(nameof(BiomeDef))
-                                                         .WithSubTable<BodyDef>(nameof(BodyDef))
-                                     );
+        {
+            Toolkit.Indexing.Def.EnsureGatherer();
+            Toolkit.Indexing.Def.Thing.EnsureTable();
+            Toolkit.Indexing.Def.Thing.Weapon.Melee.EnsureTable();
+            Toolkit.Indexing.Def.Thing.Weapon.Ranged.EnsureTable();
+            Toolkit.Indexing.Def.Thing.Apparel.EnsureTable();
+            Toolkit.Indexing.Def.ConfigureTable(b => b.WithSubTable<PawnKindDef>(nameof(PawnKindDef))
+                                                   .WithSubTable<RecipeDef>(nameof(RecipeDef))
+                                                   .WithSubTable<ResearchProjectDef>(nameof(ResearchProjectDef))
+                                                   .WithSubTable<IncidentDef>(nameof(IncidentDef))
+                                                   .WithSubTable<WorldObjectDef>(nameof(WorldObjectDef))
+                                                   .WithSubTable<BiomeDef>(nameof(BiomeDef))
+                                                   .WithSubTable<BodyDef>(nameof(BodyDef)));
+            Toolkit.Indexing.Thing.EnsureGatherer();
+            Toolkit.Indexing.Thing.Resources.EnsureTable();
+        }
 
         private static List<TableDisplayEntry> BuildTableEntries(IReadOnlyDatabase snapshot)
         {
             var entries = new List<TableDisplayEntry>();
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var table in snapshot.GetTables().OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var table in snapshot.GetTables().OrderBy(t => t.FullName, StringComparer.OrdinalIgnoreCase))
             {
-                if (!visited.Add(table.Name))
-                {
-                    continue;
-                }
-
-                AppendTableEntry(entries, table, visited, depth: 0);
+                AppendTableEntry(entries, table, depth: 0);
             }
 
             return entries;
         }
 
-        private static void AppendTableEntry(List<TableDisplayEntry> entries, IReadOnlyTable table, HashSet<string> visited, int depth)
+        private static void AppendTableEntry(List<TableDisplayEntry> entries, IReadOnlyTable table, int depth)
         {
             entries.Add(new TableDisplayEntry(table, depth));
 
@@ -155,14 +165,9 @@ namespace HomebrewDot.Net.RimWorld
                 return;
             }
 
-            foreach (var subTable in subTables.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var subTable in subTables.OrderBy(t => t.FullName, StringComparer.OrdinalIgnoreCase))
             {
-                if (!visited.Add(subTable.Name))
-                {
-                    continue;
-                }
-
-                AppendTableEntry(entries, subTable, visited, depth + 1);
+                AppendTableEntry(entries, subTable, depth + 1);
             }
         }
 

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HomebrewDot.Net.RimWorld.Generic
+namespace HomebrewDot.Net.Rimworld.Generic
 {
     /// <summary>
     /// Base interface with common functionality for handlers that manage the lifecycle of components, such as indexes or hooks.
