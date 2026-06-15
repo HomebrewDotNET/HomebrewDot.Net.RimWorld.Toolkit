@@ -13,9 +13,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
         private static ReferenceDef Ref(string type, object value = null) =>
             new ReferenceDef { Type = type, Value = value };
 
-        private static Mock<IReferenceType> MockType(object returns)
+        private static Mock<IReferenceTypeCompileable> MockType(object returns)
         {
-            var mock = new Mock<IReferenceType>();
+            var mock = new Mock<IReferenceTypeCompileable>();
             mock.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Returns(returns);
             return mock;
@@ -79,7 +79,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
 
             var context = new Dictionary<string, object>
             {
-                [ReferenceResolver.ContextReferenceTypesKey] = new Dictionary<string, IReferenceType>
+                [ReferenceResolver.ContextReferenceTypesKey] = new Dictionary<string, IReferenceTypeCompileable>
                 {
                     ["mytype"] = contextType.Object,
                 },
@@ -102,7 +102,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
             // Context has reference types, but not for "mytype"
             var context = new Dictionary<string, object>
             {
-                [ReferenceResolver.ContextReferenceTypesKey] = new Dictionary<string, IReferenceType>
+                [ReferenceResolver.ContextReferenceTypesKey] = new Dictionary<string, IReferenceTypeCompileable>
                 {
                     ["othertype"] = MockType("other").Object,
                 },
@@ -136,7 +136,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
             object capturedValue = null;
             IReadOnlyDictionary<string, object> capturedContext = null;
 
-            var refType = new Mock<IReferenceType>();
+            var refType = new Mock<IReferenceTypeCompileable>();
             refType.Setup(t => t.Resolve(It.IsAny<object>(), It.IsAny<object>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
                 .Callback<object, object, IReadOnlyDictionary<string, object>>((input, v, ctx) =>
                 {

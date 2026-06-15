@@ -178,20 +178,30 @@ namespace HomebrewDot.Net.Rimworld.Tests
 
         private sealed class TrackingComparator : ICollectionComparator
         {
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, Dictionary<string, object> context)
+            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
                 => true;
+
+            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            {
+                throw new NotImplementedException();
+            }
         }
 
         private sealed class DisposableTrackingComparator : ICollectionComparator, IDisposable
         {
             public bool IsDisposed { get; private set; }
 
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, Dictionary<string, object> context)
+            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
                 => true;
 
             public void Dispose()
             {
                 IsDisposed = true;
+            }
+
+            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            {
+                throw new NotImplementedException();
             }
         }
 
@@ -269,6 +279,11 @@ namespace HomebrewDot.Net.Rimworld.Tests
             public bool CanCollect(T obj, IReadOnlyDictionary<string, object> context) => obj != null;
 
             public bool Remove(T obj)
+            {
+                throw new NotImplementedException();
+            }
+
+            public IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
             {
                 throw new NotImplementedException();
             }

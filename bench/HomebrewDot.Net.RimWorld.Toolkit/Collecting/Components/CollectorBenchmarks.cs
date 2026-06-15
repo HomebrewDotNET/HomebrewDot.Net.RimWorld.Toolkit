@@ -622,17 +622,27 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
 
         private sealed class AlwaysTrueComparator : ICollectionComparator
         {
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, Dictionary<string, object> context)
+            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
             {
                 return true;
+            }
+
+            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            {
+                throw new NotImplementedException();
             }
         }
 
         private sealed class AlwaysFalseComparator : ICollectionComparator
         {
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, Dictionary<string, object> context)
+            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
             {
                 return false;
+            }
+
+            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            {
+                throw new NotImplementedException();
             }
         }
 

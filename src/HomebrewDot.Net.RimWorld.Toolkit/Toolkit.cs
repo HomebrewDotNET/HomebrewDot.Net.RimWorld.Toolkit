@@ -28,6 +28,7 @@ using HomebrewDot.Net.Rimworld.UI.Settings;
 using RimWorld;
 using UnityEngine;
 using Verse;
+using Verse.AI.Group;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
 namespace HomebrewDot.Net.Rimworld
@@ -41,6 +42,7 @@ namespace HomebrewDot.Net.Rimworld
         private static object _lock = new object();
         private static Toolkit _instance;
         private static ToolkitSettings _settings;
+        private static Lazy<Harmony> _harmony = new Lazy<Harmony>(() => new Harmony(ModId), true);
 
         // Fields
         private readonly ToolkitSettingsUi _settingsUi;
@@ -52,7 +54,7 @@ namespace HomebrewDot.Net.Rimworld
         /// <summary>
         /// The Harmony instance used for patching methods.
         /// </summary>
-        internal static Harmony Harmony { get; } = new Harmony(ModId);
+        internal static Harmony Harmony => _harmony.Value;
         /// <summary>
         /// Singleton instance of the <see cref="Toolkit"/> class.
         /// </summary>
@@ -215,18 +217,21 @@ namespace HomebrewDot.Net.Rimworld
             // Statics
             static Indexing()
             {
-                Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Instance, (e) =>
-                             {
-                                 StartIndexing(e.Game, true);
-                                 // Take snapshot 1 tick after loading to ensure a quick loading of the snapshot.
-                                 Hooks.Manager.Trigger(new PreparingSnapshotTrigger(Manager));
-                                 Hooks.Manager.RegisterHook<OnGameTickTrigger>(Instance, (tick) =>
-                                 {
-                                     Manager.Snapshot();
-                                     return true;
-                                 }, true, priority: 0);
-                             }, priority: byte.MaxValue)
+                Invoking.Safe(() =>
+                {
+                    Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Instance, (e) =>
+                    {
+                        StartIndexing(e.Game, true);
+                        // Take snapshot 1 tick after loading to ensure a quick loading of the snapshot.
+                        Hooks.Manager.Trigger(new PreparingSnapshotTrigger(Manager));
+                        Hooks.Manager.RegisterHook<OnGameTickTrigger>(Instance, (tick) =>
+                        {
+                            Manager.Snapshot();
+                            return true;
+                        }, true, priority: 0);
+                    }, priority: byte.MaxValue)
                              .RegisterHook<ToolkitSettings.Changed>(Instance, e => StartIndexing(Current.Game));
+                });
             }
 
             // Fields
@@ -311,7 +316,7 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         if (_orchestrator == null)
                         {
-                            _orchestrator = new SnapshotOrchestrator(Toolkit.Hooks.Manager, Settings.SlowGatheringEnabled);
+                            _orchestrator = new SnapshotOrchestrator(Toolkit.Hooks.Manager, Invoking.Safe(() => Settings.SlowGatheringEnabled, false));
                         }
                     }
                     return _orchestrator;
@@ -898,6 +903,18 @@ namespace HomebrewDot.Net.Rimworld
         /// </summary>
         public static class Collecting
         {
+
+            static Collecting()
+            {
+                Helpers.Invoking.Safe(() =>
+                {
+                    Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(Toolkit.Instance, errorHandler =>
+                    {
+                        ReloadDefaultComparator();
+                    }, false);
+                });
+            }
+
             // Fields
             private static readonly object _lock = new object();
             private static readonly Dictionary<string, ICollectionDef> _collectionDefinitions = new Dictionary<string, ICollectionDef>(StringComparer.OrdinalIgnoreCase);
@@ -1287,7 +1304,7 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>The last registered service of the specified type, or null if none is found.</returns>
             public static T Get<T>(string name = null)
             {
-                if(name != null)
+                if (name != null)
                 {
                     var allNamed = GetAllNamed<T>();
                     if (allNamed.TryGetValue(name, out var namedService))
@@ -1835,6 +1852,21 @@ namespace HomebrewDot.Net.Rimworld
 
                     return getter != null;
                 }
+                /// <summary>
+                /// Returns all members (properties and fields) of type T that are indexed in the ObjectCache. This method retrieves the cached properties and fields for the specified type T and yields them as an enumerable collection of MemberInfo objects. It can be useful for scenarios where you need to inspect or manipulate the members of a type dynamically, such as in serialization, data binding, or reflection-based operations.
+                /// </summary>
+                /// <returns>An enumerable collection of MemberInfo objects representing the indexed members of type T.</returns>
+                public static IEnumerable<MemberInfo> GetMembers()
+                {
+                    foreach (var property in ToolkitConstants.ObjectCache<T>.IndexedProperties.Values)
+                    {
+                        yield return property;
+                    }
+                    foreach (var field in ToolkitConstants.ObjectCache<T>.IndexedFields.Values)
+                    {
+                        yield return field;
+                    }
+                }
             }
 
             /// <summary>
@@ -1843,6 +1875,7 @@ namespace HomebrewDot.Net.Rimworld
             public static class Traversing
             {
                 private static ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object>>> _typeGetters = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object>>>();
+                private static ConcurrentDictionary<Type, Func<IEnumerable<MemberInfo>>> _memberGetters = new ConcurrentDictionary<Type, Func<IEnumerable<MemberInfo>>>();
                 private static readonly BindingFlags PublicStatic = BindingFlags.Public | BindingFlags.Static;
 
                 /// <summary>
@@ -1962,6 +1995,26 @@ namespace HomebrewDot.Net.Rimworld
                 }
 
                 /// <summary>
+                /// Returns all members (properties and fields) of the specified <paramref name="type"/> that are indexed in the ObjectCache. This method retrieves the cached properties and fields for the specified type and returns them as an enumerable collection of MemberInfo objects. It can be useful for scenarios where you need to inspect or manipulate the members of a type dynamically, such as in serialization, data binding, or reflection-based operations.
+                /// </summary>
+                /// <param name="type">The type whose members are to be retrieved.</param>
+                /// <returns>An enumerable collection of MemberInfo objects representing the indexed members of the specified type.</returns>
+                /// <exception cref="ArgumentNullException">Thrown when the provided type is null.</exception>
+                public static IEnumerable<MemberInfo> GetMembers(Type type)
+                {
+                    if (type == null) throw new ArgumentNullException(nameof(type));
+                    return _memberGetters.GetOrAdd(type, t =>
+                    {
+                        var typedTraversingType = typeof(Traversing<>).MakeGenericType(t);
+                        var getMembersMethod = typedTraversingType.GetMethod(nameof(Traversing<object>.GetMembers), PublicStatic);
+
+                        var lambda = System.Linq.Expressions.Expression.Lambda<Func<IEnumerable<MemberInfo>>>(
+                            System.Linq.Expressions.Expression.Call(getMembersMethod));
+                        return lambda.Compile();
+                    })();
+                }
+
+                /// <summary>
                 /// Splits a dot-delimited property path into its segments.
                 /// </summary>
                 /// <param name="propertyPath">The path to split.</param>
@@ -2049,6 +2102,26 @@ namespace HomebrewDot.Net.Rimworld
                     catch (Exception ex)
                     {
                         Logging.LogError($"An error occurred while invoking method: {ex}");
+                    }
+                }
+                /// <summary>
+                /// Tries to invoke the provided function and returns its result, with error handling and logging. If the function throws an exception, it will be caught and logged as an error, and the method will return the specified default value instead. This allows for safe invocation of code that may potentially fail without crashing the game or causing unintended side effects.
+                /// </summary>
+                /// <typeparam name="T">The type of the return value of the function.</typeparam>
+                /// <param name="func">The function to invoke safely.</param>
+                /// <param name="defaultValue">The default value to return if the function throws an exception.</param>
+                /// <returns>The result of the function, or the default value if an exception occurred.</returns>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public static T Safe<T>(Func<T> func, T defaultValue = default)
+                {
+                    try
+                    {
+                        return func();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logging.LogError($"An error occurred while invoking method: {ex}");
+                        return defaultValue;
                     }
                 }
             }

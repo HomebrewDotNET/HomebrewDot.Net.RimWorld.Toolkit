@@ -29,7 +29,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
         /// <summary>
         /// The aliases for this operator type, which can be used to reference this operator type in definitions or code.
         /// </summary>
-        public static readonly IReadOnlyCollection<string> Aliases = new[] { "Greater", "Bigger", DefaultTypeName, Operator.ToOperatorString() };
+        public static readonly IReadOnlyCollection<string> Aliases = new[] { "Greater", "Bigger", "gt", DefaultTypeName, Operator.ToOperatorString() };
 
         /// <inheritdoc cref="GreaterOperatorType"/>
         private GreaterOperatorType() : base(Operator, ComparableFunc, allowPositionSwap: false)

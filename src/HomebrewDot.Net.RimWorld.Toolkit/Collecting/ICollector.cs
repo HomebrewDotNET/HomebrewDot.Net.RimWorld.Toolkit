@@ -35,6 +35,13 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// <returns>True if the object was collected; otherwise, false.</returns>
         bool Collect(T obj, IReadOnlyDictionary<string, object> context);
         /// <summary>
+        /// Collects the specified objects of type <typeparamref name="T"/> if they match the collection definition. The context parameter provides additional information that may be needed for collection, such as the source of the objects or any relevant metadata. Returns an enumerable of tuples where each tuple contains the object and a boolean indicating whether it was collected (true) or not (false). This allows for batch collection of multiple objects while still providing feedback on which ones were successfully collected.
+        /// </summary>
+        /// <param name="objects">The objects to collect.</param>
+        /// <param name="context">A dictionary of additional information that may be needed for collection.</param>
+        /// <returns>An enumerable of tuples where each tuple contains the object and a boolean indicating whether it was collected.</returns>
+        IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context);
+        /// <summary>
         /// Removes the specified object of type <typeparamref name="T"/> from the collector if it is currently collected.
         /// </summary>
         /// <param name="obj">The object to remove.</param>

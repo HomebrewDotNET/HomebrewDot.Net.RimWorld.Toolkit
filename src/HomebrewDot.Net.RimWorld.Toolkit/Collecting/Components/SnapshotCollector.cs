@@ -14,6 +14,7 @@ using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using HomebrewDot.Net.Rimworld.Extensions;
 
 namespace HomebrewDot.Net.Rimworld.Collecting.Components
 {
@@ -224,6 +225,21 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         }
 
         /// <inheritdoc/>
+        IEnumerable<(IIndexed<T> Obj, bool Collected)> ICollector<IIndexed<T>>.Collect(IEnumerable<IIndexed<T>> objects, IReadOnlyDictionary<string, object> context)
+        {
+            return _collector.Collect(objects, context);
+        }
+        /// <inheritdoc/>
+        public IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
+        {
+            objects = Guard.NotNull(objects, nameof(objects));
+            foreach (var obj in objects)
+            {
+                yield return (obj, Collect(obj, context));
+            }
+        }
+
+        /// <inheritdoc/>
         public bool Contains(T obj)
         {
             lock(_collector)
@@ -274,7 +290,10 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LoadFrom(snapshot);
             return true;
         }
-
+        /// <summary>
+        /// Pushes all items of type <typeparamref name="T"/> from the provided snapshot to the underlying collector, using the provided function to determine which items to push. This is called automatically when a new snapshot is taken, but can also be called manually to load from an existing snapshot. If the provided snapshot is null, this method will do nothing.
+        /// </summary>
+        /// <param name="snapshot">The snapshot from which to load items.</param>
         public void LoadFrom(IReadOnlyDatabase snapshot)
         {
             snapshot = Guard.NotNull(snapshot, nameof(snapshot));
@@ -285,16 +304,22 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return;
             }
+            var counter = 0;
+            var total = 0;
             lock (_collector)
             {
                 Clear();
                 var context = CompareContext;
-                foreach (var thing in thingsToPush)
+                foreach(var (thing, collected) in _collector.Collect(thingsToPush, context))
                 {
-                    _collector.Collect(thing, context);
+                    if(collected)
+                    {
+                        counter++;
+                    }
+                    total++;
                 }
             }
-            Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {_collector.Count} items from snapshot {_lastVersion} in {stopwatch.ElapsedMilliseconds}ms");
+            Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} items from snapshot {_lastVersion} in {stopwatch.ElapsedMilliseconds}ms");
         }
 
         /// <inheritdoc/>
@@ -345,7 +370,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var tables = snapshot.GetTables<T>();
             foreach (var table in tables)
             {
-                foreach (var item in (IEnumerable<IIndexed<T>>)table)
+                foreach (var item in table.Enumerate<IIndexed<T>>())
                 {
                     yield return item;
                 }

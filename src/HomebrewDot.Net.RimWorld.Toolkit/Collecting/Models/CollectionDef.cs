@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Generic;
 using HomebrewDot.Net.Rimworld.Referencing;
 using Verse;
 using Verse.Noise;
@@ -13,8 +14,11 @@ using static RimWorld.PsychicRitualRoleDef;
 namespace HomebrewDot.Net.Rimworld.Collecting.Models
 {
     /// <inheritdoc cref="ICollectionDef"/>
-    public class CollectionDef : ICollectionDef
+    public class CollectionDef : ICollectionDef, ICacheable
     {
+        // Fields
+        private ConditionDef _combinedConditions;
+
         /// <inheritdoc cref="CollectionDef"/>
         public CollectionDef()
         {
@@ -39,12 +43,35 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         public bool InclusionsAreOr { get; set; }
         /// <inheritdoc cref="ICollectionDef.Exclusions"/>
         public CollectionConditionDef[] Exclusions { get; set; }
+        /// <inheritdoc cref="ICollectionDef.CombinedConditions"/>
+        public IConditionDef CombinedConditions { 
+            get
+            {
+                if(_combinedConditions != null)
+                {
+                    return _combinedConditions;
+                }
+                if(Conditions == null || Conditions.Length == 0)
+                {
+                    return null;
+                }
+
+                _combinedConditions = new ConditionDef()
+                {
+                    Conditions = Conditions,
+                };
+                return _combinedConditions;
+            } 
+        }
+
         /// <inheritdoc/>
         IReadOnlyList<IConditionDef> ICollectionDef.Conditions => Conditions;
         /// <inheritdoc/>
         IReadOnlyList<ICollectionConditionDef> ICollectionDef.Inclusions => Inclusions;
         /// <inheritdoc/>
         IReadOnlyList<ICollectionConditionDef> ICollectionDef.Exclusions => Exclusions;
+        /// <inheritdoc/>
+        public string GetCacheKey() => ToString();
 
         /// <summary>
         /// Converts the current collection definition to a string representation. This method builds a string that represents the collection in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
@@ -60,6 +87,10 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             {
                 stringBuilder.Append("IF ");
                 ConditionDef.GroupToString(Conditions, stringBuilder, true);
+                if (Inclusions?.Length > 0)
+                {
+                    stringBuilder.AppendLine().Append(InclusionsAreOr ? " OR " : " AND THEN ");
+                }
             }
             if(currentLength != stringBuilder.Length)
             {

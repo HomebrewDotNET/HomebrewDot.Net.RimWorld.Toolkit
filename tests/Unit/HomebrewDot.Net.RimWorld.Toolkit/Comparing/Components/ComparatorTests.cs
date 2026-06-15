@@ -185,7 +185,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
                 null,
                 null);
 
-            // (true AND false) OR (false AND true) OR false
+            // true AND false OR false AND true OR false
             var condition = new ConditionDef
             {
                 Conditions = new[]
@@ -200,7 +200,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 
             var result = sut.Compare(null, condition, null);
 
-            Assert.False(result);
+            Assert.True(result);
         }
 
         [Fact]
@@ -305,8 +305,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
                 new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase) { ["eq"] = equals },
                 null, null);
 
-var result = sut.Compare(null, new[]
-            {
+            var result = sut.Compare(null, new[]
+                        {
                 new ConditionDef { Compare = 1, With = "eq", To = 2 },
             }, null);
 

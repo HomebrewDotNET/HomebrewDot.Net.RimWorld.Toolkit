@@ -160,6 +160,15 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             return false;
         }
         /// <inheritdoc/>
+        public virtual IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
+        {
+            objects = Guard.NotNull(objects, nameof(objects));
+            foreach (var obj in objects)
+            {
+                yield return (obj, Collect(obj, context));
+            }
+        }
+        /// <inheritdoc/>
         public virtual bool Remove(T obj)
         {
             if (obj == null)

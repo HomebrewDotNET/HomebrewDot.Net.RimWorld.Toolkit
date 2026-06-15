@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
@@ -11,7 +12,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
     /// <summary>
     /// Base class for operator types using combination of native operator and fallback on IComparable.
     /// </summary>
-    public abstract class BaseComparableOperatorType : BaseNativeOperator, IOperatorType
+    public abstract class BaseComparableOperatorType : BaseNativeOperator, IOperatorTypeCompileable
     {
         // Fields
         private readonly NativeOperatorType _operatorType;
@@ -44,6 +45,17 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
                 isMatched = _comparableFunc(comparable, right);
             }
             return isMatched ?? false;
+        }
+        /// <inheritdoc/>
+        public System.Linq.Expressions.Expression Compile(System.Linq.Expressions.Expression leftValue, Type leftExpressionType, System.Linq.Expressions.Expression rightValue, Type rightExpressionType, ParameterExpression argumentsParameter, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            _ = TryCompile(leftValue, rightValue, leftExpressionType, rightExpressionType, _operatorType, false, out var compiled);
+            return compiled;
+        }
+        /// <inheritdoc/>
+        public string GetCacheKey(Type left, Type right, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            return TryCompile(null, null, left, right, _operatorType, true, out _) ? $"{GetType().FullName}:{left.FullName}:{right.FullName}" : null;
         }
     }
 }

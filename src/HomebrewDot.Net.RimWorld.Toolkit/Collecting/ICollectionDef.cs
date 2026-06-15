@@ -20,6 +20,10 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// </summary>
         IReadOnlyList<IConditionDef> Conditions { get; }
         /// <summary>
+        /// <see cref="Conditions"/> combined into a single condition mostly used for cache reasons.
+        /// </summary>
+        IConditionDef CombinedConditions { get; }
+        /// <summary>
         /// Collections objects must be in to be included in the collection. Can be null when either <see cref="Conditions"/> or <see cref="Exclusions"/> are used. 
         /// If both <see cref="Conditions"/> and <see cref="Inclusions"/> are used, <see cref="InclusionsAreOr"/> determines whether the conditions are combined using OR logic.
         /// </summary>

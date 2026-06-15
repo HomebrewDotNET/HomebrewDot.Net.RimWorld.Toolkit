@@ -110,8 +110,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 
             sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
 
-            _mockCollector.Verify(c => c.Collect(item1.Object, It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-            _mockCollector.Verify(c => c.Collect(item2.Object, It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
+            _mockCollector.Verify(c => c.Collect(It.Is<IEnumerable<IIndexed<string>>>(i => i.SequenceEqual(items)), It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
         }
 
         [Fact]

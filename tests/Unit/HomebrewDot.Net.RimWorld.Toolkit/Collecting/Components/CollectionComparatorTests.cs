@@ -6,8 +6,11 @@ using HomebrewDot.Net.Rimworld.Collecting.Models;
 using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Comparing.Components;
 using HomebrewDot.Net.Rimworld.Comparing.Models;
+using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
 using Moq;
 using Xunit;
+using static HomebrewDot.Net.Rimworld.Toolkit;
 
 namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 {
@@ -84,11 +87,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
         [Fact]
         public void Matches_WithConditionsAndInclusions_OrMode_AllowsEitherSide()
         {
-            var conditionComparator = new Mock<IComparator>();
-            conditionComparator
-                .SetupSequence(c => c.Compare(It.IsAny<object>(), It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
-                .Returns(true)
-                .Returns(false);
+            Toolkit.ConfigureServices();
+            var referenceTypes = Services.GetAllNamed<IReferenceType>();
+            var referenceResolver = Services.Get<IReferenceResolver>() ?? new ReferenceResolver(referenceTypes);
+            var operatorTypes = Services.GetAllNamed<IOperatorType>();
+            var conditionComparator = new Comparator(referenceResolver, operatorTypes);
 
             var subCollection = new CollectionDef
             {
@@ -96,7 +99,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             };
             var root = new CollectionDef
             {
-                Conditions = new[] { new ConditionDef { Compare = 1, With = "eq", To = 1 } },
+                Conditions = new[] { new ConditionDef { Compare = 1, With = "eq", To = 0 } },
                 Inclusions = new[] { new CollectionConditionDef { Name = "sub" } },
                 InclusionsAreOr = true,
             };
@@ -106,20 +109,22 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
                 ["sub"] = subCollection,
             };
 
-            var sut = new CollectionComparator(conditionComparator.Object);
+            var sut = new CollectionComparator(conditionComparator);
+            var subIsMatch = sut.Matches(subCollection, new object(), collections, new Dictionary<string, object>());
             var result = sut.Matches(root, new object(), collections, new Dictionary<string, object>());
 
+            Assert.True(subIsMatch);
             Assert.True(result);
         }
 
         [Fact]
         public void Matches_WithInclusionCollectionConditions_EvaluatesAndOrCombinations()
         {
-            var comparator = new Mock<IComparator>();
-            comparator
-                .SetupSequence(c => c.Compare(It.IsAny<object>(), It.IsAny<IReadOnlyList<IConditionDef>>(), It.IsAny<IReadOnlyDictionary<string, object>>()))
-                .Returns(false)
-                .Returns(true);
+            Toolkit.ConfigureServices();
+            var referenceTypes = Services.GetAllNamed<IReferenceType>();
+            var referenceResolver = Services.Get<IReferenceResolver>() ?? new ReferenceResolver(referenceTypes);
+            var operatorTypes = Services.GetAllNamed<IOperatorType>();
+            var conditionComparator = new Comparator(referenceResolver, operatorTypes);
 
             var subA = new CollectionDef
             {
@@ -145,7 +150,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
                 ["B"] = subB,
             };
 
-            var sut = new CollectionComparator(comparator.Object);
+            var sut = new CollectionComparator(conditionComparator);
             var result = sut.Matches(root, new object(), collections, new Dictionary<string, object>());
 
             Assert.True(result);

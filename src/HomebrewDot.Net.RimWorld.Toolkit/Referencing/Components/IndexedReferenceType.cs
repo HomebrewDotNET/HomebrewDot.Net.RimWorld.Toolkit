@@ -14,7 +14,7 @@ using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
-    /// A <see cref="IReferenceType"/> that resolves property values from <see cref="IIndexed{T}"/>.
+    /// A <see cref="IReferenceTypeCompileable"/> that resolves property values from <see cref="IIndexed{T}"/>.
     /// </summary>
     public class IndexedReferenceType : IReferenceType
     {

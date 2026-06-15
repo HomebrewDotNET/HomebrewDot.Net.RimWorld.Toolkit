@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net472</TargetFramework>
@@ -27,6 +27,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+			<_Parameter1>RimworldLocation</_Parameter1>
+			<_Parameter2>$(RimworldRoot)</_Parameter2>
+		</AssemblyAttribute>
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Microsoft.NET.Test.Sdk" />
 		<PackageReference Include="Moq" />
 		<PackageReference Include="xunit" />
@@ -53,6 +60,10 @@
 		<Reference Include="UnityEngine.IMGUIModule">
 			<HintPath>$(RimWorldManaged)\UnityEngine.IMGUIModule.dll</HintPath>
 		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Policies\" />
 	</ItemGroup>
 
 </Project>

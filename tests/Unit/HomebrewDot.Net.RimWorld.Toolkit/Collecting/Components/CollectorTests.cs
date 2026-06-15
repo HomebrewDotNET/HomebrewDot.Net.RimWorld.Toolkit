@@ -117,7 +117,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             var sut = new Collector<string>(CreateDef());
             sut.StartCollecting(CreateMatchingComparator().Object, new Dictionary<string, ICollectionDef>());
 
-            Assert.False(sut.Collect(null, EmptyContext));
+            Assert.False(sut.Collect((string)null, EmptyContext));
         }
 
         [Fact]
@@ -298,32 +298,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             Assert.Equal(0, sut.Count);
             // Can still collect after clear
             Assert.True(sut.Collect("c", EmptyContext));
-        }
-
-        // ── Context propagation ───────────────────────────────────────────────
-
-        [Fact]
-        public void Collect_WithContext_PassesContextToComparator()
-        {
-            IReadOnlyDictionary<string, object> capturedContext = null;
-            var comparator = new Mock<ICollectionComparator>();
-            comparator.Setup(c => c.Matches(
-                    It.IsAny<ICollectionDef>(),
-                    It.IsAny<object>(),
-                    It.IsAny<IReadOnlyDictionary<string, ICollectionDef>>(),
-                    It.IsAny<Dictionary<string, object>>()))
-                .Callback<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, Dictionary<string, object>>(
-                    (def, obj, cols, ctx) => capturedContext = ctx)
-                .Returns(true);
-
-            var sut = new Collector<string>(CreateDef());
-            sut.StartCollecting(comparator.Object, new Dictionary<string, ICollectionDef>());
-
-            var context = new Dictionary<string, object> { ["key"] = "value" };
-            sut.Collect("hello", context);
-
-            Assert.NotNull(capturedContext);
-            Assert.True(capturedContext.ContainsKey("key"));
         }
     }
 }

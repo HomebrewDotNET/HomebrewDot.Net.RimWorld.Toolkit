@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Generic;
 using HomebrewDot.Net.Rimworld.Referencing;
 
 namespace HomebrewDot.Net.Rimworld.Comparing.Models
@@ -10,7 +11,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
     /// <summary>
     /// Definition of a condition that compares 2 references using a specific operator. 
     /// </summary>
-    public class ConditionDef : IConditionDef
+    public class ConditionDef : IConditionDef, ICacheable
     {
         /// <inheritdoc cref="IConditionDef.Conditions"/>
         public ConditionDef[] Conditions { get; set; }
@@ -45,7 +46,8 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             To = conditionDef.To;
             IsOr = conditionDef.IsOr;
         }
-
+        /// <inheritdoc/>
+        public string GetCacheKey() => ToString();
         /// <summary>
         /// Converts the current condition definition to a string representation. This method builds a string that represents the condition in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
         /// </summary>
