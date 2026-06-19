@@ -17,28 +17,21 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
     {
         // State
         private Func<ICollectionDef, ICollector> _collectorFactory;
+        private List<ICollectionConditionDef> _inclusions = new List<ICollectionConditionDef>();
+        private List<ICollectionConditionDef> _exclusions = new List<ICollectionConditionDef>();
+        private bool _groupIsOr;
 
         // Properties
-        public ICollectionDef Collection { 
+        public CollectionDef Collection { 
             get
             {
-                return new CollectionDef() { Conditions = Conditions?.ToArray() };
+                return new CollectionDef() { 
+                    Conditions = Conditions?.ToArray(),
+                    Exclusions = _exclusions?.Select(e => new CollectionConditionDef(e)).ToArray() ?? Array.Empty<CollectionConditionDef>(),
+                    Inclusions = _inclusions?.Select(i => new CollectionConditionDef(i)).ToArray() ?? Array.Empty<CollectionConditionDef>(),
+                    InclusionsAreOr = _groupIsOr
+                };
             } 
-        }
-
-        public TReturn ExcludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
-        {
-            throw new NotImplementedException();
-        }
-
-        public TReturn IncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
-        {
-            throw new NotImplementedException();
-        }
-
-        public TReturn OrIncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
-        {
-            throw new NotImplementedException();
         }
 
         public bool TryBuildCollector(ICollectionDef collectionDef, out ICollector collector)
@@ -65,6 +58,62 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             _collectorFactory = Guard.NotNull(collectorFactory, nameof(collectorFactory));
             return Return;
         }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.ExcludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
+        {
+            builder = Guard.NotNull(builder, nameof(builder));
+            var conditionBuilder = new CollectionConditionBuilder();
+            builder(conditionBuilder);
+            _exclusions.Clear();
+            _exclusions.AddRange(conditionBuilder.Conditions);
+            return Return;
+        }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.ExcludeFrom(IReadOnlyList<ICollectionConditionDef> condition)
+        {
+            condition = Guard.NotNull(condition, nameof(condition));
+            _exclusions.Clear();
+            _exclusions.AddRange(condition);
+            return Return;
+        }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.IncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
+        {
+            builder = Guard.NotNull(builder, nameof(builder));
+            var conditionBuilder = new CollectionConditionBuilder();
+            builder(conditionBuilder);
+            _inclusions.Clear();
+            _inclusions.AddRange(conditionBuilder.Conditions);
+            _groupIsOr = false;
+            return Return;
+        }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.IncludeFrom(IReadOnlyList<ICollectionConditionDef> condition)
+        {
+            condition = Guard.NotNull(condition, nameof(condition));
+            _inclusions.Clear();
+            _inclusions.AddRange(condition);
+            _groupIsOr = false;
+            return Return;
+        }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.OrIncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
+        {
+            builder = Guard.NotNull(builder, nameof(builder));
+            var conditionBuilder = new CollectionConditionBuilder();
+            builder(conditionBuilder);
+            _inclusions.AddRange(conditionBuilder.Conditions);
+            _groupIsOr = true;
+            return Return;
+        }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.OrIncludeFrom(IReadOnlyList<ICollectionConditionDef> condition)
+        {
+            condition = Guard.NotNull(condition, nameof(condition));
+            _inclusions.AddRange(condition);
+            _groupIsOr = true;
+            return Return;
+        }
     }
     /// <summary>
     /// Model for fluently building a <see cref="ICollectionDef"/> and optionally a <see cref="ICollector{T}"/> to maintain the collection. This is the main implementation of <see cref="ICollectionBuilder"/>.
@@ -88,8 +137,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         private string _currentCollectionName;
         private bool _currentIsInverted;
 
-		/// <inheritdoc/>
-		[DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        // Properties
+        public IReadOnlyList<CollectionConditionDef> Conditions => _conditions;
+
+        /// <inheritdoc/>
+        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
         public ICollectionConditionBuilder And
         {
             get

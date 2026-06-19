@@ -127,6 +127,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                         yield return (obj, cachedExpression(obj, context));
                     }
                 }
+                yield break;
             }
 
             foreach(var obj in objects)

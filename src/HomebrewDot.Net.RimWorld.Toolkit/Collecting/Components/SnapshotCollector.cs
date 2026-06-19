@@ -35,11 +35,15 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         private event Action<IReadOnlyCollection<T>> _onClear;
 
         // State
-        private int _lastVersion;
+        private int _lastVersion = -1;
 
-		// Properties
-		/// <inheritdoc/>
-		event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnCollected
+        // Properties
+        /// <summary>
+        /// The version of the last snapshot that was loaded. This is used to determine if a new snapshot has been taken when the <see cref="OnTrigger"/> method is called, and can also be used by external code to track which version of the snapshot the collector is currently using. The version is determined by the function provided in the constructor, which defaults to using the <see cref="IReadOnlyDatabase.Version"/> property of the snapshot.
+        /// </summary>
+        public int Version => _lastVersion;
+        /// <inheritdoc/>
+        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnCollected
 		{
 			add
 			{
@@ -233,10 +237,16 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
         {
             objects = Guard.NotNull(objects, nameof(objects));
-            foreach (var obj in objects)
+            return _collector.Collect(objects.Select(x =>
             {
-                yield return (obj, Collect(obj, context));
-            }
+                if (_lastSnapshot is null)
+                {
+                    return null;
+                }
+                var indexed = _lastSnapshot.Find<T>(x);
+                return indexed;
+            }).Where(indexed => indexed != null), context)
+                .Select(result => (result.Obj.Value, result.Collected));
         }
 
         /// <inheritdoc/>
@@ -283,7 +293,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var newVersion = _getVersion(snapshot);
             if(newVersion == _lastVersion)
             {
-                Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {snapshot.Version}, but version {_lastVersion} has already been processed, skipping");
+                Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newVersion}, but version {_lastVersion} has already been processed, skipping");
                 return false;
             }
             _lastVersion = newVersion;

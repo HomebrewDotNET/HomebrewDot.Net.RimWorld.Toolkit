@@ -24,6 +24,8 @@ using HomebrewDot.Net.Rimworld.Indexing.Models;
 using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.UI;
+using HomebrewDot.Net.Rimworld.UI.Components;
 using HomebrewDot.Net.Rimworld.UI.Settings;
 using RimWorld;
 using UnityEngine;
@@ -105,6 +107,10 @@ namespace HomebrewDot.Net.Rimworld
             Services.Register<IReferenceType>(IndexedReferenceType.Instance, IndexedReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(PropertyReferenceType.Instance, PropertyReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(ValueReferenceType.Instance, ValueReferenceType.DefaultTypeName);
+            Services.Register<IReferenceType>(StatReferenceType.Instance, StatReferenceType.DefaultTypeName);
+
+            // Input helpers
+            Toolkit.Services.Register<IReferenceTypeInputHelper>(StateReferenceTypeInputHelper.Instance, StatReferenceType.DefaultTypeName);
 
             // Operator types
             foreach (var alias in EqualsOperatorType.Aliases)
@@ -1054,8 +1060,10 @@ namespace HomebrewDot.Net.Rimworld
             /// <param name="name">The name of the collector and collection definition to remove.</param>
             public static void Remove(string name)
             {
+                name = Guard.NotNullOrWhitespace(name, nameof(name));
                 ICollector collector;
                 ICollectionDef collection;
+                bool removed = false;
                 lock (_lock)
                 {
                     if (_collectors.TryGetValue(name, out collector))
@@ -1066,14 +1074,16 @@ namespace HomebrewDot.Net.Rimworld
                             Invoking.Safe(() => disposable.Dispose());
                         }
                         _collectors.Remove(name);
+                        removed = true;
                     }
                     if (_collectionDefinitions.TryGetValue(name, out collection))
                     {
                         _collectionDefinitions.Remove(name);
+                        removed = true;
                     }
                 }
 
-                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, false));
+                if(removed) Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, false));
             }
 
             /// <summary>
@@ -1089,7 +1099,7 @@ namespace HomebrewDot.Net.Rimworld
 
                 var builder = new CollectionBuilder();
                 _ = buildAction(builder);
-                var collection = Guard.NotNull(builder.Collection, nameof(builder.Collection));
+                var collection = new StaticCollectionDef(Guard.NotNull(builder.Collection, nameof(builder.Collection)));
                 if (builder.TryBuildCollector(collection, out var collector))
                 {
                     Set(name, collector, startCollecting);
@@ -1108,7 +1118,7 @@ namespace HomebrewDot.Net.Rimworld
 
                 var builder = new CollectionBuilder();
                 _ = buildAction(builder);
-                var collection = Guard.NotNull(builder.Collection, nameof(builder.Collection));
+                var collection = new StaticCollectionDef(Guard.NotNull(builder.Collection, nameof(builder.Collection)));
                 if (builder.TryBuildCollector(collection, out var collector))
                 {
                     return (collection, collector);
@@ -1363,6 +1373,35 @@ namespace HomebrewDot.Net.Rimworld
         /// </summary>
         public static class Helpers
         {
+            /// <summary>
+            /// Attempts to retrieve a <see cref="Type"/> object based on the provided type name. The method first tries to get the type directly using <see cref="Type.GetType(string)"/>. If that fails, it attempts to prepend "Verse." and "RimWorld." to the type name and tries again. If the type is still not found, it performs a brute-force search through all loaded assemblies in the current application domain, looking for a type whose name ends with the specified type name (case-insensitive). If no matching type is found, the method returns null.
+            /// </summary>
+            /// <param name="typeName">The name of the type to retrieve.</param>
+            /// <returns>The <see cref="Type"/> object if found; otherwise, null.</returns>
+            public static Type TryGetType(string typeName)
+            {
+                if (string.IsNullOrWhiteSpace(typeName)) return null;
+                var type = Type.GetType(typeName);
+                if (type != null) return type;
+
+                // Try with Verse and Rimworld prefixes
+                var verseTypeName = $"Verse.{typeName}";
+                type = Type.GetType(verseTypeName);
+                if (type != null) return type;
+
+                var rimworldTypeName = $"RimWorld.{typeName}";
+                type = Type.GetType(rimworldTypeName);
+                if (type != null) return type;
+
+                // Brute force search by suffix
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    type = assembly.GetTypes().FirstOrDefault(t => t.Name.EndsWith(typeName, StringComparison.OrdinalIgnoreCase));
+                    if (type != null) return type;
+                }
+                return null;
+            }
+
             /// <summary>
             /// Helper class for validating method arguments and throwing appropriate exceptions when validation fails.
             /// </summary>
@@ -2124,6 +2163,48 @@ namespace HomebrewDot.Net.Rimworld
                         return defaultValue;
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Simple generic cache for storing and retrieving values based on a key. This class provides a thread-safe way to cache values of type TValue associated with keys of type TKey. It can be used to improve performance by avoiding repeated calculations or data retrievals for the same key.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the key.</typeparam>
+        /// <typeparam name="TValue">The type of the value.</typeparam>
+        public static class Cache<TKey, TValue>
+        {
+            // Fields
+            private readonly static object _lock = new object();
+            private readonly static ConcurrentDictionary<TKey, TValue> _cache = new ConcurrentDictionary<TKey, TValue>();
+
+            /// <summary>
+            /// Gets the value associated with the specified key. If the key does not exist in the cache, it uses the provided valueFactory function to create a new value, adds it to the cache, and returns it. The expensive parameter indicates whether the value creation is resource-intensive, in which case a lock is used to ensure thread safety during value creation.
+            /// </summary>
+            /// <param name="key">The key to retrieve the value for.</param>
+            /// <param name="valueFactory">The function to create a new value if the key does not exist.</param>
+            /// <param name="expensive">Indicates whether the value creation is resource-intensive.</param>
+            /// <returns>The value associated with the specified key.</returns>
+            public static TValue GetOrSet(TKey key, Func<TValue> valueFactory, bool expensive = false)
+            {
+                return _cache.GetOrAdd(key, k =>
+                {
+                    if (expensive)
+                    {
+                        lock (_lock)
+                        {
+                            if (!_cache.TryGetValue(key, out var existing))
+                            {
+                                existing = valueFactory();
+                                _cache[key] = existing;
+                            }
+                            return existing;
+                        }
+                    }
+                    else
+                    {
+                        return valueFactory();
+                    }
+                });
             }
         }
     }

@@ -34,17 +34,35 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// <returns>The builder instance for fluent chaining.</returns>
         TReturn IncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder);
         /// <summary>
+        /// Items are included in the collection if they satisfy the conditions defined in the provided condition and any condition defined on the current collection.
+        /// </summary>
+        /// <param name="condition">The condition definition to use for including items in the collection.</param>
+        /// <returns>The builder instance for fluent chaining.</returns>
+        TReturn IncludeFrom(IReadOnlyList<ICollectionConditionDef> condition);
+        /// <summary>
         /// Items are included in the collection if they satisfy the conditions defined in the provided builder or any condition defined on the current collection.
         /// </summary>
         /// <param name="builder"></param>
         /// <returns></returns>
         TReturn OrIncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder);
         /// <summary>
+        /// Items are included in the collection if they satisfy the conditions defined in the provided condition or any condition defined on the current collection.
+        /// </summary>
+        /// <param name="condition">The condition definition to use for including items in the collection.</param>
+        /// <returns>The builder instance for fluent chaining.</returns>
+        TReturn OrIncludeFrom(IReadOnlyList<ICollectionConditionDef> condition);
+        /// <summary>
         /// Items are excluded from the collection if they satisfy the conditions defined in the provided builder.
         /// </summary>
         /// <param name="builder">A builder that defines conditions for excluding items from the collection.</param>
         /// <returns>The builder instance for fluent chaining.</returns>
         TReturn ExcludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder);
+        /// <summary>
+        /// Items are excluded from the collection if they satisfy the conditions defined in the provided condition.
+        /// </summary>
+        /// <param name="condition">The condition definition to use for excluding items from the collection.</param>
+        /// <returns>The builder instance for fluent chaining.</returns>
+        TReturn ExcludeFrom(IReadOnlyList<ICollectionConditionDef> condition);
     }
 
     /// <summary>

@@ -28,6 +28,12 @@ namespace HomebrewDot.Net.Rimworld.Comparing
         /// <param name="groupBuilder">A function that takes a new condition builder for the group and returns the built condition chain for the group.</param>
         /// <returns>The fluent return type.</returns>
         IConditionChainBuilder<TReturn> Group(Func<IConditionBuilder, IConditionBuilder> groupBuilder);
+        /// <summary>
+        /// Selects an existing condition definition to compare against. This allows for reusing predefined conditions as part of the current condition chain. The selected condition will be compared against the current condition using the specified comparison operator and operands defined in the current condition builder.
+        /// </summary>
+        /// <param name="condition">The existing condition definition to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        IConditionCompareBuilder<TReturn> CompareFrom(IConditionDef condition);
     }
 
     /// <summary>

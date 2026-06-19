@@ -39,6 +39,10 @@ namespace HomebrewDot.Net.Rimworld
 			/// MethodInfo for object.GetType().
 			/// </summary>
 			public static readonly MethodInfo GetTypeMethod = Toolkit.Helpers.Expression.GetMethod(() => default(T)!.GetType());
+            /// <summary>
+            /// MethodInfo for object.ToString().
+            /// </summary>
+            public static readonly MethodInfo ToStringMethod = Toolkit.Helpers.Expression.GetMethod(() => default(T)!.ToString());
         }
 
         /// <summary>

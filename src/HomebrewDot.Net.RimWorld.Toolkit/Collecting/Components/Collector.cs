@@ -163,9 +163,34 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public virtual IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
         {
             objects = Guard.NotNull(objects, nameof(objects));
-            foreach (var obj in objects)
+            return _comparer.Matches(_definition, objects, _collections, context).Select(x =>
             {
-                yield return (obj, Collect(obj, context));
+                var castedObj = x.Object as T;
+                HandleMatch(castedObj, x.Matches);
+                return (castedObj, x.Matches);
+            });
+        }
+        private void HandleMatch(T obj, bool matches)
+        {
+            if (matches)
+            {
+                lock (_lock)
+                {
+                    if (_collected.Add(obj))
+                    {
+                        _onCollected?.Invoke(obj);
+                    }
+                }
+            }
+            else if (Contains(obj))
+            {
+                lock (_lock)
+                {
+                    if (_collected.Remove(obj))
+                    {
+                        _onRemoved?.Invoke(obj);
+                    }
+                }
             }
         }
         /// <inheritdoc/>

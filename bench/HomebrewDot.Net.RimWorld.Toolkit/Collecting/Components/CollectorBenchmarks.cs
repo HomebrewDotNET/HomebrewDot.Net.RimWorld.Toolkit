@@ -431,7 +431,7 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
         private void BuildCollections()
         {
             // "GroupA" — items whose TargetGroup property equals "A"
-            var groupA = new CollectionDef
+            var groupA = new StaticCollectionDef(new CollectionDef
             {
                 Conditions = new[]
                 {
@@ -446,9 +446,9 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
                         To = "A",
                     },
                 },
-            };
+            });
             // "GroupZ" — items whose TargetGroup property equals "Z" (the "non-matching" set)
-            var groupZ = new CollectionDef
+            var groupZ = new StaticCollectionDef(new CollectionDef
             {
                 Conditions = new[]
                 {
@@ -463,7 +463,7 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
                         To = "Z",
                     },
                 },
-            };
+            });
 
             var baseCollections = new Dictionary<string, ICollectionDef>
             {
@@ -517,9 +517,9 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
             };
         }
 
-        private static CollectionDef BuildConditionsOnlyDef()
+        private static StaticCollectionDef BuildConditionsOnlyDef()
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Conditions = new[]
                 {
@@ -534,21 +534,21 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
                         To = "A",
                     },
                 },
-            };
+            });
         }
 
-        private static CollectionDef BuildInclusionsOnlyDef()
+        private static StaticCollectionDef BuildInclusionsOnlyDef()
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Inclusions = new[] { new CollectionConditionDef { Name = "GroupA" } },
                 InclusionsAreOr = false,
-            };
+            });
         }
 
-        private static CollectionDef BuildConditionsAndInclusionsDef(bool andMode)
+        private static StaticCollectionDef BuildConditionsAndInclusionsDef(bool andMode)
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Conditions = new[]
                 {
@@ -565,20 +565,20 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
                 },
                 Inclusions = new[] { new CollectionConditionDef { Name = "GroupA" } },
                 InclusionsAreOr = !andMode,
-            };
+            });
         }
 
-        private static CollectionDef BuildExclusionsOnlyDef()
+        private static StaticCollectionDef BuildExclusionsOnlyDef()
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Exclusions = new[] { new CollectionConditionDef { Name = "GroupZ" } },
-            };
+            });
         }
 
-        private static CollectionDef BuildCombinedDef()
+        private static StaticCollectionDef BuildCombinedDef()
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Conditions = new[]
                 {
@@ -596,26 +596,26 @@ namespace HomebrewDot.Net.Rimworld.Benchmarks.Collecting.Components
                 Inclusions = new[] { new CollectionConditionDef { Name = "GroupA" } },
                 InclusionsAreOr = false,
                 Exclusions = new[] { new CollectionConditionDef { Name = "GroupZ" } },
-            };
+            });
         }
 
-        private static CollectionDef BuildInvertedInclusionDef()
+        private static StaticCollectionDef BuildInvertedInclusionDef()
         {
             // Matches items NOT in "GroupZ" — exclusion-style via inverted inclusion.
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Inclusions = new[] { new CollectionConditionDef { Name = "GroupZ", Inverted = true } },
                 InclusionsAreOr = false,
-            };
+            });
         }
 
-        private static CollectionDef BuildDeepNestedDef()
+        private static StaticCollectionDef BuildDeepNestedDef()
         {
-            return new CollectionDef
+            return new StaticCollectionDef(new CollectionDef
             {
                 Inclusions = new[] { new CollectionConditionDef { Name = "DeepRoot" } },
                 InclusionsAreOr = false,
-            };
+            });
         }
 
         // ── Comparator stubs ────────────────────────────────────────────────

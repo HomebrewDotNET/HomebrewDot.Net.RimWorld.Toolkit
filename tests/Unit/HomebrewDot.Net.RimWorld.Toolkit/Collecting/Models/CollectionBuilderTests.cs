@@ -61,7 +61,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Models
 
             var conditions = sut.Collection.Conditions;
 
-            Assert.Equal(2, conditions.Count);
+            Assert.Equal(2, conditions.Length);
             Assert.False(conditions[0].IsOr);
             Assert.False(conditions[1].IsOr);
         }
@@ -78,7 +78,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Models
 
             var conditions = sut.Collection.Conditions;
 
-            Assert.Equal(2, conditions.Count);
+            Assert.Equal(2, conditions.Length);
             Assert.True(conditions[0].IsOr);
             Assert.False(conditions[1].IsOr);
         }
@@ -95,7 +95,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Models
 
             var top = Assert.Single(sut.Collection.Conditions);
             Assert.NotNull(top.Conditions);
-            Assert.Equal(2, top.Conditions.Count);
+            Assert.Equal(2, top.Conditions.Length);
             Assert.Null(top.With);
             Assert.False(top.IsOr);
         }
@@ -113,7 +113,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Models
                    .Compare.Value(3).With.Equal(3);
 
             var conditions = sut.Collection.Conditions;
-            Assert.Equal(2, conditions.Count);
+            Assert.Equal(2, conditions.Length);
             Assert.NotEmpty(conditions[0].Conditions);
             Assert.False(conditions[0].IsOr);
             Assert.Equal("==", conditions[1].With);

@@ -141,7 +141,16 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 return this;
             }
         }
+        /// <inheritdoc />
+        IConditionCompareBuilder<TReturn> IConditionBuilder<TReturn>.CompareFrom(IConditionDef condition)
+        {
+            condition = Guard.NotNull(condition, nameof(condition));
+            if (_state != 0)
+                throw new InvalidOperationException("Cannot set left operand for condition: left operand already set or operator already set.");
 
+            _conditions.Add(new ConditionDef(condition));
+            return this;
+        }
         /// <inheritdoc />
         IConditionChainBuilder<TReturn> IConditionBuilder<TReturn>.Group(Func<IConditionBuilder, IConditionBuilder> groupBuilder)
         {
