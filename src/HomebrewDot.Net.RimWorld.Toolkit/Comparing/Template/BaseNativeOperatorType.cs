@@ -12,7 +12,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
     /// <summary>
     /// Base class for creating operator types that use native C# operators (e.g. ==, !=, >, <, etc.).
     /// </summary>
-    public abstract class BaseNativeOperator
+    public abstract class BaseNativeOperatorType
     {
         // Statics
         private const BindingFlags MethodFlags = BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy;
@@ -200,7 +200,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
     }
 
     /// <summary>
-    /// Enumeration of native operator types that can be used in the <see cref="BaseNativeOperator"/> class to specify which operator to use for comparison.
+    /// Enumeration of native operator types that can be used in the <see cref="BaseNativeOperatorType"/> class to specify which operator to use for comparison.
     /// </summary>
     public enum NativeOperatorType
     {

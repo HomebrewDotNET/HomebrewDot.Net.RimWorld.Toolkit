@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.Serialization;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
+using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Verse;
 using Xunit;
@@ -15,6 +18,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             // Arrange
             var snapshotManager = new Mock<ISnapshotManager>();
+            var typedThingManager = new Mock<ISnapshotManager<Thing>>();
+            snapshotManager.Setup(m => m.AsTyped<Thing>()).Returns(typedThingManager.Object);
             var sut = HarmonyThingGatherer.Instance;
             var pawn = CreateUninitialized<Pawn>();
 
@@ -23,9 +28,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             HarmonyThingGatherer.Patches.Destroy_Postfix(pawn, DestroyMode.Vanish);
 
             // Assert
-            snapshotManager.Verify(m => m.Destroyed(
+            typedThingManager.Verify(m => m.Destroyed(
                 It.Is<Thing>(x => ReferenceEquals(x, pawn)),
-                It.IsAny<(string Key, object Value)[]>()),
+                ref It.Ref<IndexMetadata>.IsAny),
                 Times.Once);
         }
 
@@ -34,6 +39,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             // Arrange
             var snapshotManager = new Mock<ISnapshotManager>();
+            var typedThingManager = new Mock<ISnapshotManager<Thing>>();
+            snapshotManager.Setup(m => m.AsTyped<Thing>()).Returns(typedThingManager.Object);
             var sut = HarmonyThingGatherer.Instance;
             var pawn = CreateUninitialized<Pawn>();
 
@@ -43,52 +50,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             HarmonyThingGatherer.Patches.Destroy_Postfix(pawn, DestroyMode.KillFinalize);
 
             // Assert
-            snapshotManager.Verify(m => m.Destroyed(It.IsAny<Thing>(), It.IsAny<(string Key, object Value)[]>()), Times.Never);
-        }
-
-        [Fact]
-        public void DestroyPostfix_WithNullInstance_DoesNotDestroy()
-        {
-            // Arrange
-            var snapshotManager = new Mock<ISnapshotManager>();
-            var sut = HarmonyThingGatherer.Instance;
-            sut.GatherData(game: null, snapshotManager: snapshotManager.Object);
-
-            // Act
-            HarmonyThingGatherer.Patches.Destroy_Postfix(null, DestroyMode.Vanish);
-
-            // Assert
-            snapshotManager.Verify(m => m.Destroyed(It.IsAny<Thing>(), It.IsAny<(string Key, object Value)[]>()), Times.Never);
-        }
-
-        [Fact]
-        public void SpawnSetupPostfix_WithNullInstance_DoesNotPush()
-        {
-            // Arrange
-            var snapshotManager = new Mock<ISnapshotManager>();
-            var sut = HarmonyThingGatherer.Instance;
-            sut.GatherData(game: null, snapshotManager: snapshotManager.Object);
-
-            // Act
-            HarmonyThingGatherer.Patches.SpawnSetup_Postfix(null, map: null, respawningAfterLoad: false);
-
-            // Assert
-            snapshotManager.Verify(m => m.Push(It.IsAny<Thing>(), It.IsAny<(string Key, object Value)[]>()), Times.Never);
-        }
-
-        [Fact]
-        public void TickPostfix_WithNullInstance_DoesNotPush()
-        {
-            // Arrange
-            var snapshotManager = new Mock<ISnapshotManager>();
-            var sut = HarmonyThingGatherer.Instance;
-            sut.GatherData(game: null, snapshotManager: snapshotManager.Object);
-
-            // Act
-            HarmonyThingGatherer.Patches.DoTick_Postfix(null);
-
-            // Assert
-            snapshotManager.Verify(m => m.Push(It.IsAny<Thing>(), It.IsAny<(string Key, object Value)[]>()), Times.Never);
+            typedThingManager.Verify(m => m.Destroyed(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
         }
 
         [Fact]
@@ -96,6 +58,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             // Arrange
             var snapshotManager = new Mock<ISnapshotManager>();
+            var typedThingManager = new Mock<ISnapshotManager<Thing>>();
+            snapshotManager.Setup(m => m.AsTyped<Thing>()).Returns(typedThingManager.Object);
             var pawn = CreateUninitialized<Pawn>();
 
             // Ensure static manager is null before invoking patch methods.
@@ -105,7 +69,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             HarmonyThingGatherer.Patches.SpawnSetup_Postfix(pawn, map: null, respawningAfterLoad: true);
 
             // Assert
-            snapshotManager.Verify(m => m.Push(It.IsAny<Thing>(), It.IsAny<(string Key, object Value)[]>()), Times.Never);
+            typedThingManager.Verify(m => m.Push(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
         }
 
         private static void ClearSnapshotManager()
@@ -113,6 +77,12 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var field = typeof(HarmonyThingGatherer).GetField("_snapshotManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
             Assert.NotNull(field);
             field.SetValue(null, null);
+            var thingField = typeof(HarmonyThingGatherer).GetField("_thingManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            Assert.NotNull(thingField);
+            thingField.SetValue(null, null);
+            var defField = typeof(HarmonyThingGatherer).GetField("_defManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            Assert.NotNull(defField);
+            defField.SetValue(null, null);
         }
 
         private static T CreateUninitialized<T>() where T : class

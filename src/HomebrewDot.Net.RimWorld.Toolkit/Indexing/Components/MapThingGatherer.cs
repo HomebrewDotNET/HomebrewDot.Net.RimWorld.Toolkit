@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using HomebrewDot.Net.Rimworld.Hooks;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 
@@ -33,11 +34,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public void GatherData(Game game, ISnapshotManager snapshotManager)
         {
             _snapshotManager = snapshotManager;
-            LogVerbose($"MapThingGatherer scanning maps for things");
+            if (IsVerboseEnabled) LogVerbose("MapThingGatherer scanning maps for things");
 
             if(game?.Maps == null)
             {
-                LogVerbose($"Game or game maps were null, skipping MapThingGatherer data gathering");
+                if (IsVerboseEnabled) LogVerbose("Game or game maps were null, skipping MapThingGatherer data gathering");
                 return;
             }
             foreach (var map in game.Maps)
@@ -51,10 +52,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             Log($"Scanning map {map} for things");
             var thingsPushed = 0;
             var thingsAccepted = 0;
+            var seen = new HashSet<Thing>();
             foreach (var thing in map.listerThings.AllThings)
             {
+                if (!seen.Add(thing)) continue;
                 thingsPushed++;
-                if(_snapshotManager?.Push(thing, (nameof(thing.Map), thing.Map)) == true)
+                var metadata = new IndexMetadata();
+                metadata.Set(ToolkitConstants.Thing.Map, map);
+                if(_snapshotManager?.Push(thing, ref metadata) == true)
                 {
                     thingsAccepted++;
                 }
@@ -62,8 +67,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             var thingHolder = map.GetDirectlyHeldThings();
             foreach (var thing in thingHolder)
             {
+                if (!seen.Add(thing)) continue;
                 thingsPushed++;
-                if(_snapshotManager?.Push(thing, (nameof(thing.Map), thing.Map), (ToolkitConstants.Thing.ContainerMetadata, thingHolder), (ToolkitConstants.Thing.HolderMetadata, map)) == true)
+                var metadata = new IndexMetadata();
+                metadata.Set(ToolkitConstants.Thing.Map, map);
+                metadata.Set(ToolkitConstants.Thing.ContainerMetadata, thingHolder);
+                metadata.Set(ToolkitConstants.Thing.HolderMetadata, map);
+                if (_snapshotManager?.Push(thing, ref metadata) == true)
                 {
                     thingsAccepted++;
                 }
@@ -77,8 +87,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     foreach (var thing in heldThings)
                     {
+                        if (!seen.Add(thing)) continue;
                         thingsPushed++;
-                        if(_snapshotManager?.Push(thing, (nameof(thing.Map), thing.Map), (ToolkitConstants.Thing.ContainerMetadata, heldThings), (ToolkitConstants.Thing.HolderMetadata, holder)) == true)
+                        var metadata = new IndexMetadata();
+                        metadata.Set(ToolkitConstants.Thing.Map, map);
+                        metadata.Set(ToolkitConstants.Thing.ContainerMetadata, heldThings);
+                        metadata.Set(ToolkitConstants.Thing.HolderMetadata, holder);
+                        if (_snapshotManager?.Push(thing, ref metadata) == true)
                         {
                             thingsAccepted++;
                         }
@@ -87,6 +102,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             }
         
             Log($"Pushed {thingsAccepted}/{thingsPushed} things to snapshot manager from map {map}");
+            // Force snapshot here so spike is during map generation and not during the next tick(s). Sorry not sorry.
+            _ = _snapshotManager?.Snapshot()?.Build();
         }
 
         /// <inheritdoc/>

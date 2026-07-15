@@ -40,4 +40,19 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// </summary>
         IReadOnlyList<ICollectionConditionDef> Exclusions { get; }
     }
+    /// <summary>
+    /// Contains extension methods for <see cref="ICollectionDef"/>.
+    /// </summary>
+    public static class ICollectionDefExtensions
+    {
+        /// <summary>
+        /// Check if <paramref name="collectionDef"/> references sub collections.
+        /// </summary>
+        /// <param name="collectionDef">The collection def to check</param>
+        /// <returns>True if <paramref name="collectionDef"/> contains sub collections, otherwise false</returns>
+        public static bool HasSubCollections(this ICollectionDef collectionDef)
+        {
+            return collectionDef?.Exclusions?.Count > 0 || collectionDef?.Inclusions?.Count > 0;
+        }
+    }
 }

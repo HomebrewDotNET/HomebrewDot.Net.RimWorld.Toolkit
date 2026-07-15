@@ -20,7 +20,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// <param name="collections">A dictionary of all collection definitions, keyed by their names.</param>
         /// <param name="context">A dictionary representing the current context, which may contain additional information relevant to the comparison.</param>
         /// <returns>True if the collection definition matches the object and context; otherwise, false.</returns>
-        bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context);
+        bool Matches<T>(ICollectionDef collection, T obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context);
         /// <summary>
         /// Determines if the specified collection definition matches each of the given objects and context, returning a list of tuples containing the object and whether it matches or not.
         /// </summary>
@@ -29,6 +29,6 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// <param name="collections">A dictionary of all collection definitions, keyed by their names.</param>
         /// <param name="context">A dictionary representing the current context, which may contain additional information relevant to the comparison.</param>
         /// <returns>An enumerable of tuples where each tuple contains the object and a boolean indicating whether it matches the collection definition.</returns>
-        IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context);
+        IEnumerable<(T Object, bool Matches)> Matches<T>(ICollectionDef collection, IEnumerable<T> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context);
     }
 }

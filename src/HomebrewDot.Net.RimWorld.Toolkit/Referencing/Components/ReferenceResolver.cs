@@ -54,7 +54,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
                 {
                     if(!_compiledResolversCache.TryGetValue(cacheKey, out var cachedResolver))
                     {
-                        cachedResolver = GetCompiledResolver(compileableReferenceType, reference.Value, context);
+                        cachedResolver = GetCompiledResolver(input, compileableReferenceType, reference.Value, context);
                         _compiledResolversCache[cacheKey] = cachedResolver;
                     }
                     result = cachedResolver(input, reference.Value, context);
@@ -85,11 +85,11 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             return referenceType;
         }
 
-        private Func<object, object, IReadOnlyDictionary<string, object>, object> GetCompiledResolver(IReferenceTypeCompileable referenceType, object value, IReadOnlyDictionary<string, object> context)
+        private Func<object, object, IReadOnlyDictionary<string, object>, object> GetCompiledResolver(object input, IReferenceTypeCompileable referenceType, object value, IReadOnlyDictionary<string, object> context)
         {
             var inputParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "input");
             var contextParameter = System.Linq.Expressions.Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
-            var resolutionExpression = referenceType.Compile(inputParameter, contextParameter, value, context);
+            var resolutionExpression = referenceType.Compile(inputParameter, input, contextParameter, value, context);
             return System.Linq.Expressions.Expression.Lambda<Func<object, object, IReadOnlyDictionary<string, object>, object>>(resolutionExpression, inputParameter, contextParameter).Compile();
         }
     }

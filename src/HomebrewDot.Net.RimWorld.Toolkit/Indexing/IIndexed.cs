@@ -46,6 +46,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         IReadOnlyDictionary<string, object> Metadata { get; }
 
         /// <summary>
+        /// True if the current instance was snapshotted.
+        /// </summary>
+        bool HasSnapshot { get; }
+        /// <summary>
+        /// True if the current instance is a snapshot (thus can't have snapshots itself)
+        /// </summary>
+        bool IsSnapshot { get; }
+        /// <summary>
+        /// The current snapshot of the current item if it was taken already.
+        /// </summary>
+        IIndexed<T> Snapshot { get; }
+
+        /// <summary>
         /// Retrieves the value of the specified property from the indexed object or its metadata. If the property exists in both, the metadata value takes precedence.
         /// </summary>
         /// <typeparam name="TValue">The type of the value to retrieve.</typeparam>

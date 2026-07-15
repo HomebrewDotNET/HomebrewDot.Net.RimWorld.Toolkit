@@ -48,5 +48,17 @@ namespace HomebrewDot.Net.Rimworld.Extensions
             var underlyingType = Nullable.GetUnderlyingType(type);
             return underlyingType ?? type;
         }
+
+        /// <summary>
+        /// Determines whether the specified type is a collection type, which is defined as any type that implements the <see cref="System.Collections.IEnumerable"/> interface, excluding the <see cref="string"/> type. This method is useful for checking if a type can be enumerated over, such as in a foreach loop, without having to check for specific collection types like arrays or lists.
+        /// </summary>
+        /// <param name="type">The type to check.</param>
+        /// <returns>True if the type is a collection type; otherwise, false.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="type"/> is null.</exception>
+        public static bool IsCollection(this Type type)
+        {
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            return typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string);
+        }
     }
 }

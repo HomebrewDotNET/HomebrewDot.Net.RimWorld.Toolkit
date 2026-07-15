@@ -123,7 +123,7 @@ namespace HomebrewDot.Net.Rimworld
 
         private static void LoadDebugCollections()
         {
-            var getVersion = new Func<IReadOnlyDatabase, int>(s => s.GetTable<ThingDef>(Toolkit.Indexing.Def.Thing.Weapon.Ranged.FullTableName).Version);
+            var getVersion = new Func<IReadOnlyDatabase, IDatabaseObject>(s => s.GetTable<ThingDef>(Toolkit.Indexing.Def.Thing.Weapon.Ranged.FullTableName));
             var getThings = new Func<IReadOnlyDatabase, IEnumerable<IIndexed<ThingDef>>>(s => s.GetTable<ThingDef>(Toolkit.Indexing.Def.Thing.Weapon.Ranged.FullTableName));
             Toolkit.Collecting.Build("Snipers", b => b.Compare.Indexed(ToolkitConstants.Stats.Weapon.Def.Range).With.GreaterThanOrEqual().To.Value(30)
                                                       .CollectFromSnapshot(getVersion, getThings)

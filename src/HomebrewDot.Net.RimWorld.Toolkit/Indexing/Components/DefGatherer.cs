@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
@@ -37,13 +38,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             int accepted = 0;
             foreach (var def in defs)
             {
-                if(snapshotManager.Push(def))
+                var metadata = new IndexMetadata();
+                if(snapshotManager.Push(def, ref metadata))
                 {
                     accepted++;
                 }
             }
             elapsed = stopWatch.Elapsed;
-            Log($"Pushed {accepted}/{defs.Count} defs to snapshot manager in {elapsed.TotalMilliseconds} ms.");
+            Log($"Pushed {accepted}/{defs.Count} defs to snapshot manager in {elapsed.TotalMilliseconds}ms.");
         }
         /// <inheritdoc/>
         public void Initialize(Game game)

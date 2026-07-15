@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using HomebrewDot.Net.Rimworld.Extensions;
 
 namespace HomebrewDot.Net.Rimworld.Comparing.Models
 {
@@ -11,5 +12,14 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         public string Type { get; set; }
         /// <inheritdoc/>
         public IReadOnlyDictionary<string, object> Arguments { get; set; }
+        /// <inheritdoc/>
+        public string GetCacheKey()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append('{').Append(Type).Append(" => ");
+            Arguments.ToCacheKey(sb, true);
+            sb.Append('}');
+            return sb.ToString();
+        }
     }
 }

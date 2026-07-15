@@ -31,28 +31,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Models
         }
 
         [Fact]
-        public void FromConditionDef_WithIndexedCompareAndValueTo_PopulatesDefaultFields()
-        {
-            var def = new ConditionDef
-            {
-                Compare = new ReferenceDef { Type = IndexedReferenceType.DefaultTypeName, Value = "def.label" },
-                With = "Equals",
-                To = new ReferenceDef { Type = ValueReferenceType.DefaultTypeName, Value = "hello" },
-                IsOr = true,
-            };
-
-            var config = ConditionDefConfig.FromConditionDef(def);
-
-            Assert.Equal("def.label", config.CompareDefault);
-            Assert.Equal(string.Empty, config.CompareType);
-            Assert.Equal(string.Empty, config.CompareValue);
-            Assert.Equal("hello", config.ToDefault);
-            Assert.Equal(ConstantType.Text, config.ToType);
-            Assert.Equal("Equals", config.Operator);
-            Assert.True(config.IsOr);
-        }
-
-        [Fact]
         public void ToConditionDef_FromDefaultConfig_BuildsCompareAsIndexedReference()
         {
             var config = new ConditionDefConfig

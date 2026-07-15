@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing;
@@ -20,6 +21,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
     {
         // Fields
         private Lazy<string> _cacheKey;
+        private string _toString;
 
         /// <inheritdoc cref="StaticCollectionDef"/>
         /// <param name="collectionDef">The collection definition to copy the properties from.</param>
@@ -31,7 +33,16 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             Exclusions = collectionDef.Exclusions?.Select(e => new CollectionConditionDef(e)).ToArray();
             CombinedConditions = collectionDef.CombinedConditions != null ? new ConditionDef(collectionDef.CombinedConditions) : null;
 
-            _cacheKey = new Lazy<string>(() => collectionDef.GetCacheKey());
+            _cacheKey = new Lazy<string>(() =>
+            {
+                var cacheKey = collectionDef.GetCacheKey();
+                using (var hasher = MD5.Create())
+                {
+                    var hash = hasher.ComputeHash(Encoding.UTF8.GetBytes(cacheKey));
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+            });
+            _toString = collectionDef.ToString();
         }
 
         public IReadOnlyList<IConditionDef> Conditions { get; }
@@ -49,7 +60,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         public string GetCacheKey() => _cacheKey.Value;
 
         /// <inheritdoc/>
-        public override string ToString() => _cacheKey.Value;
+        public override string ToString() => _toString;
     }
 }
 

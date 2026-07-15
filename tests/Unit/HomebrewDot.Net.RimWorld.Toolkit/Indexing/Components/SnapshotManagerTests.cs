@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using HomebrewDot.Net.Rimworld.Hooks;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Xunit;
@@ -12,15 +13,22 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
     public class SnapshotManagerTests
     {
         private readonly Mock<IDatabase> _mockDatabase;
+        private readonly Mock<IDatabase<string>> _mockTypedDb;
         private readonly Mock<IReadOnlyDatabase> _mockSnapshot;
         private readonly Mock<IHookManager> _mockHookManager;
+        private readonly Mock<ISnapshotBuilder> _mockSnapshotBuilder;
 
         public SnapshotManagerTests()
         {
             _mockDatabase = new Mock<IDatabase>();
+            _mockTypedDb = new Mock<IDatabase<string>>();
             _mockSnapshot = new Mock<IReadOnlyDatabase>();
             _mockHookManager = new Mock<IHookManager>();
-            _mockDatabase.Setup(d => d.AsReadOnly()).Returns(_mockSnapshot.Object);
+            _mockSnapshotBuilder = new Mock<ISnapshotBuilder>();
+
+            _mockSnapshotBuilder.Setup(b => b.Build()).Returns(_mockSnapshot.Object);
+            _mockDatabase.Setup(d => d.StartSnapshot()).Returns(_mockSnapshotBuilder.Object);
+            _mockDatabase.Setup(d => d.AsTyped<string>()).Returns(_mockTypedDb.Object);
         }
 
         private SnapshotManager CreateSut() =>
@@ -55,216 +63,211 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         public void Push_Dict_WithNullData_ThrowsArgumentNullException()
         {
             var sut = CreateSut();
+            var _md = default(IndexMetadata);
             Assert.Throws<ArgumentNullException>(() =>
-                sut.Push<string>(null, (IReadOnlyDictionary<string, object>)null));
+                sut.Push<string>(null, ref _md));
         }
 
         [Fact]
-        public void Push_Dict_WhenItemNotInSnapshot_CallsUpsert()
-        {
-            var sut = CreateSut();
-            _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
-                         .Returns((IIndexed<string>)null);
-            _mockDatabase.Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                         .Returns(true);
-
-            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
-
-            Assert.True(result);
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-        }
-
-        [Fact]
-        public void Push_Dict_WhenItemInSnapshotAndNoTrackers_CallsUpsert()
+        public void Push_Dict_WhenItemExistsAndNoTrackers_Skips()
         {
             var existing = new Mock<IIndexed<string>>();
-            var newSnapshot = new Mock<IReadOnlyDatabase>();
-            newSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(existing.Object);
-            _mockDatabase.SetupSequence(d => d.AsReadOnly())
-                .Returns(_mockSnapshot.Object)  // constructor
-                .Returns(newSnapshot.Object);    // Reset() call
-            
-            var sut = CreateSut();
-            sut.Reset(_ => { }, _ => { }); // reset clears trackers and refreshes snapshot
-
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
-
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-        }
-
-        [Fact]
-        public void Push_Dict_WhenTrackerReportsChanged_CallsUpsert()
-        {
-            var existing = new Mock<IIndexed<string>>();
-            var newSnapshot = new Mock<IReadOnlyDatabase>();
-            newSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(existing.Object);
-            _mockDatabase.SetupSequence(d => d.AsReadOnly())
-                .Returns(_mockSnapshot.Object)  // constructor
-                .Returns(newSnapshot.Object);    // Reset() call
-            
-            var tracker = new Mock<IChangeTracker<string>>();
-            tracker.Setup(t => t.HasChanged("hello", existing.Object, default)).Returns(true);
+            existing.Setup(e => e.Value).Returns("hello");
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(true);
 
             var sut = CreateSut();
-            sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
 
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+            var _md = default(IndexMetadata);
+            var result = sut.Push("hello", ref _md);
 
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-        }
-
-        [Fact]
-        public void Push_Dict_WhenTrackerReportsUnchanged_DoesNotCallUpsert()
-        {
-            var existing = new Mock<IIndexed<string>>();
-            var snapshottedExisting = new Mock<IIndexed<string>>();
-            
-            // Setup: item exists in database
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
-            
-            // Setup: snapshot also has the item
-            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
-
-            var tracker = new Mock<IChangeTracker<string>>();
-            // Tracker reports the item hasn't changed
-            tracker.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
-
-            var sut = CreateSut();
-            sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
-            
-            // Re-setup database to have data again after Reset deployed new schema
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
-
-            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
-
-            // Should return false since tracker reported no change
             Assert.False(result);
-            // Upsert should not be called since item hasn't changed
-            _mockDatabase.Verify(d => d.Upsert(It.IsAny<string>(), It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Never);
+            _mockTypedDb.Verify(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny), Times.Never);
+        }
+
+        [Fact]
+        public void Push_Dict_WhenTrackerReportsChanged_CallsUpdate()
+        {
+            var existing = new Mock<IIndexed<string>>();
+            existing.Setup(e => e.Value).Returns("hello");
+            var snapshottedExisting = new Mock<IIndexed<string>>();
+            existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
+
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
+            _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(true);
+
+            var tracker = new Mock<IChangeTracker<string>>();
+            tracker.Setup(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny)).Returns(true);
+
+            var sut = CreateSut();
+            sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
+
+            var _md = default(IndexMetadata);
+            sut.Push("hello", ref _md);
+
+            _mockTypedDb.Verify(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny), Times.Once);
+        }
+
+        [Fact]
+        public void Push_Dict_WhenTrackerReportsUnchanged_DoesNotCallUpdateOrUpsert()
+        {
+            var existing = new Mock<IIndexed<string>>();
+            existing.Setup(e => e.Value).Returns("hello");
+            var snapshottedExisting = new Mock<IIndexed<string>>();
+
+            // Setup: item exists in database
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+
+            // Setup: snapshot has the item for old-data lookup
+            _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
+
+            var tracker = new Mock<IChangeTracker<string>>();
+            tracker.Setup(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny)).Returns(false);
+
+            var sut = CreateSut();
+            sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
+
+            var _md = default(IndexMetadata);
+            var result = sut.Push("hello", ref _md);
+
+            Assert.False(result);
+            _mockTypedDb.Verify(d => d.Upsert(It.IsAny<string>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
+            _mockTypedDb.Verify(d => d.Update(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
         }
 
         [Fact]
         public void Push_Dict_WhenUpsertReturnsFalse_ReturnsFalse()
         {
             var sut = CreateSut();
-            _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
+            _mockDatabase.Setup(d => d.Find("hello"))
                          .Returns((IIndexed<string>)null);
-            _mockDatabase.Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                         .Returns(false);
+            _mockTypedDb.Setup(d => d.Upsert("hello", ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(false);
 
-            var result = sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+            var _md = default(IndexMetadata);
+            var result = sut.Push("hello", ref _md);
 
             Assert.False(result);
         }
 
-        // ── Push (KeyValuePair[] overload) ───────────────────────────────────
+        [Fact]
+        public void Push_Dict_WhenMetadataDiffers_Skips()
+        {
+            var existing = new Mock<IIndexed<string>>();
+            existing.Setup(e => e.Value).Returns("hello");
+            var existingMetadata = new Dictionary<string, object> { ["k1"] = "old" };
+            existing.Setup(e => e.Metadata).Returns(existingMetadata);
+
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(true);
+
+            var sut = CreateSut();
+            var metadata = default(IndexMetadata);
+
+            var result = sut.Push("hello", ref metadata);
+
+            Assert.False(result);
+            _mockTypedDb.Verify(d => d.Update("hello", existing.Object, ref metadata), Times.Never);
+        }
+
+        // ── AsTyped<T> ─────────────────────────────────────────────────────
 
         [Fact]
-        public void Push_Kvp_WithNullData_ThrowsArgumentNullException()
+        public void AsTyped_ReturnsCachedInstance()
         {
             var sut = CreateSut();
-            Assert.Throws<ArgumentNullException>(() =>
-                sut.Push<string>(null, new KeyValuePair<string, object>("k", "v")));
+            var first = sut.AsTyped<string>();
+            var second = sut.AsTyped<string>();
+            Assert.Same(first, second);
         }
 
         [Fact]
-        public void Push_Kvp_WhenItemNotInSnapshot_CallsUpsertWithBuiltMetadata()
+        public void AsTyped_IsTypedManager_ImplementsCorrectInterface()
         {
             var sut = CreateSut();
-            _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
+            var typed = sut.AsTyped<string>();
+            Assert.IsAssignableFrom<ISnapshotManager<string>>(typed);
+            Assert.NotNull(typed);
+        }
+
+        [Fact]
+        public void AsTyped_PushThroughTypedManager_UsesTypedDb()
+        {
+            var sut = CreateSut();
+            _mockDatabase.Setup(d => d.Find("hello"))
                          .Returns((IIndexed<string>)null);
-            IReadOnlyDictionary<string, object> captured = null;
-            _mockDatabase
-                .Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                .Callback<string, IReadOnlyDictionary<string, object>>((_, meta) => captured = meta)
-                .Returns(true);
+            _mockTypedDb.Setup(d => d.Update("hello", null, ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(true);
 
-            sut.Push("hello",
-                new KeyValuePair<string, object>("k1", "v1"),
-                new KeyValuePair<string, object>("k2", 42));
+            var typed = sut.AsTyped<string>();
+            var _md = default(IndexMetadata);
+            var result = typed.Push("hello", ref _md);
 
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-            Assert.NotNull(captured);
-            Assert.Equal("v1", captured["k1"]);
-            Assert.Equal(42, captured["k2"]);
-        }
-
-        // ── Push (tuple overload) ────────────────────────────────────────────
-
-        [Fact]
-        public void Push_Tuple_WithNullData_ThrowsArgumentNullException()
-        {
-            var sut = CreateSut();
-            Assert.Throws<ArgumentNullException>(() =>
-                sut.Push<string>(null, ("k", (object)"v")));
+            Assert.True(result);
+            _mockTypedDb.Verify(d => d.Update("hello", null, ref It.Ref<IndexMetadata>.IsAny), Times.Once);
         }
 
         [Fact]
-        public void Push_Tuple_WhenItemNotInSnapshot_CallsUpsertWithBuiltMetadata()
+        public void AsTyped_AfterReset_ReturnsNewInstance()
         {
             var sut = CreateSut();
-            _mockSnapshot.Setup(s => s.Find<string>(It.IsAny<string>()))
-                         .Returns((IIndexed<string>)null);
-            IReadOnlyDictionary<string, object> captured = null;
-            _mockDatabase
-                .Setup(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                .Callback<string, IReadOnlyDictionary<string, object>>((_, meta) => captured = meta)
-                .Returns(true);
-
-            sut.Push("hello", ("key", (object)"value"));
-
-            _mockDatabase.Verify(d => d.Upsert("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
-            Assert.NotNull(captured);
-            Assert.Equal("value", captured["key"]);
+            var before = sut.AsTyped<string>();
+            sut.Reset(_ => { }, _ => { });
+            var after = sut.AsTyped<string>();
+            Assert.NotSame(before, after);
         }
 
-        // ── Destroyed ────────────────────────────────────────────────────────
+        // ── Destroyed (overloads) ────────────────────────────────────────────
 
         [Fact]
         public void Destroyed_WithNullData_ThrowsArgumentNullException()
         {
             var sut = CreateSut();
-            Assert.Throws<ArgumentNullException>(() => sut.Destroyed<string>(null));
+            var _md = default(IndexMetadata);
+            Assert.Throws<ArgumentNullException>(() => sut.Destroyed<string>(null, ref _md));
         }
 
         [Fact]
-        public void Destroyed_WhenItemFoundInDatabase_CallsDelete()
+        public void Destroyed_CallsDatabaseDelete()
         {
             var sut = CreateSut();
-            var indexed = new Mock<IIndexed<string>>();
-            _mockDatabase.Setup(d => d.Find<string>("hello")).Returns(indexed.Object);
-            _mockDatabase.Setup(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                         .Returns(true);
+            _mockTypedDb.Setup(d => d.Delete("hello", ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(true);
 
-            var result = sut.Destroyed("hello");
+            var _md = default(IndexMetadata);
+            var result = sut.Destroyed("hello", ref _md);
 
             Assert.True(result);
-            _mockDatabase.Verify(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
+            _mockTypedDb.Verify(d => d.Delete("hello", ref It.Ref<IndexMetadata>.IsAny), Times.Once);
         }
 
         [Fact]
         public void Destroyed_WithMetadata_PassesMetadataToDelete()
         {
             var sut = CreateSut();
-            var indexed = new Mock<IIndexed<string>>();
-            var metadata = new Dictionary<string, object> { ["reason"] = "despawned" };
-            _mockDatabase.Setup(d => d.Find<string>("hello")).Returns(indexed.Object);
-            _mockDatabase.Setup(d => d.Delete("hello", metadata)).Returns(true);
+            var metadata = new IndexMetadata();
+            metadata.Set(IndexMetadataKey.Get("reason"), "despawned");
+            _mockTypedDb.Setup(d => d.Delete("hello", ref metadata)).Returns(true);
 
-            var result = sut.Destroyed("hello", metadata);
+            var result = sut.Destroyed("hello", ref metadata);
 
             Assert.True(result);
-            _mockDatabase.Verify(d => d.Delete("hello", metadata), Times.Once);
+            _mockTypedDb.Verify(d => d.Delete("hello", ref metadata), Times.Once);
         }
 
         [Fact]
         public void Destroyed_WhenDeleteReturnsFalse_ReturnsFalse()
         {
             var sut = CreateSut();
-            _mockDatabase.Setup(d => d.Delete("hello", It.IsAny<IReadOnlyDictionary<string, object>>()))
-                         .Returns(false);
+            _mockTypedDb.Setup(d => d.Delete("hello", ref It.Ref<IndexMetadata>.IsAny))
+                        .Returns(false);
 
-            var result = sut.Destroyed("hello");
+            var _md = default(IndexMetadata);
+            var result = sut.Destroyed("hello", ref _md);
 
             Assert.False(result);
         }
@@ -272,41 +275,37 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         // ── Snapshot ─────────────────────────────────────────────────────────
 
         [Fact]
-        public void Snapshot_UpdatesDatabaseSnapshotToLatestReadOnly()
+        public void Snapshot_StartsNewBuilderWithDefaultMaxRuntime()
         {
-            var newSnapshot = new Mock<IReadOnlyDatabase>();
-            newSnapshot.Setup(s => s.Version).Returns(1);
-            _mockSnapshot.Setup(s => s.Version).Returns(0);
-            _mockDatabase.SetupSequence(d => d.AsReadOnly())
-                .Returns(_mockSnapshot.Object)   // constructor call
-                .Returns(newSnapshot.Object);     // Snapshot() call
-
             var sut = CreateSut();
+
             sut.Snapshot();
 
-            Assert.Same(newSnapshot.Object, sut.DatabaseSnapshot);
+            _mockDatabase.Verify(d => d.StartSnapshot(), Times.Exactly(2));
+            _mockSnapshotBuilder.Verify(b => b.Build(), Times.Once);
         }
 
         [Fact]
-        public void Snapshot_FiresOnSnapshotTakenTriggerViaLazyTrigger()
+        public void Snapshot_ReturnsExistingBuilder_WhenPendingSnapshotNotFinished()
         {
-            var newSnapshot = new Mock<IReadOnlyDatabase>();
-            newSnapshot.Setup(s => s.Version).Returns(1);
-            _mockSnapshot.Setup(s => s.Version).Returns(0);
-            _mockDatabase.SetupSequence(d => d.AsReadOnly())
-                .Returns(_mockSnapshot.Object)   // constructor call  
-                .Returns(newSnapshot.Object);     // Snapshot() call
+            var mockSnapshot1 = new Mock<IReadOnlyDatabase>();
+            var mockBuilder1 = new Mock<ISnapshotBuilder>();
+            mockBuilder1.Setup(b => b.IsFinished).Returns(false);
+            mockBuilder1.Setup(b => b.Build()).Returns(mockSnapshot1.Object);
+            var mockBuilder2 = new Mock<ISnapshotBuilder>();
+            mockBuilder2.Setup(b => b.IsFinished).Returns(false);
+
+            _mockDatabase.SetupSequence(d => d.StartSnapshot())
+                .Returns(mockBuilder1.Object)
+                .Returns(mockBuilder2.Object);
+
             var sut = CreateSut();
-            OnSnapshotTakenTrigger firedTrigger = null;
-            _mockHookManager
-                .Setup(h => h.LazyTrigger(It.IsAny<Func<OnSnapshotTakenTrigger>>()))
-                .Callback<Func<OnSnapshotTakenTrigger>>(f => firedTrigger = f());
 
-            sut.Snapshot();
+            var first = sut.Snapshot();
+            var second = sut.Snapshot();
 
-            _mockHookManager.Verify(h => h.LazyTrigger(It.IsAny<Func<OnSnapshotTakenTrigger>>()), Times.Once);
-            Assert.NotNull(firedTrigger);
-            Assert.Same(sut.DatabaseSnapshot, firedTrigger.Snapshot);
+            Assert.Same(first, second);
+            _mockDatabase.Verify(d => d.StartSnapshot(), Times.Exactly(2));
         }
 
         // ── Reset ─────────────────────────────────────────────────────────────
@@ -328,12 +327,14 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void Reset_WithValidSchemaBuilder_CallsDatabaseDeploy()
+        public void Reset_CallsDatabaseDeployAndStartSnapshot()
         {
             var sut = CreateSut();
             sut.Reset(null, _ => { });
 
             _mockDatabase.Verify(d => d.Deploy(It.IsAny<Action<IDatabaseSchemaBuilder>>()), Times.Once);
+            _mockDatabase.Verify(d => d.StartSnapshot(), Times.Exactly(2)); // constructor + reset
+            _mockSnapshotBuilder.Verify(b => b.Build(), Times.Exactly(2)); // constructor + reset
         }
 
         [Fact]
@@ -350,61 +351,55 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         public void RegisteredChangeTracker_IsConsultedWhenPushingExistingItem()
         {
             var existing = new Mock<IIndexed<string>>();
+            existing.Setup(e => e.Value).Returns("hello");
             var snapshottedExisting = new Mock<IIndexed<string>>();
-            
+            existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
+
             // Setup: item exists in database
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
-            
-            // Setup: snapshot also has the item
-            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+
+            // Setup: snapshot has the item for old-data lookup in Changed()
+            _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
 
             var tracker = new Mock<IChangeTracker<string>>();
-            tracker.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
+            tracker.Setup(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny)).Returns(false);
 
             var sut = CreateSut();
-            // Register tracker through Reset
             sut.Reset(config => config.WithChangeTracker(tracker.Object), _ => { });
 
-            // Now setup database to have data again so tracker can be tested
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
+            var _md = default(IndexMetadata);
+            sut.Push("hello", ref _md);
 
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
-
-            // Tracker should be consulted when pushing an item that exists in the database
-            tracker.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
+            tracker.Verify(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny), Times.Once);
         }
 
         [Fact]
         public void MultipleChangeTrackers_AllConsultedWhenPushingExistingItem()
         {
             var existing = new Mock<IIndexed<string>>();
+            existing.Setup(e => e.Value).Returns("hello");
             var snapshottedExisting = new Mock<IIndexed<string>>();
-            
-            // Setup: item exists in database
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
-            
-            // Setup: snapshot also has the item
-            _mockSnapshot.Setup(s => s.Find(It.IsAny<string>())).Returns(snapshottedExisting.Object);
+            existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
+
+            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
 
             var tracker1 = new Mock<IChangeTracker<string>>();
-            tracker1.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(false);
+            tracker1.Setup(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny)).Returns(false);
 
             var tracker2 = new Mock<IChangeTracker<string>>();
-            tracker2.Setup(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>())).Returns(true);
+            tracker2.Setup(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny)).Returns(true);
 
             var sut = CreateSut();
             sut.Reset(config =>
                 config.WithChangeTracker(tracker1.Object)
                       .WithChangeTracker(tracker2.Object), _ => { });
-            
-            // Re-setup database to have data again after Reset deployed new schema
-            _mockDatabase.Setup(d => d.Find(It.IsAny<string>())).Returns(existing.Object);
 
-            sut.Push("hello", (IReadOnlyDictionary<string, object>)null);
+            var _md = default(IndexMetadata);
+            sut.Push("hello", ref _md);
 
-            // Both trackers should be consulted when pushing an existing item
-            tracker1.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
-            tracker2.Verify(t => t.HasChanged(It.IsAny<string>(), It.IsAny<IIndexed<string>>(), It.IsAny<IIndexed<string>>()), Times.Once);
+            tracker1.Verify(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny), Times.Once);
+            tracker2.Verify(t => t.HasChanged("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny), Times.Once);
         }
     }
 }

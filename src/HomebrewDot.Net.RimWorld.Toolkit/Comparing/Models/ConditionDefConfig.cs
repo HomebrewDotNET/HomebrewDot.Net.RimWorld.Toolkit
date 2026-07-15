@@ -148,21 +148,19 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 return config;
             }
 
+            if(def.Conditions?.Length > 0)
+            {
+                throw new InvalidOperationException("Nested conditions are not supported in ConditionDefConfig.");
+            }
+
             if (def.Compare is IReference compareRef)
             {
-                if (string.Equals(compareRef.Type, IndexedReferenceType.DefaultTypeName, StringComparison.Ordinal))
-                {
-                    config.CompareDefault = compareRef.Value?.ToString() ?? string.Empty;
-                }
-                else
-                {
-                    config.CompareType = compareRef.Type ?? string.Empty;
-                    config.CompareValue = compareRef.Value?.ToString() ?? string.Empty;
-                }
+                config.CompareType = compareRef.Type;
+                config.CompareValue = compareRef.Value?.ToString();
             }
             else if (def.Compare != null)
             {
-                config.CompareDefault = def.Compare.ToString() ?? string.Empty;
+                config.CompareDefault = def.Compare.ToString();
             }
 
             config.Operator = def.With?.ToString() ?? string.Empty;

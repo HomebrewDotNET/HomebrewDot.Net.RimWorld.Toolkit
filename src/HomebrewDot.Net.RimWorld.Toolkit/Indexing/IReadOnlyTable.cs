@@ -10,7 +10,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing
     /// <summary>
     /// Base interface for <see cref="IReadOnlyTable"/>
     /// </summary>
-    public interface IReadOnlyTable
+    public interface IReadOnlyTable : IDatabaseObject
     {
         /// <summary>
         /// Unique name of the table. This name is used to identify the table within the database and to access it when performing queries or other operations on the data.
@@ -26,14 +26,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// </summary>
         bool IsFiltered { get; }
         /// <summary>
+        /// The types of the data stored in the table. This is typically the type of the entity that the table represents, and is used to ensure that only valid data is stored in the table.
+        /// </summary>
+        public Type BaseEntityType { get; }
+        /// <summary>
         /// Sub-tables of the current table. These are tables that contain a subset of the data in the parent table, and can be used for specific queries or operations that require a subset of the data.
         /// </summary>
         IReadOnlyList<IReadOnlyTable> SubTables { get; }
         /// <summary>
-        /// The current version of the table.
-        /// Gives an indication if the state of the table has changed since the last time it was accessed, allowing for caching of query results and other optimizations based on the stability of the table state.
+        /// If changes are currently being synchronized with the database. This property can be used to determine whether the table is in a consistent state and whether it is safe to perform queries or other operations on the data.
         /// </summary>
-        int Version { get; }
+        public bool IsSyncing { get; }
 
         /// <summary>
         /// Tries to retrieve an indexed item from the table based on the provided data.
@@ -59,6 +62,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <param name="search">The search criteria.</param>
         /// <param name="indexName">Optional. The name of the index to use. If null, the default index will be used.</param>
         /// <returns>A read-only collection of data matching the search criteria.</returns>
-        IReadOnlyCollection<IIndexed<T>> Query<TSearch>(string property, TSearch search, string indexName = null);
+        IReadOnlyCollection<T> Query<TSearch>(string property, TSearch search, string indexName = null);
+        /// <summary>
+        /// Returns a thread-safe snapshot of the current state of the table.
+        /// Can be used during syncing to avoid issues with concurrent modifications.
+        /// Should be used by background threads to avoid issues with concurrent modifications.
+        /// </summary>
+        /// <returns>A read-only collection representing the current state of the table.</returns>
+        IReadOnlyCollection<IIndexed<T>> GetSnapshot();
     }
 }

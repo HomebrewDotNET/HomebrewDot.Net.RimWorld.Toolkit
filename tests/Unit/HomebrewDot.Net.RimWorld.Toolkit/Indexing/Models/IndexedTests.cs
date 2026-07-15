@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Moq;
 using Xunit;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Models;
@@ -624,6 +625,113 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Models
             Assert.Throws<ArgumentNullException>(() => indexed.GetValue<string>(null));
             Assert.Throws<ArgumentException>(() => indexed.GetValue<string>(string.Empty));
             Assert.Throws<ArgumentException>(() => indexed.GetValue<string>("   "));
+        }
+
+        #endregion
+
+        #region PersistTo
+
+        public class PersistTarget
+        {
+            public string Name { get; set; }
+        }
+
+        [Fact]
+        public void PersistTo_WithPersistentInt_SetsOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var intKey = IndexMetadataKey<int>.Get("TestInt");
+            md.Set(intKey, 42, persistent: true);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set("TestInt", (object)42), Times.Once);
+        }
+
+        [Fact]
+        public void PersistTo_WithPersistentBool_SetsOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var boolKey = IndexMetadataKey<bool>.Get("TestBool");
+            md.Set(boolKey, true, persistent: true);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set("TestBool", (object)true), Times.Once);
+        }
+
+        [Fact]
+        public void PersistTo_WithPersistentFloat_SetsOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var floatKey = IndexMetadataKey<float>.Get("TestFloat");
+            md.Set(floatKey, 3.14f, persistent: true);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set("TestFloat", (object)3.14f), Times.Once);
+        }
+
+        [Fact]
+        public void PersistTo_WithPersistentObject_SetsOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var objKey = IndexMetadataKey<string>.Get("TestString");
+            md.Set(objKey, "hello", persistent: true);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set("TestString", (object)"hello"), Times.Once);
+        }
+
+        [Fact]
+        public void PersistTo_WithMultiplePersistentTypes_AllSetOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var intKey = IndexMetadataKey<int>.Get("Age");
+            var boolKey = IndexMetadataKey<bool>.Get("IsActive");
+            var floatKey = IndexMetadataKey<float>.Get("Score");
+            var strKey = IndexMetadataKey<string>.Get("Name");
+            md.Set(intKey, 25, persistent: true);
+            md.Set(boolKey, false, persistent: true);
+            md.Set(floatKey, 1.5f, persistent: true);
+            md.Set(strKey, "test", persistent: true);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set("Age", (object)25), Times.Once);
+            mock.Verify(w => w.Set("IsActive", (object)false), Times.Once);
+            mock.Verify(w => w.Set("Score", (object)1.5f), Times.Once);
+            mock.Verify(w => w.Set("Name", (object)"test"), Times.Once);
+        }
+
+        [Fact]
+        public void PersistTo_WithNonPersistentValue_DoesNotSetOnIndexed()
+        {
+            var md = new IndexMetadata();
+            var intKey = IndexMetadataKey<int>.Get("Key");
+            md.Set(intKey, 99, persistent: false);
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set(It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        }
+
+        [Fact]
+        public void PersistTo_WithNoKeys_DoesNothing()
+        {
+            var md = new IndexMetadata();
+            var mock = new Mock<IWriteableIndexed<PersistTarget>>();
+
+            md.PersistTo(mock.Object);
+
+            mock.Verify(w => w.Set(It.IsAny<string>(), It.IsAny<object>()), Times.Never);
         }
 
         #endregion

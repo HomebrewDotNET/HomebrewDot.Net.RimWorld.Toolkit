@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Order;
+using HomebrewDot.Net.Rimworld;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 
 namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
 {
@@ -52,7 +54,7 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
             _updateEntities = CreateSample(_entities, 2);
             _snapshotEntities = CreateSample(_entities, 3);
 
-            _cachedSnapshotDatabase.AsReadOnly();
+            _cachedSnapshotDatabase.StartSnapshot().Build();
         }
 
         [Benchmark]
@@ -61,7 +63,8 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
             var database = CreateEntityDatabase();
             for (int i = 0; i < _entities.Length; i++)
             {
-                database.Upsert(_entities[i], null);
+                var metadata = new IndexMetadata();
+                database.Upsert(_entities[i], ref metadata);
             }
 
             return AsIndexed(database.GetTable<DatabaseBenchmarkEntity>("Items")).Count();
@@ -73,7 +76,8 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
             var database = CreateIndexedEntityDatabase();
             for (int i = 0; i < _entities.Length; i++)
             {
-                database.Upsert(_entities[i], null);
+                var metadata = new IndexMetadata();
+                database.Upsert(_entities[i], ref metadata);
             }
 
             return AsIndexed(database.GetTable<DatabaseBenchmarkEntity>("Items")).Count();
@@ -94,20 +98,22 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
         [Benchmark]
         public bool Upsert_ExistingIndexedItem()
         {
-            return _updateDatabase.Upsert(Next(_updateEntities, ref _updateCursor), null);
+            var metadata = new IndexMetadata();
+            return _updateDatabase.Upsert(Next(_updateEntities, ref _updateCursor), ref metadata);
         }
 
         [Benchmark]
         public IReadOnlyDatabase CreateSnapshot_AfterUpdate()
         {
-            _snapshotDatabase.Upsert(Next(_snapshotEntities, ref _snapshotCursor), null);
-            return _snapshotDatabase.AsReadOnly();
+            var metadata = new IndexMetadata();
+            _snapshotDatabase.Upsert(Next(_snapshotEntities, ref _snapshotCursor), ref metadata);
+            return _snapshotDatabase.StartSnapshot().Build();
         }
 
         [Benchmark]
         public IReadOnlyDatabase ReuseCachedSnapshot_WithoutChanges()
         {
-            return _cachedSnapshotDatabase.AsReadOnly();
+            return _cachedSnapshotDatabase.StartSnapshot().Build();
         }
 
         private static Database CreateEntityDatabase()
@@ -138,7 +144,8 @@ namespace HomebrewDot.Net.RimWorld.Benchmarks.Indexing.Components
             var database = CreateIndexedEntityDatabase();
             foreach (var entity in entities)
             {
-                database.Upsert(entity, null);
+                var metadata = new IndexMetadata();
+                database.Upsert(entity, ref metadata);
             }
 
             return database;

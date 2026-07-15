@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Comparing.Components;
 using HomebrewDot.Net.Rimworld.Comparing.Template;
 using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
@@ -284,5 +285,57 @@ namespace HomebrewDot.Net.Rimworld.Comparing
         /// <returns>The fluent return type.</returns>
         public static TReturn False<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
             => builder.Native(NativeOperatorType.False);
+        /// <summary>
+        /// Selects the null operator for the condition. This is a convenience method for selecting the null operator without needing to create a custom operator definition. The null operator evaluates to true if the left operand is null and false otherwise.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Null<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(NullOperatorType.DefaultTypeName);
+        /// <summary>
+        /// Selects the not null operator for the condition. This is a convenience method for selecting the not null operator without needing to create a custom operator definition. The not null operator evaluates to true if the left operand is not null and false otherwise.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn NotNull<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(NotNullOperatorType.DefaultTypeName);
+
+        /// <summary>
+        /// Selects the match operator for the condition and the pattern to compare against. This is a convenience method for selecting the match operator and pattern without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The match operator evaluates to true if the left operand matches the specified pattern (e.g. a string matching a regex pattern) and false otherwise.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="pattern">The pattern to match against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Match<TReturn>(this IConditionWithBuilder<TReturn> builder, string pattern) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(MatchOperatorType.DefaultTypeName).To.Value(pattern);
+        /// <summary>
+        /// Selects the match operator for the condition and the regex to compare against. This is a convenience method for selecting the match operator and regex without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The match operator evaluates to true if the left operand matches the specified regex pattern and false otherwise.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="regex">The regex pattern to match against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Match<TReturn>(this IConditionWithBuilder<TReturn> builder, System.Text.RegularExpressions.Regex regex) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(MatchOperatorType.DefaultTypeName).To.Value(regex);
+        /// <summary>
+        /// Selects the in operator for the condition. This is a convenience method for selecting the in operator without needing to create a custom operator definition. The in operator evaluates to true if the left operand is contained within the right operand and false otherwise.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn In<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(InOperatorType.DefaultTypeName);
+        /// <summary>
+        /// Selects the in operator for the condition and the native operator type to compare against. This is a convenience method for selecting the in operator and native operator type without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The in operator evaluates to true if the left operand is contained within the right operand and false otherwise, based on the specified native operator type.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="nativeOperator">The native operator type to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn InBy<TReturn>(this IConditionWithBuilder<TReturn> builder, NativeOperatorType nativeOperator) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(InOperatorType.DefaultTypeName).To.Value(new Dictionary<string, object>() { { InOperatorType.NativeOperatorTypeKey, nativeOperator } });
     }
 }

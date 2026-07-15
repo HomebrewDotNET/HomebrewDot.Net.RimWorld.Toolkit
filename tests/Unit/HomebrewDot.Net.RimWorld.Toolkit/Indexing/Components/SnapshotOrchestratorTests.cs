@@ -6,7 +6,6 @@ using HomebrewDot.Net.Rimworld.Hooks;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Components;
-using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Moq;
 using Verse;
 using Xunit;
@@ -118,77 +117,47 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void RebuildIndex_WhenUseLongTicksFalse_RareTickSchedulesSnapshotAndNormalTickTakesSnapshot()
+        public void RebuildIndex_WhenUseLongTicksFalse_RareTickTakesSnapshotDirectly()
         {
             // Arrange
             var game = CreateGame();
             var hookManager = new Mock<IHookManager>();
             var snapshotManager = new Mock<ISnapshotManager>();
             var registeredTickHooks = new List<IHook<OnGameTickTrigger>>();
-            var preparingTriggers = new List<PreparingSnapshotTrigger>();
 
             hookManager
                 .Setup(h => h.RegisterHook<OnGameTickTrigger>(It.IsAny<IHook<OnGameTickTrigger>>()))
                 .Callback<IHook<OnGameTickTrigger>>(h => registeredTickHooks.Add(h));
-            hookManager
-                .Setup(h => h.LazyTrigger<PreparingSnapshotTrigger>(It.IsAny<Func<PreparingSnapshotTrigger>>()))
-                .Callback<Func<PreparingSnapshotTrigger>>(factory => preparingTriggers.Add(factory()));
 
             var sut = new SnapshotOrchestrator(hookManager.Object, useLongTicks: false);
             sut.RebuildIndex(game, false, snapshotManager.Object, null, NoopManagerConfig, NoopSchemaConfig);
 
             var orchestrationHook = Assert.Single(registeredTickHooks);
 
-            // Act - normal tick should not schedule anything
+            // Act - normal tick should not trigger snapshot
             orchestrationHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Normal));
+            snapshotManager.Verify(s => s.Snapshot(false), Times.Never);
 
-            // Assert
-            Assert.Empty(preparingTriggers);
-            Assert.Single(registeredTickHooks);
-
-            // Act - rare tick should schedule snapshot and register one-time normal hook
+            // Act - rare tick should trigger snapshot directly
             orchestrationHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Rare));
+            snapshotManager.Verify(s => s.Snapshot(false), Times.Once);
 
-            // Assert
-            Assert.Single(preparingTriggers);
-            Assert.Same(snapshotManager.Object, preparingTriggers[0].SnapshotManager);
-            Assert.Equal(2, registeredTickHooks.Count);
-
-            var snapshotHook = registeredTickHooks[1];
-            Assert.True(snapshotHook.Once);
-            Assert.Equal(byte.MaxValue, snapshotHook.Priority);
-
-            // Act - non-normal tick should not snapshot
-            var nonNormalResult = snapshotHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Rare));
-
-            // Assert
-            Assert.False(nonNormalResult);
-            snapshotManager.Verify(s => s.Snapshot(), Times.Never);
-
-            // Act - normal tick should snapshot and unregister once hook
-            var normalResult = snapshotHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Normal));
-
-            // Assert
-            Assert.True(normalResult);
-            snapshotManager.Verify(s => s.Snapshot(), Times.Once);
+            // Act - only one hook registered (no extra one-shot hooks)
+            Assert.Single(registeredTickHooks);
         }
 
         [Fact]
-        public void RebuildIndex_WhenUseLongTicksTrue_LongTickSchedulesSnapshot()
+        public void RebuildIndex_WhenUseLongTicksTrue_LongTickTakesSnapshotDirectly()
         {
             // Arrange
             var game = CreateGame();
             var hookManager = new Mock<IHookManager>();
             var snapshotManager = new Mock<ISnapshotManager>();
             var registeredTickHooks = new List<IHook<OnGameTickTrigger>>();
-            var preparingTriggers = new List<PreparingSnapshotTrigger>();
 
             hookManager
                 .Setup(h => h.RegisterHook<OnGameTickTrigger>(It.IsAny<IHook<OnGameTickTrigger>>()))
                 .Callback<IHook<OnGameTickTrigger>>(h => registeredTickHooks.Add(h));
-            hookManager
-                .Setup(h => h.LazyTrigger<PreparingSnapshotTrigger>(It.IsAny<Func<PreparingSnapshotTrigger>>()))
-                .Callback<Func<PreparingSnapshotTrigger>>(factory => preparingTriggers.Add(factory()));
 
             var sut = new SnapshotOrchestrator(hookManager.Object, useLongTicks: true);
             sut.RebuildIndex(game, false, snapshotManager.Object, null, NoopManagerConfig, NoopSchemaConfig);
@@ -197,17 +166,14 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 
             // Act - rare tick should be ignored in long-tick mode
             orchestrationHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Rare));
+            snapshotManager.Verify(s => s.Snapshot(false), Times.Never);
 
-            // Assert
-            Assert.Empty(preparingTriggers);
-            Assert.Single(registeredTickHooks);
-
-            // Act - long tick should schedule snapshot
+            // Act - long tick should trigger snapshot directly
             orchestrationHook.OnTrigger(CreateOnGameTickTrigger(game, TickerType.Long));
+            snapshotManager.Verify(s => s.Snapshot(false), Times.Once);
 
-            // Assert
-            Assert.Single(preparingTriggers);
-            Assert.Equal(2, registeredTickHooks.Count);
+            // Assert - only one hook registered (no extra one-shot hooks)
+            Assert.Single(registeredTickHooks);
         }
 
         [Fact]

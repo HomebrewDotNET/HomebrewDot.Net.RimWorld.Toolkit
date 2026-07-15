@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 
 namespace HomebrewDot.Net.Rimworld.Indexing
 {
@@ -16,9 +18,24 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// Determines if any changes have occurred to the given <paramref name="current"/> value since the last snapshot was taken, as represented by the <paramref name="previous"/> indexed value. If this method returns true, a new snapshot will be taken; if it returns false, the current snapshot will be reused.
         /// </summary>
         /// <param name="current">The current value to check for changes.</param>
-        /// <param name="previous">The current version in the pending snapshot to be.</param>
-        /// <param name="snapshot">The previous version in the current snapshot. Can be null if <paramref name="previous"/> hasn't been snapshotted yet.</param>
+        /// <param name="indexed"><paramref name="current"/> indexed if it was added previously, can be null</param>
+        /// <param name="metadata">The new metadata for <paramref name="current"/></param>
         /// <returns>True if changes have occurred; otherwise, false.</returns>
-        bool HasChanged(T current, IIndexed<T> previous, IIndexed<T> snapshot = null);
+        bool HasChanged(T current, IIndexed<T> indexed, ref IndexMetadata metadata);
+    }
+    /// <summary>
+    /// A <see cref="IChangeTracker{T}"/> that can compile it's check into a linq expression.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    public interface IChangeTrackerCompileable<in T> : IChangeTracker<T> where T : class
+    {
+        /// <summary>
+        /// Compiles the current <see cref="IChangeTracker{T}.HasChanged(T, IIndexed{T}, ref IndexMetadata)"/> into a linq expression condition.
+        /// </summary>
+        /// <param name="current">Expression pointing to the current argument</param>
+        /// <param name="indexed">Expression pointing to the indexed argument</param>
+        /// <param name="metadata">Expression pointing to the metadata argument></param>
+        /// <returns>The compiled version of <see cref="IChangeTracker{T}.HasChanged(T, IIndexed{T}, ref IndexMetadata)"/> as linq</returns>
+        public Expression Compile(ParameterExpression current, ParameterExpression indexed,  Expression metadata);
     }
 }

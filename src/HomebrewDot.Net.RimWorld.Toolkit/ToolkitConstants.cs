@@ -5,6 +5,8 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
+using Verse;
 
 namespace HomebrewDot.Net.Rimworld
 {
@@ -21,6 +23,80 @@ namespace HomebrewDot.Net.Rimworld
         /// How many ticks the Rimworld tick manager spreads out the long ticking of things.
         /// </summary>
         public const int TickLongInterval = 2000;
+
+        /// <summary>
+        /// Constants related to the Rimworld Odyssey expansion, which can be used to check if the expansion is installed and active, and to conditionally enable or disable features that depend on the presence of this expansion.
+        /// </summary>
+        public static class Odyssey
+        {
+            /// <summary>
+            /// The package ID of the Rimworld Odyssey expansion, which can be used to check if the expansion is installed and active.
+            /// </summary>
+            public const string PackageId = "ludeon.rimworld.odyssey";
+            /// <summary>
+            /// Checks if the Rimworld Odyssey expansion is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this expansion.
+            /// </summary>
+            public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            /// <summary>
+            /// The name of the comp that is added to unique weapons by the Rimworld Odyssey expansion, which can be used to check if a weapon is unique in code or definitions.
+            /// </summary>
+            public const string UniqueWeaponCompName = "CompUniqueWeapon";
+        }
+
+        /// <summary>
+        /// Contains constants related to mods, such as mod IDs and other mod-specific information that may be used across the toolkit.
+        /// </summary>
+        public static class Mods
+        {
+            /// <summary>
+            /// Constants related to the "Make It Unique" mod.
+            /// </summary>
+            public static class MakeItUnique
+            {
+                /// <summary>
+                /// Checks if the "Make It Unique" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+                /// <summary>
+                /// Checks if the "Make It Unique - Apparel" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsApparelLoaded => ModLister.GetActiveModWithIdentifier(ApparelPackageId) != null;
+
+                /// <summary>
+                /// Id of the "Make It Unique" mod, which can be used to check if the mod is installed and active.
+                /// </summary>
+                public const string PackageId = "natangry.makeitunique";
+                /// <summary>
+                /// Id of the "Make It Unique - Apparel" mod, which can be used to check if the mod is installed and active.
+                /// </summary>
+                public const string ApparelPackageId = "natangry.makeitunique.apparel";
+                /// <summary>
+                /// Suffix used in the names of defs that have been made unique by the "Make It Unique" mod, which can be used to identify such defs in code or definitions.
+                /// </summary>
+                public const string UniqueDefSuffix = "_Unique";
+            }
+
+            /// <summary>
+            /// Contains constants related to the "Alpha" series mods by "Sarg Bjornson"
+            /// </summary>
+            public static class Alpha
+            {
+                /// <summary>
+                /// Contains constants related to the "Alpha Bees" mod by "Sarg Bjornson"
+                /// </summary>
+                public static class Bees
+                {
+                    /// <summary>
+                    /// Id of the "Alpha Bees" mod, which can be used to check if the mod is installed and active.
+                    /// </summary>
+                    public const string PackageId = "sarg.rimbees";
+                    /// <summary>
+                    /// Checks if the "Alpha Bees" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                    /// </summary>
+                    public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+                }
+            }
+        }
 
         /// <summary>
         /// Contains cached reflection info for the indexed type, to avoid repeated reflection calls when building indexes and enrichers.
@@ -66,6 +142,14 @@ namespace HomebrewDot.Net.Rimworld
             /// MethodInfo for Type.IsAssignableFrom(Type c).
             /// </summary>
             public static readonly MethodInfo TypeIsAssignableFrom = Toolkit.Helpers.Expression.GetMethod<Type>(t => t.IsAssignableFrom(default!));
+            /// <summary>
+            /// MethodInfo for ThingDef.GetCompProperties<CompProperties>().
+            /// </summary>
+            public static readonly MethodInfo GetCompProperties = Toolkit.Helpers.Expression.GetMethod<ThingDef>(t => t.GetCompProperties<CompProperties>());
+            /// <summary>
+            /// MethodInfo for Thing.TryGetComp<ThingComp>().
+            /// </summary>
+            public static readonly MethodInfo TryGetComp = Toolkit.Helpers.Expression.GetMethod<Verse.Thing>(t => t.TryGetComp<ThingComp>());
         }
         /// <summary>
         /// Contains cached expressions for commonly used expressions in the toolkit, to avoid repeated expression compilation when building indexes and enrichers.
@@ -97,11 +181,45 @@ namespace HomebrewDot.Net.Rimworld
             /// <summary>
             /// Key of the metadata that contains the current container of a thing.
             /// </summary>
-            public const string ContainerMetadata = "Thing__Container";
+            public static readonly IndexMetadataKey<string> ContainerMetadata = IndexMetadataKey<string>.Get("Thing__Container");
             /// <summary>
             /// Key of the metadata that contains the current holder of a thing.
             /// </summary>
-            public const string HolderMetadata = "Thing__Holder";
+            public static readonly IndexMetadataKey<string> HolderMetadata = IndexMetadataKey<string>.Get("Thing__Holder");
+
+            /// <summary>
+            /// Key of the metadata that contains the current map of a thing.
+            /// </summary>
+            public static readonly IndexMetadataKey<Map> Map = IndexMetadataKey<Map>.Get(nameof(Thing.Map));
+            /// <summary>
+            /// Key of the metadata that contains the destroy mode of a thing.
+            /// </summary>
+            public static readonly IndexMetadataKey<DestroyMode> DestroyMode = IndexMetadataKey<DestroyMode>.Get("DestroyMode");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing def is a Odyssey unique item, which can be used to check if the def is unique in code or definitions.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsUnique = IndexMetadataKey<bool>.Get("IsUnique");
+            /// <summary>
+            /// Key of the metadata that contains the mod ID of a def, which can be used to check which mod a def belongs to in code or definitions.
+            /// </summary>
+            public static readonly IndexMetadataKey<string> ModId = IndexMetadataKey<string>.Get("ModId");
+        }
+
+        /// <summary>
+        /// Constants related to <see cref="Verse.Def"/>s.
+        /// </summary>
+        public static class Def
+        {
+            /// <summary>
+            /// Constants related to <see cref="Verse.ThingDef"/>s.
+            /// </summary>
+            public static class Thing
+            {
+                /// <summary>
+                /// Key of the metadata that indicates whether a thing is considered a construction material for any def buildable by the player.
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsConstructionMaterial = IndexMetadataKey<bool>.Get("IsConstructionMaterial");                
+            }
         }
 
         /// <summary>

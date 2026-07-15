@@ -672,6 +672,12 @@ namespace HomebrewDot.Net.Rimworld
 
             public IReadOnlyDictionary<string, object> Metadata => _metadataProperty?.GetValue(_inner) as IReadOnlyDictionary<string, object> ?? EmptyMetadata;
 
+            public bool HasSnapshot => throw new NotImplementedException();
+
+            public bool IsSnapshot => throw new NotImplementedException();
+
+            public IIndexed<object> Snapshot => throw new NotImplementedException();
+
             public TValue GetValue<TValue>(string propertyName)
             {
                 try
@@ -697,6 +703,12 @@ namespace HomebrewDot.Net.Rimworld
             public object Value { get; }
 
             public IReadOnlyDictionary<string, object> Metadata { get; }
+
+            public bool HasSnapshot => throw new NotImplementedException();
+
+            public bool IsSnapshot => throw new NotImplementedException();
+
+            public IIndexed<object> Snapshot => throw new NotImplementedException();
 
             public TValue GetValue<TValue>(string propertyName)
             {

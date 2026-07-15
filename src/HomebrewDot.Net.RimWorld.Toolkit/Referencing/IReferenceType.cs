@@ -45,6 +45,6 @@ namespace HomebrewDot.Net.Rimworld.Referencing
         /// <param name="value">The value to resolve.</param>
         /// <param name="context">A dictionary containing additional information that might be needed for the resolution process.</param>
         /// <returns>An expression representing the compiled resolution logic.</returns>
-        Expression Compile(ParameterExpression inputParameter, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context);
+        Expression Compile(ParameterExpression inputParameter, object input, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context);
     }
 }

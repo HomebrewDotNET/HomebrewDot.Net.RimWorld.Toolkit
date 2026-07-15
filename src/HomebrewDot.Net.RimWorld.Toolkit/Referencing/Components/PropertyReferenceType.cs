@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Collecting.Components;
@@ -9,13 +10,14 @@ using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
 using static HomebrewDot.Net.Rimworld.Toolkit;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using Expression = System.Linq.Expressions.Expression;
 
 namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
     /// A <see cref="IReferenceTypeCompileable"/> that resolves property paths from objects used to select sub objects.
     /// </summary>
-    public class PropertyReferenceType : IReferenceType
+    public class PropertyReferenceType : IReferenceTypeCompileable
     {
         // Constants
         /// <summary>
@@ -31,21 +33,21 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         /// <inheritdoc cref="PropertyReferenceType"/>
         protected PropertyReferenceType()
         {
-            
+
         }
 
         /// <inheritdoc/>
         public virtual object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
         {
-            if(value is null)
+            if (value is null)
             {
                 return null;
             }
-            if(context is null)
+            if (context is null)
             {
                 return null;
             }
-            if(input is null)
+            if (input is null)
             {
                 return null;
             }
@@ -53,6 +55,27 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             var propertyName = value.ToString();
             var paths = Helpers.Traversing.SplitPath(propertyName);
             return Helpers.Traversing.TraversePath(input, paths);
+        }
+        /// <inheritdoc/>
+        public string GetCacheKey(object input, object value, IReadOnlyDictionary<string, object> context, out Type returnType)
+        {
+            returnType = typeof(object);
+            if (input is null) return null;
+            if (value is null) return null;
+
+            returnType = Helpers.Traversing.TryWalkPath(input.GetType(), value.ToString());
+            return $"{input.GetType().FullName}:{value}";
+        }
+        /// <inheritdoc/>
+        public System.Linq.Expressions.Expression Compile(ParameterExpression inputParameter, object input, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context)
+        {
+            inputParameter = Guard.NotNull(inputParameter, nameof(inputParameter));
+            input = Guard.NotNull(input, nameof(input));
+            contextParameter = Guard.NotNull(contextParameter, nameof(contextParameter));
+            value = Guard.NotNull(value, nameof(value));
+            var inputType = input.GetType();
+
+            return Helpers.Traversing.GenerateFullGetter(Expression.Convert(inputParameter, inputType), inputType, value.ToString());
         }
     }
 

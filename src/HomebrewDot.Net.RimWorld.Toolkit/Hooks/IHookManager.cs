@@ -42,17 +42,21 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// </summary>
         /// <typeparam name="T">The type of event to trigger.</typeparam>
         /// <param name="arg">The event being triggered.</param>
-        void Trigger<T>(T arg);
+        /// <returns>If a hook was triggered, otherwise false</returns>
+        bool Trigger<T>(T arg);
         /// <summary>
-        /// Uses <paramref name="argFactory"/> to create the argument for event <typeparamref name="T"/> and triggers the event, invoking all registered hooks that respond to this event type. This allows for lazy evaluation of the event argument, which can be useful if the argument is expensive to create or if it should only be created if there are hooks that will respond to it.
+        /// Triggers event <typeparamref name="T"/>, invoking all registered hooks that respond to this event type with the provided argument <paramref name="arg"/>.
+        /// Delays the trigger to next tick.
         /// </summary>
         /// <typeparam name="T">The type of event to trigger.</typeparam>
-        /// <param name="argFactory">A function that creates the event argument.</param>
-        void LazyTrigger<T>(Func<T> argFactory);
+        /// <param name="arg">The event being triggered.</param>
+        /// <returns>If a hook was triggered, otherwise false</returns>
+        void TriggerDelayed<T>(T arg);
         /// <summary>
         /// Transfers all hooks from this manager to <paramref name="newManager"/>, effectively moving the responsibility of managing and invoking these hooks to the new manager. After this operation, this manager will no longer have any registered hooks, and all hooks will be managed by the new manager.
         /// </summary>
         /// <param name="newManager">The new manager for the hooks.</param>
+        /// <returns>If a hook was triggered, otherwise false</returns>
         void TransferTo(IHookManager newManager);
     }
 

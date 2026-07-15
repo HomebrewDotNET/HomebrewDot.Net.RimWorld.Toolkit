@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld;
 using HomebrewDot.Net.Rimworld.Hooks;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
 using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using Verse;
 using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
+using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
+using System.Diagnostics;
 
 namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
@@ -24,6 +27,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private readonly bool _useLongTicks;
         private ISnapshotManager _snapshotManager;
         private Game _game;
+
+        // State 
+        private ISnapshotBuilder _pending;
 
         /// <inheritdoc cref="SnapshotOrchestrator"/>
         /// <param name="hookManager">Used to hook into certain game events.</param>
@@ -98,7 +104,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 Log($"Starting snapshot orchestration for game {game} using {_dataGatherers.Count} data gatherers.");
                 foreach (var gatherer in _dataGatherers)
                 {
-                    LogVerbose($"Starting gathering with {gatherer.GetType().FullName}");
+                    if (IsVerboseEnabled) LogVerbose($"Starting gathering with {gatherer.GetType().FullName}");
                     try
                     {
                         gatherer.GatherData(game, snapshotManager);
@@ -112,34 +118,64 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 // Hook into ticks to manage lifecycle
                 _hookManager.RegisterHook<OnGameTickTrigger>(this, e =>
                 {
-                    var tickerType = _useLongTicks ? TickerType.Long : TickerType.Rare;
+                    var useLongTicks = Invoking.Safe(() => Toolkit.Settings.SlowGatheringEnabled, _useLongTicks);
+                    var tickerType = useLongTicks ? TickerType.Long : TickerType.Rare;
 
-                    if (e.TickerType != tickerType)
+                    var isSnapshotWindow = e.TickerType == tickerType;
+
+					if (_pending is not null)
+                    {
+                        if (!_pending.IsFinished)
+                        {
+							if (isSnapshotWindow)
+							{
+								LogWarning("Orchestrator can not keep up with changes. Forcing finialize");
+								_ = _pending.Build();
+								_pending = null;
+								_ = _snapshotManager.Snapshot().Build();
+							}
+                            else
+                            {
+                                // Finished so notify manager
+                                _pending = null;
+                                _ = _snapshotManager.Snapshot();
+							}
+                        }
+                        else
+                        {
+                            _pending = null;
+                        }
+					}
+
+                    if (!isSnapshotWindow)
                     {
                         return;
                     }
 
-                    LogVerbose($"Preparing to take new snapshot");
-                    // Notify listeners that we're about to take a snapshot
-                    _hookManager.LazyTrigger<PreparingSnapshotTrigger>(() => new PreparingSnapshotTrigger(_snapshotManager));
-                    // Subscribe to next tick to take snapshot after all preparations are done
-                    _hookManager.RegisterHook<OnGameTickTrigger>(this, t =>
+                    if (IsVerboseEnabled) LogVerbose("Starting snapshot");
+                    try
                     {
-                        if (t.TickerType != TickerType.Normal)
+                        _pending = _snapshotManager.Snapshot();
+                        if (_pending.IsFinished)
                         {
-                            return false;
+                            _pending = null;
                         }
-                        LogVerbose($"Taking snapshot");
-                        try
+                        else
                         {
-                            _snapshotManager.Snapshot();
+                            var work = _pending.CreateWork();
+                            work.OnCompleted(() =>
+                            {
+                                // Finished so notify manager
+                                _pending = null;
+                                _ = _snapshotManager.Snapshot();
+                            });
+                            _hookManager.Trigger(work);
                         }
-                        catch (Exception ex)
-                        {
-                            LogError($"Error taking snapshot: {ex}");
-                        }
-                        return true; // Unregister after triggering
-                    }, true, priority: byte.MaxValue);
+					}
+                    catch (Exception ex)
+                    {
+                        LogError($"Error starting snapshot: {ex}");
+                    }
                 });
             }
 
@@ -150,7 +186,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public void ForceSnapshot()
         {
             Log($"Forcing snapshot for game {_game}. Current version is {_snapshotManager?.DatabaseSnapshot?.Version ?? '?'}");
-            _snapshotManager?.Snapshot();
+            _ = _snapshotManager?.Snapshot(true).Build();
             Log($"Snapshot forced for game {_game}. New version is {_snapshotManager?.DatabaseSnapshot?.Version ?? '?'}");
         }
 

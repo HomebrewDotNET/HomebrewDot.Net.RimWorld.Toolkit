@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
 namespace HomebrewDot.Net.Rimworld.Indexing.Components
@@ -15,28 +16,28 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
     {
         // Fields
         private readonly Func<T, TProperty> _getProperty;
-        private readonly string _metadataKey;
+        private readonly IndexMetadataKey<TProperty> _metadataKey;
         private readonly IComparer<TProperty> _comparer;
 
-        /// <inheritdoc cref="PropertyChangeTracker{T}"/>
+        /// <inheritdoc cref="PropertyChangeTracker{T, TProperty}"/>
         /// <param name="getProperty">Delegate used to get the property value.</param>
         /// <param name="metadataKey">Key used to store the previous value in the metadata.</param>
         /// <param name="comparer">Optional comparer used to compare property values. If not provided, the default equality comparer will be used.</param>
-        public PropertyChangeTracker(Func<T, TProperty> getProperty, string metadataKey, IComparer<TProperty> comparer = null)
+        public PropertyChangeTracker(Func<T, TProperty> getProperty, IndexMetadataKey<TProperty> metadataKey, IComparer<TProperty> comparer = null)
         {
             _getProperty = Guard.NotNull(getProperty, nameof(getProperty));
-            _metadataKey = Guard.NotNullOrWhitespace(metadataKey, nameof(metadataKey));
+            _metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
             _comparer = comparer;
-            Toolkit.Indexing.ConfigureSchema += ConfigureSchema;
         }
 
         /// <inheritdoc/>
-        public bool HasChanged(T current, IIndexed<T> previous, IIndexed<T> snapshot)
+        public bool HasChanged(T current, IIndexed<T> previous, ref IndexMetadata metadata)
         {
             current = Guard.NotNull(current, nameof(current));
             previous = Guard.NotNull(previous, nameof(previous));
 
-            if(!previous.Metadata.TryGetValue(_metadataKey, out var previousValue))
+            metadata.PersistKey(_metadataKey);
+            if(!previous.Metadata.TryGetValue(_metadataKey.Name, out var previousValue))
             {
                 return true;
             }
@@ -52,24 +53,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             }
             return !EqualityComparer<TProperty>.Default.Equals((TProperty)previousValue, newValue);
         }
-
-        private void ConfigureSchema(IDatabaseSchemaBuilder builder)
-        {
-            builder.OnInserting((d, m, i) =>
-            {
-                if (i.Value is T obj)
-                {
-                    var value = _getProperty(obj);
-                    i.Set(_metadataKey, value);
-                }
-            });
-        }
-
-
         /// <inheritdoc/>
         public void Dispose()
         {
-            Toolkit.Indexing.ConfigureSchema -= ConfigureSchema;
         }
     }
 }

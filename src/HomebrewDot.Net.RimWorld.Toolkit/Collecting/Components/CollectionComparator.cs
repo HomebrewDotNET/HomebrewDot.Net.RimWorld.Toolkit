@@ -1,13 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Collecting.Models;
 using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Generic;
 using HomebrewDot.Net.Rimworld.Generic.Models;
+using static HomebrewDot.Net.Rimworld.Toolkit;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using LinqExpression = System.Linq.Expressions.Expression;
 
@@ -24,10 +28,15 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// Can be used to overwrite the global one for the current collection.
         /// </summary>
         public const string ContextComparatorKey = "Comparator";
+        private readonly static Dictionary<Type, Func<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>, bool>> _cacheWarmers = new Dictionary<Type, Func<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>, bool>>();
+        private readonly static MethodInfo _matchMethod = Helpers.Expression.GetMethod<CollectionComparator>(x => x.Matches(default, default(object), default, default)).GetGenericMethodDefinition();
+        private readonly static Dictionary<string, Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>> _compiledCollectionExpressionsCache = new Dictionary<string, Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>>();
+        private readonly static Dictionary<string, Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>> _compiledCollectionWithSubExpressionsCache = new Dictionary<string, Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>>();
+
 
         // Fields
         private readonly IComparator _comparator;
-        private readonly Dictionary<string, Func<object, IReadOnlyDictionary<string, object>, bool>> _compiledCollectionExpressionsCache = new Dictionary<string, Func<object, IReadOnlyDictionary<string, object>, bool>>();
+        
 
         /// <inheritdoc cref="CollectionComparator"/>
         /// <param name="comparator">Used to compare conditions within the collection.</param>
@@ -36,31 +45,98 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             _comparator = Guard.NotNull(comparator, nameof(comparator));
         }
 
+        /// <summary>
+        /// Compiles expressions trees for all <paramref name="collections"/> and <paramref name="types"/> combinations.
+        /// </summary>
+        /// <param name="collections">The collections to warmup the expression tries for</param>
+        /// <param name="types">All the types to warmup the expression tries for</param>
+        public void WarmupCache(IReadOnlyDictionary<string, ICollectionDef> collections, IEnumerable<Type> types)
+        {
+            foreach (var type in types)
+            {               
+                try
+                {
+                    if (!_cacheWarmers.TryGetValue(type, out var cacheWarmer))
+                    {
+                        var targetMethod = _matchMethod.MakeGenericMethod(type);
+                        var inputObject = LinqExpression.Parameter(typeof(object), "obj");
+                        var inputCollection = LinqExpression.Parameter(typeof(ICollectionDef), "collection");
+                        var inputCollections = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, ICollectionDef>), "collections");
+                        var inputContext = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
+                        var typedObject = LinqExpression.Parameter(type, "input");
+                        var assignTypedObject = LinqExpression.Assign(typedObject, LinqExpression.Convert(inputObject, type));
+                        var callMethod = LinqExpression.Call(LinqExpression.Constant(this), targetMethod, inputCollection, typedObject, inputCollections, inputContext);
+                        var block = LinqExpression.Block([typedObject], assignTypedObject, callMethod);
+                        var lambda = LinqExpression.Lambda<Func<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>, bool>>(block, inputCollection, inputObject, inputCollections, inputContext);
+                        cacheWarmer = lambda.Compile();
+                        _cacheWarmers[type] = cacheWarmer;
+                    }
+                    var instance = FormatterServices.GetUninitializedObject(type);
+                    foreach (var collection in collections.Values)
+                    {
+                        try
+                        {
+                            cacheWarmer(collection, instance, collections, NullDictionary<string, object>.Instance);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clear internal expression tree caches.
+        /// </summary>
+        public void ClearCache()
+        {
+            _compiledCollectionWithSubExpressionsCache.Clear();
+        }
+
         /// <inheritdoc/>
-        public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+        public bool Matches<T>(ICollectionDef collection, T obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
         {
             collection = Guard.NotNull(collection, nameof(collection));
             obj = Guard.NotNull(obj, nameof(obj));
             collections ??= NullDictionary<string, ICollectionDef>.Instance;
-            context ??= new Dictionary<string, object>();
+            context ??= NullDictionary<string, object>.Instance;
 
-            if(collection is ICacheable cacheable)
+            if (collection is ICacheable cacheable)
             {
                 var cacheKey = cacheable.GetCacheKey();
-                if(cacheKey is not null)
+                if (cacheKey is not null)
                 {
-                    var fullCacheKey = $"{obj?.GetType()?.FullName ?? "NULL"}:{cacheKey}";
-                    if (_compiledCollectionExpressionsCache.TryGetValue(fullCacheKey, out var cachedExpression))
+                    var cache = _compiledCollectionExpressionsCache;
+                    if (collection.HasSubCollections())
+                    {
+                        cache = _compiledCollectionWithSubExpressionsCache;
+                    }
+                    if (!cache.TryGetValue(cacheKey, out var typeCache))
+                    {
+                        typeCache = new Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>();
+                        cache[cacheKey] = typeCache;
+                    }
+                    var fullCacheKey = obj?.GetType() ?? typeof(object);
+                    if (typeCache.TryGetValue(fullCacheKey, out var cachedExpression))
                     {
                         return cachedExpression(obj, context);
                     }
+                    var stopwatch = Stopwatch.StartNew();
                     var inputParameter = LinqExpression.Parameter(typeof(object), "input");
                     var contextParameter = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
                     var comparator = GetComparator(context);
-                    var expression = Compile(inputParameter, contextParameter, comparator, collection, obj, collections, context);
+                    var expression = Compile(inputParameter, obj, contextParameter, comparator, collection, obj, collections, context);
                     var lambda = LinqExpression.Lambda<Func<object, IReadOnlyDictionary<string, object>, bool>>(expression, inputParameter, contextParameter);
                     var compiled = lambda.Compile();
-                    _compiledCollectionExpressionsCache[fullCacheKey] = compiled;
+                    stopwatch.Stop();
+                    if (Logging.IsPerformanceEnabled && !_cacheWarmers.ContainsKey(fullCacheKey)) Logging.LogPerformance($"Compiled collection '{cacheKey}' for type '{fullCacheKey}' in {stopwatch.ElapsedMilliseconds}ms.");
+                    typeCache[fullCacheKey] = compiled;
                     return compiled(obj, context);
                 }
             }
@@ -82,9 +158,9 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 conditionsMet = comparator.Compare(obj, collection.Conditions, context);
             }
             bool hasInclusionCollections = collection.Inclusions != null && collection.Inclusions.Count > 0;
-            if(hasInclusionCollections)
+            if (hasInclusionCollections)
             {
-                if(!collection.InclusionsAreOr && !conditionsMet)
+                if (!collection.InclusionsAreOr && !conditionsMet)
                 {
                     // If there are inclusion collections and the conditions are not met, we can skip checking the inclusion collections as they will be false anyway.
                     return false;
@@ -97,7 +173,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             return conditionsMet;
         }
         /// <inheritdoc/>
-        public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+        public IEnumerable<(T Object, bool Matches)> Matches<T>(ICollectionDef collection, IEnumerable<T> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
         {
             collection = Guard.NotNull(collection, nameof(collection));
             collections ??= NullDictionary<string, ICollectionDef>.Instance;
@@ -108,21 +184,34 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 var cacheKey = cacheable.GetCacheKey();
                 if (cacheKey is not null)
                 {
-                    var tempCache = new Dictionary<string, Func<object, IReadOnlyDictionary<string, object>, bool>>();
+                    var cache = _compiledCollectionExpressionsCache;
+                    if (collection.HasSubCollections())
+                    {
+                        cache = _compiledCollectionWithSubExpressionsCache;
+                    }
+                    if (!cache.TryGetValue(cacheKey, out var typeCache))
+                    {
+                        typeCache = new Dictionary<Type, Func<object, IReadOnlyDictionary<string, object>, bool>>();
+                        cache[cacheKey] = typeCache;
+                    }
 
                     foreach (var obj in objects)
                     {
-                        var fullCacheKey = $"{obj?.GetType()?.FullName ?? "NULL"}:{cacheKey}";
-                        if(!tempCache.TryGetValue(fullCacheKey, out var cachedExpression))
+                        var fullCacheKey = obj?.GetType() ?? typeof(object);
+                        if (typeCache.TryGetValue(fullCacheKey, out var cachedExpression))
                         {
-                            var inputParameter = LinqExpression.Parameter(typeof(object), "input");
-                            var contextParameter = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
-                            var comparator = GetComparator(context);
-                            var expression = Compile(inputParameter, contextParameter, comparator, collection, obj, collections, context);
-                            var lambda = LinqExpression.Lambda<Func<object, IReadOnlyDictionary<string, object>, bool>>(expression, inputParameter, contextParameter);
-                            cachedExpression = lambda.Compile();
-                            tempCache[fullCacheKey] = cachedExpression;
+                            yield return (obj, cachedExpression(obj, context));
+                            continue;
                         }
+                        var stopwatch = Stopwatch.StartNew();
+                        var inputParameter = LinqExpression.Parameter(typeof(object), "input");
+                        var contextParameter = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
+                        var comparator = GetComparator(context);
+                        var expression = Compile(inputParameter, obj, contextParameter, comparator, collection, obj, collections, context);
+                        var lambda = LinqExpression.Lambda<Func<object, IReadOnlyDictionary<string, object>, bool>>(expression, inputParameter, contextParameter);
+                        cachedExpression = lambda.Compile();
+                        if (Logging.IsPerformanceEnabled && !_cacheWarmers.ContainsKey(fullCacheKey)) Logging.LogPerformance($"Compiled collection '{cacheKey}' for type '{fullCacheKey}' in {stopwatch.ElapsedMilliseconds}ms.");
+                        typeCache[fullCacheKey] = cachedExpression;
 
                         yield return (obj, cachedExpression(obj, context));
                     }
@@ -130,7 +219,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 yield break;
             }
 
-            foreach(var obj in objects)
+            foreach (var obj in objects)
             {
                 yield return (obj, Matches(collection, obj, collections, context));
             }
@@ -145,25 +234,26 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             return _comparator;
         }
 
-        private LinqExpression Compile(ParameterExpression inputParameter, ParameterExpression contextParameter, IComparator comparator, ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+        private LinqExpression Compile(ParameterExpression inputParameter, object input, ParameterExpression contextParameter, IComparator comparator, ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
         {
             bool hasExclusionCollections = collection.Exclusions != null && collection.Exclusions.Count > 0;
             LinqExpression isExcluded = null;
             if (hasExclusionCollections)
             {
-                var exclusionExpressions = collection.Exclusions.Select(exclusion => (Expression: Compile(inputParameter, contextParameter, comparator, collections.TryGetValue(exclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{exclusion.Name}' not found."), obj, collections, context), IsOr: exclusion.IsOr)).ToArray();
+                var exclusionExpressions = collection.Exclusions.Select(exclusion => (Expression: Compile(inputParameter, input, contextParameter, comparator, collections.TryGetValue(exclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{exclusion.Name}' not found."), obj, collections, context), IsOr: exclusion.IsOr)).ToArray();
                 isExcluded = exclusionExpressions[0].Expression;
-                for(int i = 1; i < exclusionExpressions.Length; i++)
+                for (int i = 1; i < exclusionExpressions.Length; i++)
                 {
                     var exclusionExpression = exclusionExpressions[i];
-                    isExcluded = exclusionExpressions[i-1].IsOr ? LinqExpression.OrElse(isExcluded, exclusionExpression.Expression) : LinqExpression.AndAlso(isExcluded, exclusionExpression.Expression);
+                    isExcluded = exclusionExpressions[i - 1].IsOr ? LinqExpression.OrElse(isExcluded, exclusionExpression.Expression) : LinqExpression.AndAlso(isExcluded, exclusionExpression.Expression);
                 }
             }
 
             bool hasInclusionCollections = collection.Inclusions != null && collection.Inclusions.Count > 0;
             LinqExpression isIncluded = null;
-            if (hasInclusionCollections) {
-                var inclusionExpressions = collection.Inclusions.Select(inclusion => (Expression: Compile(inputParameter, contextParameter, comparator, collections.TryGetValue(inclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{inclusion.Name}' not found."), obj, collections, context), IsOr: inclusion.IsOr)).ToArray();
+            if (hasInclusionCollections)
+            {
+                var inclusionExpressions = collection.Inclusions.Select(inclusion => (Expression: Compile(inputParameter, input, contextParameter, comparator, collections.TryGetValue(inclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{inclusion.Name}' not found."), obj, collections, context), IsOr: inclusion.IsOr)).ToArray();
                 isIncluded = inclusionExpressions[0].Expression;
                 for (int i = 1; i < inclusionExpressions.Length; i++)
                 {
@@ -176,9 +266,9 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LinqExpression conditionsMet = null;
             if (hasConditions)
             {
-                if(comparator is IComparatorCompiler expressionCompiler)
+                if (comparator is IComparatorCompiler expressionCompiler)
                 {
-                    conditionsMet = expressionCompiler.Compile(inputParameter, collection.CombinedConditions, contextParameter, context);
+                    conditionsMet = expressionCompiler.Compile(inputParameter, input, collection.CombinedConditions, contextParameter, context);
                 }
                 else
                 {
@@ -199,7 +289,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 itemIsMatch = isIncluded;
             }
-            else if(isIncluded is not null)
+            else if (isIncluded is not null)
             {
                 itemIsMatch = collection.InclusionsAreOr ? LinqExpression.OrElse(itemIsMatch, isIncluded) : LinqExpression.AndAlso(itemIsMatch, isIncluded);
             }
@@ -228,11 +318,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 }
 
                 var matches = Matches(subCollection, obj, collections, context);
-                if(collectionCondition.Inverted)
+                if (collectionCondition.Inverted)
                 {
                     matches = !matches;
-				}
-				hasAnyTerm = true;
+                }
+                hasAnyTerm = true;
                 currentAndGroup = currentAndGroup && matches;
 
                 var endsCurrentGroup = i == collectionConditions.Count - 1 || collectionCondition.IsOr;

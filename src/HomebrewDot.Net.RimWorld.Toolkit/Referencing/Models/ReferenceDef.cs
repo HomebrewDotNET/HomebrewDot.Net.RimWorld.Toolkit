@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Extensions;
 
 namespace HomebrewDot.Net.Rimworld.Referencing.Models
 {
@@ -15,5 +16,15 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Models
         public string Type { get; set; }
         /// <inheritdoc/>
         public object Value { get; set; }
+
+        /// <inheritdoc/>
+        public string GetCacheKey()
+        {
+            var sb = new StringBuilder();
+            sb.Append('<').Append(Type).Append(" -> ");
+            Value.ToCacheKey(sb, true);
+            sb.Append('>');
+            return sb.ToString();
+        }
     }
 }

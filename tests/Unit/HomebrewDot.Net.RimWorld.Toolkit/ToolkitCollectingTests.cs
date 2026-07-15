@@ -178,10 +178,10 @@ namespace HomebrewDot.Net.Rimworld.Tests
 
         private sealed class TrackingComparator : ICollectionComparator
         {
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            public bool Matches<T>(ICollectionDef collection, T obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
                 => true;
 
-            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            public IEnumerable<(T Object, bool Matches)> Matches<T>(ICollectionDef collection, IEnumerable<T> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
             {
                 throw new NotImplementedException();
             }
@@ -191,7 +191,7 @@ namespace HomebrewDot.Net.Rimworld.Tests
         {
             public bool IsDisposed { get; private set; }
 
-            public bool Matches(ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            public bool Matches<T>(ICollectionDef collection, T obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
                 => true;
 
             public void Dispose()
@@ -199,7 +199,7 @@ namespace HomebrewDot.Net.Rimworld.Tests
                 IsDisposed = true;
             }
 
-            public IEnumerable<(object Object, bool Matches)> Matches(ICollectionDef collection, IEnumerable<object> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+            public IEnumerable<(T Object, bool Matches)> Matches<T>(ICollectionDef collection, IEnumerable<T> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
             {
                 throw new NotImplementedException();
             }

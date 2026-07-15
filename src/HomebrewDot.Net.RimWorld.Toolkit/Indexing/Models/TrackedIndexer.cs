@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Indexing.Components;
+using RimWorld;
+using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using static HomebrewDot.Net.Rimworld.Toolkit.Indexing;
 
 namespace HomebrewDot.Net.Rimworld.Indexing.Models
 {
@@ -11,11 +15,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
     /// An implementation of <see cref="IIndexer"/> that allows for tracking changes in specified metadata values. This indexer can be configured to watch for changes in specific metadata keys, and will update the indexed data accordingly when changes are detected. It also provides a fluent builder interface for defining the metadata keys and their corresponding value extraction functions.
     /// </summary>
     /// <typeparam name="T">The type of the objects being indexed.</typeparam>
-    public class TrackedIndexer<T> : IIndexer, IIndexerBuilder<T>, IChangeTracker<T>, IDisposable where T : class
+    public class TrackedIndexer<T> : IIndexer<T>, IIndexerBuilder<T>, IChangeTracker<T>, IDisposable where T : class
     {
         // Fields
-        private readonly Dictionary<string, Func<T, object>> _watchers = new Dictionary<string, Func<T, object>>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, Func<T, object>> _getters = new Dictionary<string, Func<T, object>>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<IndexMetadataKey> _includes = new HashSet<IndexMetadataKey>();
+        private readonly Dictionary<IndexMetadataKey, IIndexerBuilderDelegates<T, object>.SetCondition> _watchers = new Dictionary<IndexMetadataKey, IIndexerBuilderDelegates<T, object>.SetCondition>();
+        private readonly Dictionary<IndexMetadataKey, IIndexerBuilderDelegates<T, object>.SetGetValue> _getters = new Dictionary<IndexMetadataKey, IIndexerBuilderDelegates<T, object>.SetGetValue>();
+        private readonly HashSet<IIndexerBuilderDelegates<T, object>.SetCondition> _conditions = new HashSet<IIndexerBuilderDelegates<T, object>.SetCondition>();
 
         // Properties
         /// <summary>
@@ -24,68 +30,68 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         public bool WatchesChanges => _watchers.Count > 0;
 
         /// <inheritdoc/>
-        public bool HasChanged(T current, IIndexed<T> previous, IIndexed<T> snapshot)
+        public bool HasChanged(T current, IIndexed<T> indexed, ref IndexMetadata metadata)
         {
             if (_watchers.Count == 0) return false;
+            var anyChanged = false;
             foreach (var watcher in _watchers)
             {
-                var metadataKey = watcher.Key;
-                var currentValue = watcher.Value(current);
-                if (previous.Metadata.TryGetValue(metadataKey, out var previousValue))
+                var result = watcher.Value(current, indexed, ref metadata);
+                if (result)
                 {
-                    if (!Equals(currentValue, previousValue))
-                    {
-                        return true;
-                    }
-                }
-                else if(currentValue is not null)
-                {
-                    // If the metadata key doesn't exist in the previous index, consider it a change
-                    return true;
+                    anyChanged = true;
                 }
             }
-            return false;
+            if (!anyChanged && _conditions.Count > 0) { 
+                foreach (var condition in _conditions)
+                {
+                    if(condition(current, indexed, ref metadata))
+                    {
+                        anyChanged = true;
+                    }
+                }
+            }
+            return anyChanged;
         }
         /// <inheritdoc/>
-        public void Index(IDatabase database, IReadOnlyDictionary<string, object> insertMetadata, IWriteableIndexed<object> indexed)
+        public void OnUpserting(IWriteableIndexed<T> indexed, ref IndexMetadata metadata, IDatabase database)
         {
-            database = Guard.NotNull(database, nameof(database));
-            insertMetadata = Guard.NotNull(insertMetadata, nameof(insertMetadata));
-            indexed = Guard.NotNull(indexed, nameof(indexed));
-
-            if(indexed is IIndexed<T> typedIndexed)
+            foreach (var include in _includes)
             {
-                if (WatchesChanges)
-                {
-                    foreach (var watcher in _watchers)
-                    {
-                        var metadataKey = watcher.Key;
-                        var value = watcher.Value(typedIndexed.Value);
-                        if (value == null)
-                        {
-                            indexed.Unset(metadataKey);
-                        }
-                        else
-                        {
-                            indexed.Set(metadataKey, value);
-                        }
-                    }
-                }
+                metadata.PersistKey(include);
+            }
 
-                foreach (var getter in _getters)
+            if (_getters.Count == 0) return;
+            bool matchesConditions = true;
+
+            foreach (var condition in _conditions)
+            {
+                if (!condition(indexed.Value, indexed, ref metadata))
                 {
-                    var metadataKey = getter.Key;
-                    var value = getter.Value(typedIndexed.Value);
-                    if (value == null)
-                    {
-                        indexed.Unset(metadataKey);
-                    }
-                    else
-                    {
-                        indexed.Set(metadataKey, value);
-                    }
+                    matchesConditions = false;
+                    break;
                 }
             }
+
+            if (matchesConditions)
+            {
+                foreach (var getter in _getters)
+                {
+                    getter.Value(indexed.Value, indexed, ref metadata);
+                }
+            }
+        }
+        /// <inheritdoc/>
+        public void OnUpserted(IIndexed<T> indexed, ref IndexMetadata metadata, IDatabase database)
+        {
+        }
+        /// <inheritdoc/>
+        public void OnDeleting(IIndexed<T> indexed, ref IndexMetadata metadata, IDatabase database)
+        {
+        }
+        /// <inheritdoc/>
+        public void OnDeleted(IIndexed<T> indexed, ref IndexMetadata metadata, IDatabase database)
+        {
         }
         /// <inheritdoc/>
         public void Initialize()
@@ -111,25 +117,169 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
             Toolkit.Indexing.ConfigureManager -= Configure;
         }
         /// <inheritdoc/>
-        IIndexerBuilder<T> IIndexerBuilder<T>.Set(string metadataKey, Func<T, object> valueFunc, bool watchForChanges)
+        IIndexerBuilder<T> IIndexerBuilder<T>.Set<TValue>(IndexMetadataKey metadataKey, Func<T, TValue> valueFunc, bool watchForChanges)
         {
-            metadataKey = Guard.NotNullOrWhitespace(metadataKey, nameof(metadataKey));
+            metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
             valueFunc = Guard.NotNull(valueFunc, nameof(valueFunc));
             
-            _getters[metadataKey] = valueFunc;
             if(watchForChanges)
             {
-                _watchers[metadataKey] = valueFunc;
+                _watchers[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+                {
+                    var currentValue = valueFunc(v);
+                    if(i is null)
+                    {
+                        // Insert so always set
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                    if (i.Metadata.TryGetValue(metadataKey.Name, out var previousValue))
+                    {
+                        if (!Equals(currentValue, previousValue))
+                        {
+                            m.Set<TValue>(metadataKey, currentValue, true);
+                            return true;
+                        }
+                    }
+                    else if (currentValue is not null)
+                    {
+                        // If the metadata key doesn't exist in the previous index, consider it a change
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                    return false;
+                };
+            }
+            else
+            {
+                _getters[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+                {
+                    var currentValue = valueFunc(i.Value);
+                    m.Set(metadataKey, currentValue, true);
+                    return null;
+                };
             }
             return this;
         }
         /// <inheritdoc/>
-        IIndexerBuilder<T> IIndexerBuilder<T>.Requires(string metadataKey, Func<T, object> valueFunc)
+        IIndexerBuilder<T> IIndexerBuilder<T>.Requires<TValue>(IndexMetadataKey metadataKey, Func<T, TValue> valueFunc)
         {
-            metadataKey = Guard.NotNullOrWhitespace(metadataKey, nameof(metadataKey));
+            metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
             valueFunc = Guard.NotNull(valueFunc, nameof(valueFunc));
 
-            _watchers[metadataKey] = valueFunc;
+            _watchers[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+            {
+                var currentValue = valueFunc(v);
+                if (i is null)
+                {
+                    // Insert so always set
+                    m.Set<TValue>(metadataKey, currentValue, true);
+                    return true;
+                }
+                if (i.Metadata.TryGetValue(metadataKey.Name, out var previousValue))
+                {
+                    if (!Equals(currentValue, previousValue))
+                    {
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                }
+                else if (currentValue is not null)
+                {
+                    // If the metadata key doesn't exist in the previous index, consider it a change
+                    m.Set<TValue>(metadataKey, currentValue, true);
+                    return true;
+                }
+                return false;
+            };
+            return this;
+        }
+        /// <inheritdoc/>
+        IIndexerBuilder<T> IIndexerBuilder<T>.When(IIndexerBuilderDelegates<T, object>.SetCondition condition)
+        {
+            condition = Guard.NotNull(condition, nameof(condition));
+            _conditions.Add(condition);
+            return this;
+        }
+        /// <inheritdoc/>
+        IIndexerBuilder<T> IIndexerBuilder<T>.Set<TValue>(IndexMetadataKey metadataKey, IIndexerBuilderDelegates<T, TValue>.SetGetValue valueFunc, bool watchForChanges)
+        {
+            metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
+            valueFunc = Guard.NotNull(valueFunc, nameof(valueFunc));
+
+            if (watchForChanges)
+            {
+                _watchers[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+                {
+                    var currentValue = valueFunc(v, i, ref m);
+                    if (i is null)
+                    {
+                        // Insert so always set
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                    if (i.Metadata.TryGetValue(metadataKey.Name, out var previousValue))
+                    {
+                        if (!Equals(currentValue, previousValue))
+                        {
+                            m.Set<TValue>(metadataKey, currentValue, true);
+                            return true;
+                        }
+                    }
+                    else if (currentValue is not null)
+                    {
+                        // If the metadata key doesn't exist in the previous index, consider it a change
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                    return false;
+                };
+            }
+            else
+            {
+                _getters[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) => valueFunc(v, i, ref m);
+            }
+            return this;
+        }
+        /// <inheritdoc/>
+        IIndexerBuilder<T> IIndexerBuilder<T>.Requires<TValue>(IndexMetadataKey metadataKey, IIndexerBuilderDelegates<T, TValue>.SetGetValue valueFunc)
+        {
+            metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
+            valueFunc = Guard.NotNull(valueFunc, nameof(valueFunc));
+
+            _watchers[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+            {
+                var currentValue = valueFunc(v, i, ref m);
+                if (i is null)
+                {
+                    // Insert so always set
+                    m.Set<TValue>(metadataKey, currentValue, true);
+                    return true;
+                }
+                if (i.Metadata.TryGetValue(metadataKey.Name, out var previousValue))
+                {
+                    if (!Equals(currentValue, previousValue))
+                    {
+                        m.Set<TValue>(metadataKey, currentValue, true);
+                        return true;
+                    }
+                }
+                else if (currentValue is not null)
+                {
+                    // If the metadata key doesn't exist in the previous index, consider it a change
+                    m.Set<TValue>(metadataKey, currentValue, true);
+                    return true;
+                }
+                return false;
+            };
+            return this;
+        }
+        /// <inheritdoc/>
+        IIndexerBuilder<T> IIndexerBuilder<T>.Include<TValue>(IndexMetadataKey metadataKey, bool watchForChanges)
+        {
+            metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
+
+            _includes.Add(metadataKey);
             return this;
         }
     }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing.Template;
@@ -10,7 +11,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
     /// <summary>
     /// Operator that checks if the left operand evaluates to false.
     /// </summary>
-    public class FalseOperatorType : BaseNativeOperator, IOperatorType
+    public class FalseOperatorType : BaseNativeOperatorType, IOperatorType
     {
         // Constants
         /// <summary>
@@ -64,6 +65,18 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             }
 
             return false;
+        }
+
+        /// <inheritdoc/>
+        public System.Linq.Expressions.Expression Compile(System.Linq.Expressions.Expression leftValue, Type leftExpressionType, System.Linq.Expressions.Expression rightValue, Type rightExpressionType, ParameterExpression argumentsParameter, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            _ = TryCompile(leftValue, rightValue, leftExpressionType, rightExpressionType, NativeOperatorType.False, false, out var compiled);
+            return compiled;
+        }
+        /// <inheritdoc/>
+        public string GetCacheKey(Type left, Type right, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            return TryCompile(null, null, left, right, NativeOperatorType.False, true, out _) ? $"{GetType().FullName}:{left.FullName}:{right.FullName}" : null;
         }
     }
 }

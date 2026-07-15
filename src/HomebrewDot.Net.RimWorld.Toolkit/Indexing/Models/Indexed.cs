@@ -187,6 +187,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         public T Value { get; }
         /// <inheritdoc/>
         public virtual IReadOnlyDictionary<string, object> Metadata { get; }
+        /// <inheritdoc/>
+        public bool HasSnapshot => Snapshot != null;
+        /// <inheritdoc/>
+        public virtual bool IsSnapshot => false;
+        /// <inheritdoc/>
+        public virtual IIndexed<T> Snapshot => null;
 
         // Constructor
         /// <inheritdoc cref="Indexed{T}"/>

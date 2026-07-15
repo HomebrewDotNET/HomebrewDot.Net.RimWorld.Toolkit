@@ -106,8 +106,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Helpers
             // This cannot be done via lambda, so we test via Func overload with a MemberExpression body to ensure coverage
             // Alternatively, verify the message is correct on a known-bad GetMethod<T,TResult> test
             Assert.Throws<ArgumentException>(() =>
-                ExpressionHelper.GetMethod<string, int>((System.Linq.Expressions.Expression<Func<string, int>>)
-                    System.Linq.Expressions.Expression.Lambda<Func<string, int>>(memberAccess, param)));
+                ExpressionHelper.GetMethod<string>((System.Linq.Expressions.Expression<Func<string, object>>)
+                    System.Linq.Expressions.Expression.Lambda<Func<string, object>>(memberAccess, param)));
         }
 
         #endregion
@@ -118,7 +118,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Helpers
         public void GetMethodTTResult_WithInstanceMethodCall_ReturnsCorrectMethodInfo()
         {
             // Arrange & Act
-            MethodInfo result = ExpressionHelper.GetMethod<string, string>(s => s.ToUpper());
+            MethodInfo result = ExpressionHelper.GetMethod<string>(s => s.ToUpper());
 
             // Assert
             Assert.NotNull(result);
@@ -130,7 +130,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Helpers
         public void GetMethodTTResult_WithInterfaceMethodCall_ReturnsCorrectMethodInfo()
         {
             // Arrange & Act
-            MethodInfo result = ExpressionHelper.GetMethod<Type, bool>(t => t.IsAssignableFrom(default));
+            MethodInfo result = ExpressionHelper.GetMethod<Type>(t => t.IsAssignableFrom(default));
 
             // Assert
             Assert.NotNull(result);
@@ -141,7 +141,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Helpers
         public void GetMethodTTResult_WithNullExpression_ThrowsArgumentNullException()
         {
             // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => ExpressionHelper.GetMethod((System.Linq.Expressions.Expression<Func<string, string>>)null));
+            Assert.Throws<ArgumentNullException>(() => ExpressionHelper.GetMethod((System.Linq.Expressions.Expression<Func<string, object>>)null));
         }
 
         [Fact]
@@ -150,10 +150,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Helpers
             // Arrange - build a MemberExpression for string.Length programmatically
             var param = System.Linq.Expressions.Expression.Parameter(typeof(string), "s");
             var memberAccess = System.Linq.Expressions.Expression.Property(param, nameof(string.Length));
-            var lambda = System.Linq.Expressions.Expression.Lambda<Func<string, int>>(memberAccess, param);
+            var castToObject = System.Linq.Expressions.Expression.Convert(memberAccess, typeof(object));
+            var lambda = System.Linq.Expressions.Expression.Lambda<Func<string, object>>(castToObject, param);
 
             // Act & Assert
-            Assert.Throws<ArgumentException>(() => ExpressionHelper.GetMethod<string, int>(lambda));
+            Assert.Throws<ArgumentException>(() => ExpressionHelper.GetMethod<string>(lambda));
         }
 
         #endregion

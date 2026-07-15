@@ -106,7 +106,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                     {
                         var inputParameter = LinqExpression.Parameter(typeof(object), "input");
                         var contextParameter = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
-                        var conditionExpression = CompileCondition(inputParameter, contextParameter, condition, context);
+                        var conditionExpression = CompileCondition(inputParameter, contextParameter, input, condition, context);
                         var lambda = LinqExpression.Lambda<Func<object, IReadOnlyDictionary<string, object>, bool>>(conditionExpression, inputParameter, contextParameter);
                         compiledComparison = lambda.Compile();
                         _compiledComparisonsCache[cacheKey] = compiledComparison;
@@ -170,9 +170,9 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             return null;
         }
         /// <inheritdoc/>
-        public LinqExpression Compile(ParameterExpression inputParameter, IConditionDef condition, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> context)
+        public LinqExpression Compile(ParameterExpression inputParameter, object input, IConditionDef condition, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> context)
         {
-            return CompileCondition(inputParameter, contextParameter, condition, context);
+            return CompileCondition(inputParameter, contextParameter, input, condition, context);
         }
         private object ResolveValue(object input, IConditionDef condition, object obj, Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> stringResolver, string stringResolverContextKey, IReadOnlyDictionary<string, object> context)
         {
@@ -240,6 +240,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
 
         private IOperatorType GetOperatorType(IConditionDef condition, object @operator, IReadOnlyDictionary<string, object> context, out IReadOnlyDictionary<string, object> operatorArguments)
         {
+            @operator = Guard.NotNull(@operator, nameof(@operator));
             operatorArguments = NullDictionary<string, object>.Instance;
             string operatorType;
             if (@operator is string operatorString)
@@ -250,7 +251,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                     var operatorObj = operatorStringToOperatorFromContext(condition, context, operatorString);
                     if (operatorObj != null)
                     {
-                        operatorType = operatorObj.Type;
+                        operatorType = Guard.NotNullOrWhitespace(operatorObj.Type, "Operator type cannot be null or whitespace after resolving from context.");
                         operatorArguments = operatorObj.Arguments ?? NullDictionary<string, object>.Instance;
                     }
                 }
@@ -259,19 +260,19 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                     var operatorObj = _operatorStringToOperator(condition, context, operatorString);
                     if (operatorObj != null)
                     {
-                        operatorType = operatorObj.Type;
+                        operatorType = Guard.NotNullOrWhitespace(operatorObj.Type, "Operator type cannot be null or whitespace after resolving from global.");
                         operatorArguments = operatorObj.Arguments ?? NullDictionary<string, object>.Instance;
                     }
                 }
             }
             else if (@operator is IOperator operatorObj)
             {
-                operatorType = operatorObj.Type;
+                operatorType = Guard.NotNullOrWhitespace(operatorObj.Type, "Operator type cannot be null or whitespace after resolving from operator.");
                 operatorArguments = operatorObj.Arguments ?? NullDictionary<string, object>.Instance;
             }
             else
             {
-                throw new InvalidOperationException($"Invalid operator: {@operator}. Must be either a string key or an IOperator instance.");
+                throw new InvalidOperationException($"Invalid operator: {@operator?.ToString() ?? @operator?.GetType()?.Name}. Must be either a string or an IOperator instance.");
             }
 
             if (context.TryGetValue(ContextOperatorTypesKey, out var operatorTypesObj) && operatorTypesObj is IReadOnlyDictionary<string, IOperatorType> operatorTypesFromContext)
@@ -285,10 +286,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             {
                 return operatorTypeFromConstructor;
             }
-            throw new InvalidOperationException($"Operator type '{operatorType}' not found in context or constructor operator types.");
+            throw new InvalidOperationException($"Operator type '{operatorType}' from {{{@operator?.ToString() ?? @operator?.GetType()?.Name}}} not found in context or constructor operator types.");
         }
 
-        private System.Linq.Expressions.Expression CompileCondition(ParameterExpression inputParameter, ParameterExpression contextParameter, IConditionDef condition, IReadOnlyDictionary<string, object> context)
+        private System.Linq.Expressions.Expression CompileCondition(ParameterExpression inputParameter, ParameterExpression contextParameter, object input, IConditionDef condition, IReadOnlyDictionary<string, object> context)
         {
             var isGroupCondition = condition.Conditions != null && condition.Conditions.Count > 0;
             var isCondition = condition.With != null;
@@ -299,14 +300,14 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                 var compareValue = GetValue(inputParameter, condition, condition.Compare, _compareStringToReference, CompareStringToReferenceKey, context);
                 var toValue = GetValue(inputParameter, condition, condition.To, _toStringToReference, ToStringToReferenceKey, context);
 
-                LinqExpression getCompareValue = CompileGetter(inputParameter, contextParameter, compareValue ?? condition.Compare, condition, _compareStringToReference, CompareStringToReferenceKey, context, out var compareType);
-                LinqExpression getToValue = CompileGetter(inputParameter, contextParameter, toValue ?? condition.To, condition, _toStringToReference, ToStringToReferenceKey, context, out var toType);
+                LinqExpression getCompareValue = CompileGetter(inputParameter, contextParameter, input, compareValue ?? condition.Compare, condition, _compareStringToReference, CompareStringToReferenceKey, context, out var compareType);
+                LinqExpression getToValue = CompileGetter(inputParameter, contextParameter, input, toValue ?? condition.To, condition, _toStringToReference, ToStringToReferenceKey, context, out var toType);
                 compareLeftToRight = CompileComparison(inputParameter, contextParameter, getCompareValue, getToValue, compareType, toType, condition, context);
             }
             LinqExpression groupExpression = null;
             if (isGroupCondition)
             {
-                var groupExpressions = condition.Conditions.Select(subCondition => (Expression: CompileCondition(inputParameter, contextParameter, subCondition, context), IsOr: subCondition.IsOr)).ToArray();
+                var groupExpressions = condition.Conditions.Select(subCondition => (Expression: CompileCondition(inputParameter, contextParameter, input, subCondition, context), IsOr: subCondition.IsOr)).ToArray();
                 groupExpression = groupExpressions[0].Expression;
                 for (int i = 1; i < groupExpressions.Length; i++)
                 {
@@ -319,7 +320,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             return isGroupCondition && isCondition ? (condition.ConditionGroupIsOr ? LinqExpression.OrElse(groupExpression, compareLeftToRight) : LinqExpression.AndAlso(groupExpression, compareLeftToRight)) : (isGroupCondition ? groupExpression : compareLeftToRight);
         }
 
-        private LinqExpression CompileGetter(ParameterExpression inputParameter, ParameterExpression contextParameter, object referenceDef, IConditionDef condition, Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> stringResolver, string stringResolverContextKey, IReadOnlyDictionary<string, object> context, out Type compareType)
+        private LinqExpression CompileGetter(ParameterExpression inputParameter, ParameterExpression contextParameter, object input, object referenceDef, IConditionDef condition, Func<IConditionDef, IReadOnlyDictionary<string, object>, string, IReference> stringResolver, string stringResolverContextKey, IReadOnlyDictionary<string, object> context, out Type compareType)
         {
             compareType = typeof(object);
             LinqExpression getCompareValue = null;
@@ -333,11 +334,11 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                     {
                         if (referenceType is IReferenceTypeCompileable compileable)
                         {
-                            var cacheKey = compileable.GetCacheKey(inputParameter, reference.Value, context, out var returnType);
+                            var cacheKey = compileable.GetCacheKey(input, reference.Value, context, out var returnType);
                             if (cacheKey != null)
                             {
                                 compareType = returnType;
-                                getCompareValue = compileable.Compile(inputParameter, contextParameter, reference.Value, context);
+                                getCompareValue = compileable.Compile(inputParameter, input, contextParameter, reference.Value, context);
                             }
                         }
                         else

@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Components;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using Moq;
 using Xunit;
 
@@ -150,7 +151,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            Assert.Throws<ArgumentNullException>(() => db.Upsert<string>(null, null));
+            var _md = default(IndexMetadata);
+            Assert.Throws<ArgumentNullException>(() => db.Upsert<string>(null, ref _md));
         }
 
         [Fact]
@@ -158,7 +160,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             // No tables deployed
-            var result = db.Upsert("hello", null);
+            var _md0 = default(IndexMetadata);
+            var result = db.Upsert("hello", ref _md0);
             Assert.False(result);
         }
 
@@ -168,7 +171,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            var result = db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            var result = db.Upsert("hello", ref _md);
 
             Assert.True(result);
         }
@@ -179,7 +183,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
             Assert.True(db.HasChanges);
         }
@@ -202,7 +207,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
             var result = db.Find("hello");
 
@@ -214,8 +220,16 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         public void Find_AfterUpsertWithMetadata_ReturnsIndexedItemWithMetadata()
         {
             var db = new Database();
-            db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", new Dictionary<string, object> { ["tag"] = "test" });
+            var tagKey = IndexMetadataKey.Get("tag");
+            db.Deploy(schema => schema.WithTable<string>("Items", tb =>
+                tb.OnInserting((i, m, t) =>
+                {
+                    if (m.TryGetValue<string>(tagKey, out var tag))
+                        i.Set("tag", tag);
+                })));
+            var metadata = new IndexMetadata();
+            metadata.Set(tagKey, "test");
+            db.Upsert("hello", ref metadata);
 
             var result = db.Find("hello");
 
@@ -229,15 +243,17 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         public void Delete_WithNullItem_ThrowsArgumentNullException()
         {
             var db = new Database();
+            var _md = default(IndexMetadata);
             Assert.Throws<ArgumentNullException>(() =>
-                db.Delete<string>(null, null));
+                db.Delete<string>(null, ref _md));
         }
 
         [Fact]
         public void Delete_WithExternalIndexed_ReturnsFalse()
         {
             var db = new Database();
-            var result = db.Delete("hello", null);
+            var _md = default(IndexMetadata);
+            var result = db.Delete("hello", ref _md);
 
             Assert.False(result);
         }
@@ -247,9 +263,10 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var deleted = db.Delete("hello", null);
+            var deleted = db.Delete("hello", ref _md);
 
             Assert.True(deleted);
             Assert.Null(db.Find("hello"));
@@ -276,13 +293,14 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 
             var a = new SampleEntity { Name = "Alice" };
             var b = new SampleEntity { Name = "Bob" };
-            db.Upsert(a, null);
-            db.Upsert(b, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(a, ref _md);
+            db.Upsert(b, ref _md);
 
             var results = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
 
             Assert.Single(results);
-            Assert.Equal("Alice", results.First().Value.Name);
+            Assert.Equal("Alice", results.First().Name);
         }
 
         [Fact]
@@ -292,7 +310,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name, null, "idx")));
 
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
 
             var results = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Charlie");
 
@@ -309,10 +328,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnInserting((database, meta, item) => capturedItem = item.Value);
+                schema.OnInserting((item, meta, database) => capturedItem = item.Value);
             });
 
-            db.Upsert("hello", null);
+            var _md1 = default(IndexMetadata);
+            db.Upsert("hello", ref _md1);
 
             Assert.Equal("hello", capturedItem);
         }
@@ -324,9 +344,10 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             IIndexed<string> capturedIndexed = null;
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnInserted((database, table, indexed) => capturedIndexed = indexed)));
+                    tb.OnInserted((indexed, table, database) => capturedIndexed = indexed)));
 
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
             Assert.NotNull(capturedIndexed);
             Assert.Equal("hello", capturedIndexed.Value);
@@ -343,8 +364,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                     _ => { },
                     predicate: entity => entity.Name.Length > 4));
 
-            db.Upsert(new SampleEntity { Name = "Bob" }, null);    // filtered out (len=3)
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);  // accepted (len=5)
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Bob" }, ref _md);    // filtered out (len=3)
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);  // accepted (len=5)
 
             var longTable = db.GetTable<SampleEntity>("LongNames");
             Assert.NotNull(longTable);
@@ -391,29 +413,31 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             Assert.Equal("Second", tables[0].Name);
         }
 
-        // ── AsReadOnly ────────────────────────────────────────────────────────
+        // ── Snapshot ───────────────────────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_ResetsHasChangesToFalse()
+        public void StartSnapshot_ResetsHasChangesToFalse()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
             Assert.True(db.HasChanges);
 
-            db.AsReadOnly();
+            db.StartSnapshot().Build();
 
             Assert.False(db.HasChanges);
         }
 
         [Fact]
-        public void AsReadOnly_SnapshotContainsUpsertedItem()
+        public void SnapshotContainsUpsertedItem()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var result = snapshot.Find("hello");
 
             Assert.NotNull(result);
@@ -427,8 +451,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
+            db.Upsert("hello", ref _md);
 
             var table = db.GetTable<string>("Items");
             Assert.Single(table);
@@ -441,10 +466,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
-            db.AsReadOnly(); // reset HasChanges
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
+            db.StartSnapshot().Build(); // reset HasChanges
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             Assert.True(db.HasChanges);
         }
@@ -478,8 +504,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("alpha", null);
-            db.Upsert("beta", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("alpha", ref _md);
+            db.Upsert("beta", ref _md);
 
             var table = db.GetTable<string>("Items");
             var values = AsIndexed(table).Select(i => i.Value).OrderBy(v => v).ToList();
@@ -508,10 +535,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnInserted((database, indexed) => captured = indexed);
+                schema.OnInserted((i,m,d) => captured = i);
             });
 
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
             Assert.NotNull(captured);
             Assert.Equal("hello", (string)captured.Value);
@@ -525,11 +553,12 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleting((database, meta, indexed) => capturedBefore = indexed);
+                schema.OnDeleting((indexed, meta, database) => capturedBefore = indexed);
             });
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             Assert.NotNull(capturedBefore);
         }
@@ -542,11 +571,12 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleted((database, meta, indexed) => capturedAfter = indexed);
+                schema.OnDeleted((indexed, meta, database) => capturedAfter = indexed);
             });
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             Assert.NotNull(capturedAfter);
         }
@@ -560,9 +590,10 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnInserting((database, table, meta, item) => capturedItem = item.Value)));
+                    tb.OnInserting((item, m, t) => capturedItem = item.Value)));
 
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
             Assert.Equal("hello", capturedItem);
         }
@@ -574,10 +605,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleting((database, table, meta, indexed) => capturedBefore = indexed)));
-            db.Upsert("hello", null);
+                    tb.OnDeleting((indexed, m, t) => capturedBefore = indexed)));
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             Assert.NotNull(capturedBefore);
             Assert.Equal("hello", capturedBefore.Value);
@@ -590,10 +622,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleted((database, table, meta, indexed) => capturedAfter = indexed)));
-            db.Upsert("hello", null);
+                    tb.OnDeleted((indexed, m, t) => capturedAfter = indexed)));
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             Assert.NotNull(capturedAfter);
             Assert.Equal("hello", capturedAfter.Value);
@@ -610,13 +643,14 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
 
             var alice = new SampleEntity { Name = "Alice" }; // len=5 → true
             var bob = new SampleEntity { Name = "Bob" };     // len=3 → false
-            db.Upsert(alice, null);
-            db.Upsert(bob, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(alice, ref _md);
+            db.Upsert(bob, ref _md);
 
             var results = db.Query<SampleEntity, bool>("HasLongName", true, indexName: "idx");
 
             Assert.Single(results);
-            Assert.Equal("Alice", results.First().Value.Name);
+            Assert.Equal("Alice", results.First().Name);
         }
 
         // ── WithIndex – cleanup on delete ─────────────────────────────────────
@@ -629,9 +663,10 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
 
             var alice = new SampleEntity { Name = "Alice" };
-            db.Upsert(alice, null);
+            var _md1 = default(IndexMetadata);
+            db.Upsert(alice, ref _md1);
 
-            db.Delete(alice, null);
+            db.Delete(alice, ref _md1);
 
             var results = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
             Assert.Empty(results);
@@ -651,12 +686,12 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                     tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name));
             });
 
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
 
-            // Upsert routes to the last-registered table (Beta); querying Alpha should return nothing.
             var results = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice", tableName: "Alpha");
 
-            Assert.Empty(results);
+            Assert.Equal(1, results.Count);
         }
 
         // ── WithSubTable ──────────────────────────────────────────────────────
@@ -669,7 +704,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                 schema.WithTable<SampleEntity>("Items", tb =>
                     tb.WithSubTable<SampleEntity>("SubItems", tableBuilder: _ => { })));
 
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md1 = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md1);
 
             var subTable = db.GetTable<SampleEntity>("Items.SubItems");
             Assert.NotNull(subTable);
@@ -711,7 +747,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                     tb.WithSubTable<DerivedRootEntity>("Derived")));
 
             RootEntity value = new DerivedRootEntity { Name = "derived", IsSpecial = true };
-            db.Upsert(value, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(value, ref _md);
 
             var rootTable = db.GetTable<RootEntity>("Root");
             var derivedTable = db.GetTable<DerivedRootEntity>("Root.Derived");
@@ -732,9 +769,10 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                     tb.WithSubTable<DerivedRootEntity>("Derived", null, st =>
                         st.WithSubTable("Special", x => x.IsSpecial))));
 
-            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "special", IsSpecial = true }, null);
-            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "normal", IsSpecial = false }, null);
-            db.Upsert<RootEntity>(new RootEntity { Name = "base" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "special", IsSpecial = true }, ref _md);
+            db.Upsert<RootEntity>(new DerivedRootEntity { Name = "normal", IsSpecial = false }, ref _md);
+            db.Upsert<RootEntity>(new RootEntity { Name = "base" }, ref _md);
 
             var derivedTable = db.GetTable<DerivedRootEntity>("Root.Derived");
             var specialTable = db.GetTable<DerivedRootEntity>("Root.Derived.Special");
@@ -746,33 +784,35 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             Assert.Equal("special", AsIndexed(specialTable).First().Value.Name);
         }
 
-        // ── AsReadOnly – snapshot isolation ──────────────────────────────────
+        // ── Snapshot – isolation ─────────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_Snapshot_DoesNotReflectItemsAddedAfterSnapshot()
+        public void Snapshot_DoesNotReflectItemsAddedAfterSnapshot()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("before", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("before", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
-            db.Upsert("after", null);
+            db.Upsert("after", ref _md);
 
             Assert.NotNull(snapshot.Find("before"));
             Assert.Null(snapshot.Find("after"));
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_StillContainsItemDeletedAfterSnapshot()
+        public void Snapshot_StillContainsItemDeletedAfterSnapshot()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
-            db.Delete("hello", null);
+            db.Delete("hello", ref _md);
 
             // live DB no longer has it
             Assert.Null(db.Find("hello"));
@@ -781,26 +821,27 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_FindReturnsNullForMissingItem()
+        public void Snapshot_FindReturnsNullForMissingItem()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Null(snapshot.Find("missing"));
         }
 
-        // ── AsReadOnly – snapshot table access ────────────────────────────────
+        // ── Snapshot – table access ──────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTableReturnsFrozenTable()
+        public void Snapshot_GetTableReturnsFrozenTable()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var table = snapshot.GetTable<string>("Items");
 
             Assert.NotNull(table);
@@ -808,18 +849,18 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTableReturnsNullForUnknownName()
+        public void Snapshot_GetTableReturnsNullForUnknownName()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Null(snapshot.GetTable<string>("DoesNotExist"));
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTablesReturnsAllTables()
+        public void Snapshot_GetTablesReturnsAllTables()
         {
             var db = new Database();
             db.Deploy(schema =>
@@ -828,13 +869,13 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                 schema.WithTable<SampleEntity>("Entities", _ => { });
             });
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Equal(2, snapshot.GetTables().Count());
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTablesTypedReturnsOnlyMatchingType()
+        public void Snapshot_GetTablesTypedReturnsOnlyMatchingType()
         {
             var db = new Database();
             db.Deploy(schema =>
@@ -843,7 +884,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                 schema.WithTable<SampleEntity>("Entities", _ => { });
             });
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             var stringTables = snapshot.GetTables<string>().ToList();
             Assert.Single(stringTables);
@@ -851,14 +892,15 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_TableEnumeratesCorrectItems()
+        public void Snapshot_TableEnumeratesCorrectItems()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("alpha", null);
-            db.Upsert("beta", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("alpha", ref _md);
+            db.Upsert("beta", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var table = snapshot.GetTable<string>("Items");
             var values = AsIndexed(table).Select(i => i.Value).OrderBy(v => v).ToList();
 
@@ -866,124 +908,135 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_TablePreservesIsFiltered()
+        public void Snapshot_TablePreservesIsFiltered()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }, s => s.Length > 3));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var table = snapshot.GetTable<string>("Items");
 
             Assert.True(table.IsFiltered);
         }
 
-        // ── AsReadOnly – index data in snapshot ───────────────────────────────
+        // ── Snapshot – index data ────────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_Snapshot_QueryViaIndexReturnsMatchingItems()
+        public void Snapshot_QueryViaIndexReturnsMatchingItems()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
-            db.Upsert(new SampleEntity { Name = "Bob" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
+            db.Upsert(new SampleEntity { Name = "Bob" }, ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             var results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
             Assert.Single(results);
-            Assert.Equal("Alice", results.First().Value.Name);
+            Assert.Equal("Alice", results.First().Name);
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_QueryReturnsEmptyForMissingKey()
+        public void Snapshot_QueryReturnsEmptyForMissingKey()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             var results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Charlie");
             Assert.Empty(results);
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_IndexDoesNotReflectDeletesAfterSnapshot()
+        public void Snapshot_IndexDoesNotReflectDeletesAfterSnapshot()
         {
+            // Arrange
             var db = new Database();
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
             var alice = new SampleEntity { Name = "Alice" };
-            db.Upsert(alice, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(alice, ref _md);
 
-            var snapshot = db.AsReadOnly();
+            // Act
+            var results = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
+            var snapshot = db.StartSnapshot().Build();
+            db.Delete(alice, ref _md);
+            var dbResults = db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
 
-            db.Delete(alice, null);
-
-            // Index in snapshot is still populated
-            var results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
+            // Assert
+            Assert.Single(results);
+            Assert.Empty(dbResults);
+            results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
             Assert.Single(results);
         }
 
-        // ── AsReadOnly – snapshot caching ─────────────────────────────────────
+        // ── Snapshot – caching ────────────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_CalledTwiceWithNoChanges_ReturnsSameSnapshot()
+        public void StartSnapshot_WhenNoChanges_ReturnsCachedSnapshot()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var first = db.AsReadOnly();
-            var second = db.AsReadOnly(); // no changes since first
+            var builder1 = db.StartSnapshot().Build();
+            var builder2 = db.StartSnapshot().Build(); // no changes since first
 
-            Assert.Same(first, second);
+            Assert.Same(builder1, builder2);
         }
 
         [Fact]
-        public void AsReadOnly_AfterChange_ReturnsNewSnapshot()
+        public void StartSnapshot_AfterChange_ReturnsNewSnapshot()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("first", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("first", ref _md);
 
-            var snap1 = db.AsReadOnly();
-            db.Upsert("second", null);
-            var snap2 = db.AsReadOnly();
+            var snap1 = db.StartSnapshot().Build().GetTable<string>("Items").GetSnapshot();
+            db.Upsert("second", ref _md);
+            var snap2 = db.StartSnapshot().Build().GetTable<string>("Items").GetSnapshot();
 
-            Assert.NotSame(snap1, snap2);
-            Assert.Null(snap1.Find("second"));
-            Assert.NotNull(snap2.Find("second"));
+            Assert.DoesNotContain(snap1, x => x.Value == "second");
+            Assert.Contains(snap2, x => x.Value == "second");
         }
 
-        // ── AsReadOnly – version tracking ─────────────────────────────────────
+        // ── Snapshot – version tracking ─────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_Snapshot_VersionMatchesDatabaseVersionAtCallTime()
+        public void Snapshot_VersionMatchesDatabaseVersionAtCallTime()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
-            db.Upsert("hello", null);
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Equal(db.Version, snapshot.Version);
         }
 
-        // ── AsReadOnly – sub-tables in snapshot ───────────────────────────────
+        // ── Snapshot – sub-tables ──────────────────────────────────────────────
 
         [Fact]
-        public void AsReadOnly_Snapshot_SubTablePresentInFrozenTable()
+        public void Snapshot_SubTablePresentInFrozenTable()
         {
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
                     tb.WithSubTable<SampleEntity>("Sub", tableBuilder: _ => { })));
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var table = snapshot.GetTable<SampleEntity>("Items");
 
             Assert.Single(table.SubTables);
@@ -991,14 +1044,14 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTable_DotNotation_ReturnsSubTable()
+        public void Snapshot_GetTable_DotNotation_ReturnsSubTable()
         {
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<SampleEntity>("Items", tb =>
                     tb.WithSubTable<SampleEntity>("Sub", tableBuilder: _ => { })));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var subTable = snapshot.GetTable<SampleEntity>("Items.Sub");
 
             Assert.NotNull(subTable);
@@ -1006,29 +1059,29 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTable_DotNotation_ReturnsNullForMissingSegment()
+        public void Snapshot_GetTable_DotNotation_ReturnsNullForMissingSegment()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", _ => { }));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Null(snapshot.GetTable<SampleEntity>("Items.NoSuch"));
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_GetTable_WrongType_ThrowsInvalidOperationException()
+        public void Snapshot_GetTable_WrongType_ThrowsInvalidOperationException()
         {
             var db = new Database();
             db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
 
             Assert.Throws<InvalidOperationException>(() => snapshot.GetTable<SampleEntity>("Items"));
         }
 
         [Fact]
-        public void AsReadOnly_Snapshot_Query_DotNotationTableName_QueriesSubTable()
+        public void Snapshot_Query_DotNotationTableName_QueriesSubTable()
         {
             var db = new Database();
             db.Deploy(schema =>
@@ -1036,13 +1089,133 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                     tb.WithSubTable<SampleEntity>("Sub",
                         null,
                         sub => sub.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name))));
-            db.Upsert(new SampleEntity { Name = "Alice" }, null);
+            var _md0 = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md0);
 
-            var snapshot = db.AsReadOnly();
+            var snapshot = db.StartSnapshot().Build();
             var results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice", tableName: "Items.Sub");
 
             Assert.Single(results);
-            Assert.Equal("Alice", results.First().Value.Name);
+            Assert.Equal("Alice", results.First().Name);
+        }
+
+        // ── Snapshot – incremental building ──────────────────────────────────
+
+        [Fact]
+        public void StartSnapshot_AfterUpsert_ReturnsNewSnapshotWithChange()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
+            var _md = default(IndexMetadata);
+            db.Upsert("first", ref _md);
+
+            // Take initial snapshot
+            var snap1 = db.StartSnapshot().Build();
+            Assert.NotNull(snap1.Find("first"));
+
+            // Add more data
+            db.Upsert("second", ref _md);
+
+            // Take new snapshot — should contain both
+            var snap2 = db.StartSnapshot().Build();
+            Assert.NotNull(snap2.Find("first"));
+            Assert.NotNull(snap2.Find("second"));
+        }
+
+        [Fact]
+        public void StartSnapshot_AfterDelete_ReturnsNewSnapshotWithoutDeleted()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
+
+            var snap1 = db.StartSnapshot().Build();
+            Assert.NotNull(snap1.Find("hello"));
+
+            db.Delete("hello", ref _md);
+
+            var snap2 = db.StartSnapshot().Build();
+            Assert.Null(snap2.Find("hello"));
+        }
+
+        [Fact]
+        public void StartSnapshot_MultipleIncrementalUpdates_PreservesAllChanges()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
+
+            // Round 1
+            var _md = default(IndexMetadata);
+            db.Upsert("alpha", ref _md);
+            var snap1 = db.StartSnapshot().Build();
+            Assert.NotNull(snap1.Find("alpha"));
+
+            // Round 2
+            db.Upsert("beta", ref _md);
+            var snap2 = db.StartSnapshot().Build();
+            Assert.NotNull(snap2.Find("alpha"));
+            Assert.NotNull(snap2.Find("beta"));
+
+            // Round 3 — also delete
+            db.Upsert("gamma", ref _md);
+            db.Delete("alpha", ref _md);
+            var snap3 = db.StartSnapshot().Build();
+            Assert.Null(snap3.Find("alpha"));
+            Assert.NotNull(snap3.Find("beta"));
+            Assert.NotNull(snap3.Find("gamma"));
+        }
+
+        [Fact]
+        public void StartSnapshot_WhenNoChangesSinceLastSnapshot_CachesAndReturnsSame()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<string>("Items", _ => { }));
+            var _md1 = default(IndexMetadata);
+            db.Upsert("hello", ref _md1);
+
+            var builder1 = db.StartSnapshot().Build();
+            var builder2 = db.StartSnapshot().Build();
+
+            // No changes between — should be the same snapshot object
+            Assert.Same(builder1, builder2);
+        }
+        [Fact]
+        public void StartSnapshot_WithTrackChanges_IncrementalSnapshotCarriesChangedSet()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema
+                .WithTable<string>("Items", tb => tb.TrackChanges())
+                .TrackChanges());
+            Assert.True(db.TrackingChanges);
+
+            var _md = default(IndexMetadata);
+            db.Upsert("first", ref _md);
+            var snap1 = db.StartSnapshot().Build();
+            Assert.Contains(snap1.Changed, c => "first".Equals(c.Value));
+
+            // Second incremental change
+            db.Upsert("second", ref _md);
+            var snap2 = db.StartSnapshot().Build();
+            Assert.Contains(snap2.Changed, c => "second".Equals(c.Value));
+        }
+
+        [Fact]
+        public void StartSnapshot_WithTrackChanges_IncrementalSnapshotCarriesDeletedSet()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema
+                .WithTable<string>("Items", tb => tb.TrackChanges())
+                .TrackChanges());
+            Assert.True(db.TrackingChanges);
+
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md);
+            db.StartSnapshot().Build(); // clear change tracking
+
+            db.Delete("hello", ref _md);
+            var snap2 = db.StartSnapshot().Build();
+            Assert.Contains(snap2.Deleted, d => "hello".Equals(d.Value));
         }
 
         private static IEnumerable<IIndexed<T>> AsIndexed<T>(IReadOnlyTable<T> table) where T : class

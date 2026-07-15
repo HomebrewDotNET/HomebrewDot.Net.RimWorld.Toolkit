@@ -37,14 +37,15 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 counter++;
             }
 
-            return new CollectionDef(collectionDef)
+            return new StaticCollectionDef(new CollectionDef(collectionDef)
             {
                 Exclusions = newExclusions.Select(e => new CollectionConditionDef(e)).ToArray(),
-            };
+            });
         }
 
         // Fields
         private readonly string _monitoredCollectionName;
+        private readonly ICollectionDef _collectionDef;
 
         // State
         private ICollector<T> _monitored;
@@ -63,6 +64,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public MonitorCollector(ICollectionDef collectionDef, string monitoredCollectionName) : base(CreateFullCollectionDef(collectionDef, monitoredCollectionName))
         {
             _monitoredCollectionName = Guard.NotNullOrEmpty(monitoredCollectionName, nameof(monitoredCollectionName));
+            _collectionDef = Guard.NotNull(collectionDef, nameof(collectionDef));
             Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(this);
             SubstribeToMonitoredCollection();
         }
@@ -112,7 +114,10 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return;
             }
-            _ = Collect(obj, NullDictionary<string, object>.Instance);
+            if(_comparer.Matches(Definition, _collectionDef, _collections, NullDictionary<string, object>.Instance))
+            {
+                _ = _collected.Add(obj);
+            }
         }
         private void OnMonitoredRemoved(T obj)
         {
@@ -120,7 +125,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return;
             }
-            _ = Remove(obj);
+            _ = _collected.Remove(obj);
         }
 
 

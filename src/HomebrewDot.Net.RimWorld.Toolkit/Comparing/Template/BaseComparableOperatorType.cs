@@ -12,7 +12,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
     /// <summary>
     /// Base class for operator types using combination of native operator and fallback on IComparable.
     /// </summary>
-    public abstract class BaseComparableOperatorType : BaseNativeOperator, IOperatorTypeCompileable
+    public abstract class BaseComparableOperatorType : BaseNativeOperatorType, IOperatorTypeCompileable
     {
         // Fields
         private readonly NativeOperatorType _operatorType;

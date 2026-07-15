@@ -11,7 +11,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Triggers
         [Fact]
         public void Constructor_WithNullSnapshot_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => new OnSnapshotTakenTrigger(null));
+            Assert.Throws<ArgumentNullException>(() => new OnSnapshotTakenTrigger(null, true));
         }
 
         [Fact]
@@ -19,28 +19,9 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Triggers
         {
             var snapshot = new Mock<IReadOnlyDatabase>().Object;
 
-            var sut = new OnSnapshotTakenTrigger(snapshot);
+            var sut = new OnSnapshotTakenTrigger(snapshot, true);
 
             Assert.Same(snapshot, sut.Snapshot);
-        }
-    }
-
-    public class PreparingSnapshotTriggerTests
-    {
-        [Fact]
-        public void Constructor_WithNullSnapshotManager_ThrowsArgumentNullException()
-        {
-            Assert.Throws<ArgumentNullException>(() => new PreparingSnapshotTrigger(null));
-        }
-
-        [Fact]
-        public void Constructor_WithValidManager_SetsSnapshotManagerProperty()
-        {
-            var manager = new Mock<ISnapshotManager>().Object;
-
-            var sut = new PreparingSnapshotTrigger(manager);
-
-            Assert.Same(manager, sut.SnapshotManager);
         }
     }
 }

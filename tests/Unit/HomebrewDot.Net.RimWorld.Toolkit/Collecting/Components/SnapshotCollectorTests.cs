@@ -14,40 +14,44 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 {
     public class SnapshotCollectorTests
     {
-        private readonly Mock<ICollector<IIndexed<string>>> _mockCollector;
         private readonly Mock<IHookManager> _mockHookManager;
+        private readonly Mock<ISnapshotManager> _mockSnapshotManager;
         private readonly ICollectionDef _def;
 
         public SnapshotCollectorTests()
         {
             _def = new CollectionDef();
-            _mockCollector = new Mock<ICollector<IIndexed<string>>>();
-            _mockCollector.Setup(c => c.Definition).Returns(_def);
-            _mockCollector.Setup(c => c.Count).Returns(0);
-            _mockCollector.Setup(c => c.GetAll()).Returns(Array.Empty<IIndexed<string>>());
             _mockHookManager = new Mock<IHookManager>();
+            _mockSnapshotManager = new Mock<ISnapshotManager>();
         }
 
         private SnapshotCollector<string> CreateSut(
             Func<IReadOnlyDatabase, IEnumerable<IIndexed<string>>> getThingsToPush = null)
         {
-            return new SnapshotCollector<string>(_mockCollector.Object, _mockHookManager.Object, s => s.Version, getThingsToPush);
+            return new SnapshotCollector<string>(_def, _mockSnapshotManager.Object, _mockHookManager.Object, s => s, getThingsToPush);
         }
 
         // ── Constructor ───────────────────────────────────────────────────────
 
         [Fact]
-        public void Constructor_WithNullCollector_ThrowsArgumentNullException()
+        public void Constructor_WithNullDefinition_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new SnapshotCollector<string>(null, _mockHookManager.Object));
+                new SnapshotCollector<string>(null, _mockSnapshotManager.Object, _mockHookManager.Object));
+        }
+
+        [Fact]
+        public void Constructor_WithNullSnapshotManager_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() =>
+                new SnapshotCollector<string>(_def, null, _mockHookManager.Object));
         }
 
         [Fact]
         public void Constructor_WithNullHookManager_ThrowsArgumentNullException()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                new SnapshotCollector<string>(_mockCollector.Object, null));
+                new SnapshotCollector<string>(_def, _mockSnapshotManager.Object, null));
         }
 
         [Fact]
@@ -84,7 +88,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
         public void GetAll_BeforeSnapshot_ReturnsEmpty()
         {
             var sut = CreateSut();
-            _mockCollector.Setup(c => c.GetAll()).Returns(Array.Empty<IIndexed<string>>());
             Assert.Empty(sut.GetAll());
         }
 
@@ -103,24 +106,30 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
             mockSnapshot.Setup(s => s.Version).Returns(1);
             var item1 = new Mock<IIndexed<string>>();
+            item1.Setup(i => i.Value).Returns("hello");
             var item2 = new Mock<IIndexed<string>>();
+            item2.Setup(i => i.Value).Returns("world");
             var items = new[] { item1.Object, item2.Object };
 
             var sut = CreateSut(snapshot => items);
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
 
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
-            _mockCollector.Verify(c => c.Collect(It.Is<IEnumerable<IIndexed<string>>>(i => i.SequenceEqual(items)), It.IsAny<IReadOnlyDictionary<string, object>>()), Times.Once);
+            Assert.True(sut.Contains("hello"));
+            Assert.True(sut.Contains("world"));
         }
 
         [Fact]
         public void OnTrigger_ReturnsTrue()
         {
+            _mockSnapshotManager.Setup(m => m.Database).Returns((IReadOnlyDatabase)null);
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
             mockSnapshot.Setup(s => s.Version).Returns(1);
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
 
-            var result = sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            var result = sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
             Assert.True(result);
         }
@@ -131,24 +140,31 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
             mockSnapshot.Setup(s => s.Version).Returns(1);
             var indexed = new Mock<IIndexed<string>>();
+            indexed.Setup(i => i.Value).Returns("hello");
             mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(indexed.Object);
-            _mockCollector.Setup(c => c.CanCollect(indexed.Object, It.IsAny<IReadOnlyDictionary<string, object>>())).Returns(true);
 
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
+
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
             Assert.True(sut.CanCollect("hello", new Dictionary<string, object>()));
         }
 
         [Fact]
-        public void OnTrigger_WhenSnapshotCannotFindItem_CanCollectReturnsFalse()
+        public void CanCollect_WhenComparatorReturnsFalse_ReturnsFalse()
         {
-            var mockSnapshot = new Mock<IReadOnlyDatabase>();
-            mockSnapshot.Setup(s => s.Version).Returns(1);
-            mockSnapshot.Setup(s => s.Find<string>("hello")).Returns((IIndexed<string>)null);
+            _mockSnapshotManager.Setup(m => m.Database).Returns((IReadOnlyDatabase)null);
+            var comparator = new Mock<ICollectionComparator>();
+            comparator.Setup(c => c.Matches(
+                    It.IsAny<ICollectionDef>(),
+                    It.IsAny<object>(),
+                    It.IsAny<IReadOnlyDictionary<string, ICollectionDef>>(),
+                    It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .Returns(false);
 
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            sut.StartCollecting(comparator.Object, new Dictionary<string, ICollectionDef>());
 
             Assert.False(sut.CanCollect("hello", new Dictionary<string, object>()));
         }
@@ -161,11 +177,12 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
             mockSnapshot.Setup(s => s.Version).Returns(1);
             var indexed = new Mock<IIndexed<string>>();
-            mockSnapshot.Setup(s => s.Find<string>("hello")).Returns(indexed.Object);
-            _mockCollector.Setup(c => c.Contains(indexed.Object)).Returns(true);
+            indexed.Setup(i => i.Value).Returns("hello");
 
-            var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            var sut = CreateSut(_ => new[] { indexed.Object });
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
+
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
             Assert.True(sut.Contains("hello"));
         }
@@ -174,10 +191,13 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
         public void Contains_WhenSnapshotCannotFindItem_ReturnsFalse()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             mockSnapshot.Setup(s => s.Find<string>("hello")).Returns((IIndexed<string>)null);
 
             var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
+
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
             Assert.False(sut.Contains("hello"));
         }
@@ -188,15 +208,16 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
         public void GetAll_ReturnsUnwrappedValuesFromInnerCollector()
         {
             var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
             var indexed1 = new Mock<IIndexed<string>>();
             indexed1.Setup(i => i.Value).Returns("hello");
             var indexed2 = new Mock<IIndexed<string>>();
             indexed2.Setup(i => i.Value).Returns("world");
 
-            _mockCollector.Setup(c => c.GetAll()).Returns(new[] { indexed1.Object, indexed2.Object });
+            var sut = CreateSut(_ => new[] { indexed1.Object, indexed2.Object });
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
 
-            var sut = CreateSut(_ => Enumerable.Empty<IIndexed<string>>());
-            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object));
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
 
             var all = sut.GetAll();
 
@@ -216,7 +237,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
 
             sut.StartCollecting(comparator.Object, collections);
 
-            _mockCollector.Verify(c => c.StartCollecting(comparator.Object, collections), Times.Once);
             _mockHookManager.Verify(h => h.RegisterHook(sut), Times.Once);
         }
 
@@ -228,19 +248,41 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
             sut.StopCollecting();
 
             _mockHookManager.Verify(h => h.UnregisterHook(sut), Times.Once);
-            _mockCollector.Verify(c => c.StopCollecting(), Times.Once);
         }
 
         // ── Clear ─────────────────────────────────────────────────────────────
 
         [Fact]
-        public void Clear_DelegatesToInnerCollector()
+        public void Clear_RemovesAllCollectedItems()
         {
-            var sut = CreateSut();
+            var mockSnapshot = new Mock<IReadOnlyDatabase>();
+            mockSnapshot.Setup(s => s.Version).Returns(1);
+            var indexed = new Mock<IIndexed<string>>();
+            indexed.Setup(i => i.Value).Returns("hello");
+
+            var sut = CreateSut(_ => new[] { indexed.Object });
+            sut.StartCollecting(new MatchingComparator(), new Dictionary<string, ICollectionDef>());
+            sut.OnTrigger(new OnSnapshotTakenTrigger(mockSnapshot.Object, true));
+
+            Assert.True(sut.Contains("hello"));
 
             sut.Clear();
 
-            _mockCollector.Verify(c => c.Clear(), Times.Once);
+            Assert.False(sut.Contains("hello"));
+        }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// A comparator that always returns true for any match.
+        /// </summary>
+        private sealed class MatchingComparator : ICollectionComparator
+        {
+            public bool Matches<T>(ICollectionDef collection, T obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+                => true;
+
+            public IEnumerable<(T Object, bool Matches)> Matches<T>(ICollectionDef collection, IEnumerable<T> objects, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+                => objects.Select(o => (o, true));
         }
     }
 }

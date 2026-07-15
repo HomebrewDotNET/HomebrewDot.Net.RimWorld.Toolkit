@@ -46,6 +46,10 @@
 		</Reference>
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Patches\" />
+	</ItemGroup>
+
 	<Target Name="SyncModContentToModsFolderForTesting" AfterTargets="Build" Condition="Exists('$(RimworldModsRoot)')">
 		<Exec Command="where rsync &gt;nul 2&gt;nul" IgnoreExitCode="true">
 			<Output TaskParameter="ExitCode" PropertyName="RsyncExitCode" />

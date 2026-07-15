@@ -1,6 +1,9 @@
 using System;
-using Xunit;
+using System.Collections.Generic;
+using System.Linq.Expressions;
 using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Comparing.Template;
+using Xunit;
 
 namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 {
@@ -153,6 +156,218 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
             Assert.Contains("IsNotNull", NotNullOperatorType.Aliases);
             Assert.Contains("Defined", NotNullOperatorType.Aliases);
             Assert.Contains("Any", NotNullOperatorType.Aliases);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithValueInArray_ReturnsTrue()
+        {
+            var result = InOperatorType.Instance.Compare("b", new string[] { "a", "b", "c" }, null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithValueNotInArray_ReturnsFalse()
+        {
+            var result = InOperatorType.Instance.Compare("z", new string[] { "a", "b", "c" }, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithValueInList_ReturnsTrue()
+        {
+            var result = InOperatorType.Instance.Compare("b", new List<string> { "a", "b", "c" }, null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithValueNotInList_ReturnsFalse()
+        {
+            var result = InOperatorType.Instance.Compare("z", new List<string> { "a", "b", "c" }, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithSingletonArray_ReturnsTrue()
+        {
+            var result = InOperatorType.Instance.Compare("only", new string[] { "only" }, null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithEmptyCollection_ReturnsFalse()
+        {
+            var result = InOperatorType.Instance.Compare("x", Array.Empty<string>(), null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithNullCollection_ReturnsFalse()
+        {
+            var result = InOperatorType.Instance.Compare("x", null, null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithScalarRight_ReturnsTrueWhenEqual()
+        {
+            var result = InOperatorType.Instance.Compare("hello", "hello", null, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithScalarRight_ReturnsFalseWhenNotEqual()
+        {
+            var result = InOperatorType.Instance.Compare("hello", "world", null, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithNotEqualNativeOperator_ReturnsTrueWhenAnyElementDiffers()
+        {
+            var arguments = new Dictionary<string, object>
+            {
+                { InOperatorType.NativeOperatorTypeKey, NativeOperatorType.NotEqual }
+            };
+            var result = InOperatorType.Instance.Compare("c", new string[] { "a", "b" }, arguments, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithNotEqualNativeOperator_ReturnsFalseWhenAllElementsMatch()
+        {
+            var arguments = new Dictionary<string, object>
+            {
+                { InOperatorType.NativeOperatorTypeKey, NativeOperatorType.NotEqual }
+            };
+            var result = InOperatorType.Instance.Compare("a", new string[] { "a" }, arguments, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithGreaterThanNativeOperator_ReturnsTrueWhenAnyElementGreater()
+        {
+            var arguments = new Dictionary<string, object>
+            {
+                { InOperatorType.NativeOperatorTypeKey, NativeOperatorType.GreaterThan }
+            };
+            var result = InOperatorType.Instance.Compare(5m, new decimal[] { 1m, 3m, 7m }, arguments, null);
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compare_WithGreaterThanNativeOperator_ReturnsFalseWhenNoElementGreater()
+        {
+            var arguments = new Dictionary<string, object>
+            {
+                { InOperatorType.NativeOperatorTypeKey, NativeOperatorType.GreaterThan }
+            };
+            var result = InOperatorType.Instance.Compare(0m, new decimal[] { 1m, 3m, 7m }, arguments, null);
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithValueInStringArray_ReturnsTrue()
+        {
+            var left = Expression.Constant("b");
+            var right = Expression.Constant(new string[] { "a", "b", "c" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(string), right, typeof(string[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithValueNotInStringArray_ReturnsFalse()
+        {
+            var left = Expression.Constant("z");
+            var right = Expression.Constant(new string[] { "a", "b", "c" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(string), right, typeof(string[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithEmptyArray_ReturnsFalse()
+        {
+            var left = Expression.Constant("x", typeof(object));
+            var right = Expression.Constant(Array.Empty<object>());
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(object), right, typeof(object[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithMatchingObjectInObjectArray_ReturnsTrue()
+        {
+            var left = Expression.Constant("target", typeof(object));
+            var right = Expression.Constant(new object[] { "a", "target", "c" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(object), right, typeof(object[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithScalarRight_ReturnsTrueWhenEqual()
+        {
+            var left = Expression.Constant(42);
+            var right = Expression.Constant(42);
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(int), right, typeof(int), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithScalarRight_ReturnsFalseWhenNotEqual()
+        {
+            var left = Expression.Constant(42);
+            var right = Expression.Constant(100);
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(int), right, typeof(int), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithValueInStringList_ReturnsTrue()
+        {
+            var left = Expression.Constant("x");
+            var right = Expression.Constant(new List<string> { "x", "y", "z" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(string), right, typeof(List<string>), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.True(result);
         }
     }
 }

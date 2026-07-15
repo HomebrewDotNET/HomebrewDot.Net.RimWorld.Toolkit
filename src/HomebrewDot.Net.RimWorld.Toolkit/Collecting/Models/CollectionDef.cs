@@ -71,14 +71,15 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         /// <inheritdoc/>
         IReadOnlyList<ICollectionConditionDef> ICollectionDef.Exclusions => Exclusions;
         /// <inheritdoc/>
-        public string GetCacheKey() => ToString();
+        public string GetCacheKey() => ToString(null, true).ToString();
 
         /// <summary>
         /// Converts the current collection definition to a string representation. This method builds a string that represents the collection in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
         /// </summary>
         /// <param name="stringBuilder">The <see cref="StringBuilder"/> to append the string representation to. If null, a new <see cref="StringBuilder"/> will be created.</param>
+        /// <param name="includeTypeNames">Whether to include type names in the string representation.</param>
         /// <returns>The <see cref="StringBuilder"/> containing the string representation of the collection.</returns>
-        public StringBuilder ToString(StringBuilder stringBuilder)
+        public StringBuilder ToString(StringBuilder stringBuilder, bool includeTypeNames = false)
         {
             stringBuilder ??= new StringBuilder();
 
@@ -86,7 +87,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             if (Conditions?.Length > 0)
             {
                 stringBuilder.Append("IF ");
-                ConditionDef.GroupToString(Conditions, stringBuilder, true);
+                ConditionDef.GroupToString(Conditions, stringBuilder, includeTypeNames: includeTypeNames);
                 if (Inclusions?.Length > 0)
                 {
                     stringBuilder.AppendLine().Append(InclusionsAreOr ? " OR " : " AND THEN ");

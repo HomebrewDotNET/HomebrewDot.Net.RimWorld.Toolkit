@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing.Template;
@@ -10,7 +11,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
     /// <summary>
     /// Checks if the left operand is null.
     /// </summary>
-    public class NullOperatorType : DelegateOperatorType
+    public class NullOperatorType : DelegateOperatorType, IOperatorTypeCompileable
     {
         // Constants
         /// <summary>
@@ -29,6 +30,17 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
         private NullOperatorType() : base((left, right, args, ctx) => left == null)
         {
             
+        }
+
+        /// <inheritdoc/>
+        public Expression Compile(Expression leftValue, Type leftExpressionType, Expression rightValue, Type rightExpressionType, ParameterExpression argumentsParameter, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            return Expression.Equal(leftValue, Expression.Default(leftExpressionType));
+        }
+        /// <inheritdoc/>
+        public string GetCacheKey(Type left, Type right, IReadOnlyDictionary<string, object> arguments, IReadOnlyDictionary<string, object> context)
+        {
+            return $"{GetType().FullName}:{left.FullName}";
         }
     }
 }

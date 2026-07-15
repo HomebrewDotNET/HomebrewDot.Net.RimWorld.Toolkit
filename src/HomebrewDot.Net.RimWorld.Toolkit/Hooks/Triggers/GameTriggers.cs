@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using HarmonyLib;
 using HomebrewDot.Net.Rimworld;
+using RimWorld;
 using Verse;
 
 namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
@@ -35,39 +36,32 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// </summary>
         static GameTriggers()
         {
-            LongEventHandler.ExecuteWhenFinished(() =>
-            {
-                if (Current.Game != null && !_hasTriggered)
-                {
-                    _hasTriggered = true;
-                    Toolkit.Hooks.Manager.Trigger(new OnGameLoadedTrigger(Current.Game));
-                }
-            });
-
             var harmony = Toolkit.Harmony;
             var postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoSingleTick_Postfix));
             harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(postfix));
             var prefix = AccessTools.Method(typeof(Patches), nameof(Patches.LoadGame_Prefix));
             harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.LoadGame)), prefix: new HarmonyMethod(prefix));
+            var postfixMenu = AccessTools.Method(typeof(Patches), nameof(Patches.MainMenuOnGUI_Postfix));
+            harmony.Patch(AccessTools.Method(typeof(MainMenuDrawer), nameof(MainMenuDrawer.MainMenuOnGUI)), postfix: new HarmonyMethod(postfixMenu));
         }
 
+        /// <inheritdoc/>
         public override void FinalizeInit()
         {
             base.FinalizeInit();
         }
 
-
         /// <inheritdoc/>
         public override void LoadedGame()
         {
             base.LoadedGame();
-            Toolkit.Hooks.Manager.Trigger(new OnSaveLoadedTrigger(Current.Game, false));
+            Toolkit.Hooks.Manager.Trigger(new OnSaveLoadedTrigger(_game, false));
         }
         /// <inheritdoc/>
         public override void StartedNewGame()
         {
             base.StartedNewGame();
-            Toolkit.Hooks.Manager.Trigger(new OnSaveLoadedTrigger(Current.Game, true));
+            Toolkit.Hooks.Manager.Trigger(new OnSaveLoadedTrigger(_game, true));
         }
 
         /// <summary>
@@ -83,15 +77,17 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             {
                 if(Current.Game != null)
                 {
-                    Toolkit.Hooks.Manager.LazyTrigger(() => new OnGameTickTrigger(Current.Game, TickerType.Normal));
-                    if(__instance.TicksGame % ToolkitConstants.TickRareInterval == 0)
+                    var tickerType = TickerType.Normal;
+
+                    if (__instance.TicksGame % ToolkitConstants.TickLongInterval == 0)
                     {
-                        Toolkit.Hooks.Manager.LazyTrigger(() => new OnGameTickTrigger(Current.Game, TickerType.Rare));
+                        tickerType = TickerType.Long;
                     }
-                    if(__instance.TicksGame % ToolkitConstants.TickLongInterval == 0)
+                    else if (__instance.TicksGame % ToolkitConstants.TickRareInterval == 0)
                     {
-                        Toolkit.Hooks.Manager.LazyTrigger(() => new OnGameTickTrigger(Current.Game, TickerType.Long));
+                        tickerType = TickerType.Rare;
                     }
+                    Toolkit.Hooks.Manager.Trigger(new OnGameTickTrigger(Current.Game, tickerType));
                 }
             }
 
@@ -103,6 +99,18 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             {
                 Toolkit.Hooks.Manager.Trigger(new OnSaveLoadingTrigger(__instance));
             }
+
+            /// <summary>
+            /// Harmony postfix patch for the MainMenuDrawer's MainMenuOnGUI method to trigger a game loaded event after the main menu is drawn, ensuring that the event is only triggered once when the game is first loaded.
+            /// </summary>
+            public static void MainMenuOnGUI_Postfix()
+            {
+                if(!_hasTriggered)
+                {
+                    Toolkit.Hooks.Manager.Trigger(OnGameLoadedTrigger.Instance);
+                    _hasTriggered = true;
+                }
+            }
         }
     }
 
@@ -111,16 +119,11 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
     /// </summary>
     public class OnGameLoadedTrigger
     {
-        // Properties
+        // Statics
         /// <summary>
-        /// The current game instance that was loaded, providing access to game data.
+        /// The singleton instance of the <see cref="OnGameLoadedTrigger"/>, which can be used to reference this trigger without needing to create multiple instances.
         /// </summary>
-        public Game Game { get; }
-
-        internal OnGameLoadedTrigger(Game game)
-        {
-            Game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
-        }
+        public static readonly OnGameLoadedTrigger Instance = new OnGameLoadedTrigger();
     }
 
 

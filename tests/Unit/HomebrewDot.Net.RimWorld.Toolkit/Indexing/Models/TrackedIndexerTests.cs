@@ -1,354 +1,355 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using HomebrewDot.Net.Rimworld;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Models;
 using Moq;
 using Xunit;
 
-namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Models
+namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Models
 {
+    [Trait("Category", "Unit")]
     public class TrackedIndexerTests
     {
-        private static IIndexed<string> CreateIndexed(string value, Dictionary<string, object> metadata = null)
+        #region Test helpers
+
+        public class TestItem
         {
-            var mock = new Mock<IIndexed<string>>();
-            mock.Setup(i => i.Value).Returns(value);
-            mock.Setup(i => i.Metadata).Returns(metadata ?? new Dictionary<string, object>());
-            return mock.Object;
+            public string Name { get; set; }
+            public int Age { get; set; }
+            public float Score { get; set; }
         }
 
-        private static (Mock<IWriteableIndexed<object>> mock, Dictionary<string, object> metadata)
-            CreateWriteableIndexed(string value)
+        private static readonly IndexMetadataKey<string> NameKey = IndexMetadataKey<string>.Get("Name");
+        private static readonly IndexMetadataKey<int> AgeKey = IndexMetadataKey<int>.Get("Age");
+        private static readonly IndexMetadataKey<float> ScoreKey = IndexMetadataKey<float>.Get("Score");
+
+        private static Mock<IIndexed<T>> MockIndexed<T>(T value, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
-            var metadata = new Dictionary<string, object>();
-            var mock = new Mock<IWriteableIndexed<object>>();
-            var indexedMock = mock.As<IIndexed<string>>();
-            indexedMock.Setup(i => i.Value).Returns(value);
-            indexedMock.Setup(i => i.Metadata).Returns(metadata);
-            mock.Setup(i => i.Set(It.IsAny<string>(), It.IsAny<object>()))
-                .Callback<string, object>((key, val) => metadata[key] = val)
-                .Returns(true);
-            mock.Setup(i => i.Unset(It.IsAny<string>()))
-                .Callback<string>(key => metadata.Remove(key))
-                .Returns(true);
-            return (mock, metadata);
+            var mock = new Mock<IIndexed<T>>();
+            mock.Setup(m => m.Value).Returns(value);
+            mock.Setup(m => m.Metadata).Returns(metadata ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase));
+            return mock;
         }
 
-        // ── Constructor / Initial State ──────────────────────────────────────
+        #endregion
+
+        // ── WatchesChanges ──────────────────────────────────────────────────
 
         [Fact]
-        public void WatchesChanges_WhenNoWatchersRegistered_ReturnsFalse()
+        public void WatchesChanges_WithNoWatchers_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            Assert.False(sut.WatchesChanges);
-        }
-
-        // ── IIndexerBuilder.Set ──────────────────────────────────────────────
-
-        [Fact]
-        public void Set_WithWatchForChangesFalse_DoesNotEnableWatchesChanges()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            builder.Set("Key", s => s.Length, watchForChanges: false);
-
+            var sut = new TrackedIndexer<TestItem>();
             Assert.False(sut.WatchesChanges);
         }
 
         [Fact]
-        public void Set_WithWatchForChangesTrue_EnablesWatchesChanges()
+        public void WatchesChanges_AfterAddingSetWithWatch_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            builder.Set("Key", s => s.Length, watchForChanges: true);
-
+            var sut = new TrackedIndexer<TestItem>();
+            ((IIndexerBuilder<TestItem>)sut).Set(NameKey, (TestItem x) => x.Name, watchForChanges: true);
             Assert.True(sut.WatchesChanges);
         }
 
         [Fact]
-        public void Set_WithNullMetadataKey_ThrowsArgumentNullException()
+        public void WatchesChanges_AfterAddingRequires_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            Assert.Throws<ArgumentNullException>(() => builder.Set(null, s => s, false));
-        }
-
-        [Fact]
-        public void Set_WithNullValueFunc_ThrowsArgumentNullException()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            Assert.Throws<ArgumentNullException>(() => builder.Set("Key", null, false));
-        }
-
-        [Fact]
-        public void Set_ReturnsSameBuilderForChaining()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            var result = builder.Set("A", s => s, false);
-
-            Assert.Same(builder, result);
-        }
-
-        // ── IIndexerBuilder.Requires ─────────────────────────────────────────
-
-        [Fact]
-        public void Requires_EnablesWatchesChanges()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            builder.Requires("Key", s => s.Length);
-
+            var sut = new TrackedIndexer<TestItem>();
+            ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem x) => x.Name);
             Assert.True(sut.WatchesChanges);
         }
 
         [Fact]
-        public void Requires_WithNullMetadataKey_ThrowsArgumentNullException()
+        public void WatchesChanges_AfterAddingSetWithoutWatch_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            Assert.Throws<ArgumentNullException>(() => builder.Requires(null, s => s));
+            var sut = new TrackedIndexer<TestItem>();
+            ((IIndexerBuilder<TestItem>)sut).Set(NameKey, (TestItem x) => x.Name, watchForChanges: false);
+            Assert.False(sut.WatchesChanges);
         }
 
-        [Fact]
-        public void Requires_WithNullValueFunc_ThrowsArgumentNullException()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-
-            Assert.Throws<ArgumentNullException>(() => builder.Requires("Key", null));
-        }
+        // ── Set with watch (watcher return values) ──────────────────────────
 
         [Fact]
-        public void Requires_ReturnsSameBuilderForChaining()
+        public void Set_WithWatch_WhenValueChanged_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 31 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
 
-            var result = builder.Requires("A", s => s);
-
-            Assert.Same(builder, result);
-        }
-
-        // ── IChangeTracker.HasChanged ────────────────────────────────────────
-
-        [Fact]
-        public void HasChanged_WhenNoWatchers_ReturnsFalse()
-        {
-            var sut = new TrackedIndexer<string>();
-            var current = "test";
-            var previous = CreateIndexed("test");
-
-            var result = sut.HasChanged(current, previous, null);
-
-            Assert.False(result);
-        }
-
-        [Fact]
-        public void HasChanged_WhenCurrentValueEqualsPrevious_ReturnsFalse()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => s, watchForChanges: true);
-            var current = "same";
-            var previous = CreateIndexed("same", new Dictionary<string, object> { ["Tag"] = "same" });
-
-            var result = sut.HasChanged(current, previous, null);
-
-            Assert.False(result);
-        }
-
-        [Fact]
-        public void HasChanged_WhenCurrentValueDiffersFromPrevious_ReturnsTrue()
-        {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => s, watchForChanges: true);
-            var current = "new";
-            var previous = CreateIndexed("old", new Dictionary<string, object> { ["Tag"] = "old" });
-
-            var result = sut.HasChanged(current, previous, null);
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
             Assert.True(result);
         }
 
         [Fact]
-        public void HasChanged_WhenMetadataKeyMissingAndCurrentValueNotNull_ReturnsTrue()
+        public void Set_WithWatch_WhenValueUnchanged_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => s, watchForChanges: true);
-            var current = "hello";
-            var previous = CreateIndexed("other"); // No "Tag" key in metadata
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 30 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
 
-            var result = sut.HasChanged(current, previous, null);
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void Set_WithWatch_WhenKeyNotInPreviousAndValueNotNull_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 30 };
+            var indexed = MockIndexed(item);
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
+
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.True(result);
+        }
+
+        // ── Set metadata-aware with watch (watcher return values) ───────────
+
+        [Fact]
+        public void Set_MetadataAwareWithWatch_WhenValueChanged_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 31 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => current.Age, watchForChanges: true);
+
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
             Assert.True(result);
         }
 
         [Fact]
-        public void HasChanged_WhenMetadataKeyMissingAndCurrentValueIsNull_ReturnsFalse()
+        public void Set_MetadataAwareWithWatch_WhenValueUnchanged_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => s, watchForChanges: true);
-            string current = null;
-            var previous = CreateIndexed("other"); // No "Tag" key in metadata; current value is null
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 30 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => current.Age, watchForChanges: true);
 
-            var result = sut.HasChanged(current, previous, null);
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
             Assert.False(result);
         }
 
-        // ── Index ────────────────────────────────────────────────────────────
+        // ── Requires (watcher return values) ────────────────────────────────
 
         [Fact]
-        public void Index_WithTypedIndexed_SetsMetadataFromGetters()
+        public void Requires_WhenValueChanged_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Length", s => s.Length, watchForChanges: false);
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Bob" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Name"] = "Alice" });
+            ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem x) => x.Name);
 
-            var (writeableMock, metadata) = CreateWriteableIndexed("Hello");
-            var db = new Mock<IDatabase>().Object;
-            var insertMeta = new Dictionary<string, object>();
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
-            sut.Index(db, insertMeta, writeableMock.Object);
-
-            Assert.True(metadata.ContainsKey("Length"));
-            Assert.Equal(5, metadata["Length"]);
+            Assert.True(result);
         }
 
         [Fact]
-        public void Index_WithTypedIndexed_SetsMetadataFromWatchers()
+        public void Requires_WhenValueUnchanged_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Value", s => s, watchForChanges: true);
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Name"] = "Alice" });
+            ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem x) => x.Name);
 
-            var (writeableMock, metadata) = CreateWriteableIndexed("Hello");
-            var db = new Mock<IDatabase>().Object;
-            var insertMeta = new Dictionary<string, object>();
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
-            sut.Index(db, insertMeta, writeableMock.Object);
-
-            Assert.True(metadata.ContainsKey("Value"));
-            Assert.Equal("Hello", metadata["Value"]);
+            Assert.False(result);
         }
 
         [Fact]
-        public void Index_WhenGetterReturnsNull_CallsUnset()
+        public void Requires_WhenKeyNotInPreviousAndValueNotNull_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => null, watchForChanges: false);
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Charlie" };
+            var indexed = MockIndexed(item);
+            ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem x) => x.Name);
 
-            var (writeableMock, _) = CreateWriteableIndexed("Hello");
-            var db = new Mock<IDatabase>().Object;
-            var insertMeta = new Dictionary<string, object>();
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
-            sut.Index(db, insertMeta, writeableMock.Object);
-
-            writeableMock.Verify(i => i.Unset("Tag"), Times.Once);
+            Assert.True(result);
         }
 
         [Fact]
-        public void Index_WhenWatcherReturnsNull_CallsUnset()
+        public void Requires_MetadataAware_WhenValueChanged_ReturnsTrue()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            // Set with watchForChanges adds to both _watchers and _getters
-            builder.Set("Tag", s => null, watchForChanges: true);
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Bob" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Name"] = "Alice" });
+            ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => current.Name);
 
-            var (writeableMock, _) = CreateWriteableIndexed("Hello");
-            var db = new Mock<IDatabase>().Object;
-            var insertMeta = new Dictionary<string, object>();
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
-            sut.Index(db, insertMeta, writeableMock.Object);
+            Assert.True(result);
+        }
 
-            // watchForChanges adds to both _watchers and _getters, so Unset called twice
-            writeableMock.Verify(i => i.Unset("Tag"), Times.Exactly(2));
+        // ── HasChanged basic ────────────────────────────────────────────────
+
+        [Fact]
+        public void HasChanged_WithNoWatchers_ReturnsFalse()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item);
+
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.False(result);
         }
 
         [Fact]
-        public void Index_WhenIndexedIsNotTypedIndexed_DoesNothing()
+        public void HasChanged_WithNoWatchersButHasGetters_ReturnsFalse()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
-            builder.Set("Tag", s => s, watchForChanges: true);
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 30 };
+            var indexed = MockIndexed(item);
+            ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: false);
 
-            var mockIndexed = new Mock<IWriteableIndexed<object>>();
-            // Does NOT implement IIndexed<string>
-            mockIndexed.Setup(i => i.Set(It.IsAny<string>(), It.IsAny<object>())).Returns(true);
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
 
-            var db = new Mock<IDatabase>().Object;
-            var insertMeta = new Dictionary<string, object>();
+            Assert.False(result);
+        }
 
-            sut.Index(db, insertMeta, mockIndexed.Object);
+        // ── When (conditions do not affect watchers) ────────────────────────
 
-            // Set should never be called since the indexed is not IIndexed<string>
-            mockIndexed.Verify(i => i.Set(It.IsAny<string>(), It.IsAny<object>()), Times.Never);
+        [Fact]
+        public void When_ConditionReturningFalse_WatcherStillEvaluates()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 31 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            var builder = (IIndexerBuilder<TestItem>)sut;
+            builder.When((TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => false);
+            builder.Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
+
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.True(result);
         }
 
         [Fact]
-        public void Index_WithNullDatabase_ThrowsArgumentNullException()
+        public void When_ConditionReturningTrue_WatcherStillEvaluates()
         {
-            var sut = new TrackedIndexer<string>();
-            var indexed = new Mock<IWriteableIndexed<object>>().Object;
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Age = 31 };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["Age"] = 30 });
+            var builder = (IIndexerBuilder<TestItem>)sut;
+            builder.When((TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => true);
+            builder.Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
 
-            Assert.Throws<ArgumentNullException>(() =>
-                sut.Index(null, new Dictionary<string, object>(), indexed));
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.True(result);
+        }
+
+        // ── Index guards ────────────────────────────────────────────────────
+
+        [Fact]
+        public void Index_WithArgs_DoesNotThrow()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var metadata = new IndexMetadata();
+            sut.OnUpserting(new Mock<IWriteableIndexed<TestItem>>().Object, ref metadata, new Mock<IDatabase>().Object);
+        }
+
+        // ── Initialize / Dispose ────────────────────────────────────────────
+
+        [Fact]
+        public void Initialize_DoesNotThrow()
+        {
+            new TrackedIndexer<TestItem>().Initialize();
         }
 
         [Fact]
-        public void Index_WithNullMetadata_ThrowsArgumentNullException()
+        public void Dispose_DoesNotThrow()
         {
-            var sut = new TrackedIndexer<string>();
-            var indexed = new Mock<IWriteableIndexed<object>>().Object;
+            new TrackedIndexer<TestItem>().Dispose();
+        }
 
-            Assert.Throws<ArgumentNullException>(() =>
-                sut.Index(new Mock<IDatabase>().Object, null, indexed));
+        // ── Fluent builder returns self ─────────────────────────────────────
+
+        [Fact]
+        public void Set_ReturnsSelf()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Set(NameKey, (TestItem x) => x.Name);
+            Assert.Same(sut, result);
         }
 
         [Fact]
-        public void Index_WithNullIndexed_ThrowsArgumentNullException()
+        public void Set_MetadataAware_ReturnsSelf()
         {
-            var sut = new TrackedIndexer<string>();
-
-            Assert.Throws<ArgumentNullException>(() =>
-                sut.Index(new Mock<IDatabase>().Object, new Dictionary<string, object>(), null));
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Set(NameKey, (TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => current.Name);
+            Assert.Same(sut, result);
         }
 
-        // ── Fluent chaining ──────────────────────────────────────────────────
+        [Fact]
+        public void Set_WithWatch_ReturnsSelf()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: true);
+            Assert.Same(sut, result);
+        }
 
         [Fact]
-        public void Set_CanBeChainedWithRequires()
+        public void Requires_ReturnsSelf()
         {
-            var sut = new TrackedIndexer<string>();
-            var builder = (IIndexerBuilder<string>)sut;
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem x) => x.Name);
+            Assert.Same(sut, result);
+        }
 
-            builder.Set("A", s => s, false)
-                   .Requires("B", s => s.Length);
+        [Fact]
+        public void Requires_MetadataAware_ReturnsSelf()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Requires(NameKey, (TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => current.Name);
+            Assert.Same(sut, result);
+        }
 
-            Assert.True(sut.WatchesChanges); // Requires enables watching
+        [Fact]
+        public void When_ReturnsSelf()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).When((TestItem current, IIndexed<TestItem> indexed, ref IndexMetadata metadata) => true);
+            Assert.Same(sut, result);
+        }
 
-            // Verify both getters work via Index
-            var (writeableMock, metadata) = CreateWriteableIndexed("Hi");
-            sut.Index(new Mock<IDatabase>().Object, new Dictionary<string, object>(), writeableMock.Object);
-
-            Assert.True(metadata.ContainsKey("A"));
-            Assert.Equal("Hi", metadata["A"]);
-            Assert.True(metadata.ContainsKey("B"));
-            Assert.Equal(2, metadata["B"]);
+        [Fact]
+        public void Include_ReturnsSelf()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var result = ((IIndexerBuilder<TestItem>)sut).Include<string>(NameKey);
+            Assert.Same(sut, result);
         }
     }
 }

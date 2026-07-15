@@ -8,6 +8,7 @@ using Guard = HomebrewDot.Net.Rimworld.Toolkit.Helpers.Guard;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
+using System.Collections;
 
 namespace HomebrewDot.Net.Rimworld.Hooks
 {
@@ -47,24 +48,30 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             return [.. hooks];
         }
         /// <inheritdoc/>
-        public void LazyTrigger<T>(Func<T> argFactory)
+        public bool LazyTrigger<T>(Func<T> argFactory)
         {
             argFactory = Guard.NotNull(argFactory, nameof(argFactory));
             IHandler[] handlers;
+            bool anyReplied = false;
             if (_orderedHooks.TryGetValue(typeof(T), out handlers) && handlers.Length > 0)
             {
                 T arg = argFactory();
                 bool log = !(arg is OnGameTickTrigger tickTrigger && tickTrigger.TickerType == Verse.TickerType.Normal);
-                if(log) LogVerbose($"Lazily triggering hooks of type {typeof(T).FullName}");
+                if(log) if (IsVerboseEnabled) LogVerbose($"Lazily triggering hooks of type {typeof(T).FullName}");
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     var handler = handlers[i];
                     if (handler is IHook<T> hook)
                     {
-                        if (log) LogVerbose($"Lazily triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                        if (log) if (IsVerboseEnabled) LogVerbose($"Lazily triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                         try
                         {
-                            if (hook.OnTrigger(arg) && hook.Once)
+                            var handled = hook.OnTrigger(arg);
+                            if (handled)
+                            {
+                                anyReplied = true;
+                            }
+                            if (handled && hook.Once)
                             {
                                 UnregisterHook(hook);
                             }
@@ -76,6 +83,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks
                     }
                 }
             }
+
+            return anyReplied;
         }
         /// <inheritdoc/>
         public void RegisterHook<T>(IHook<T> hook)
@@ -96,7 +105,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks
 
             lock (hooks)
             {
-                LogVerbose($"Registering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                if (IsVerboseEnabled) LogVerbose($"Registering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                 var owner = Guard.NotNull(hook.Owner, nameof(hook.Owner));
                 HashSet<IHandler> ownerHooks;
                 if (!_owners.TryGetValue(owner, out ownerHooks))
@@ -146,25 +155,31 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         }
 
         /// <inheritdoc/>
-        public void Trigger<T>(T arg)
+        public bool Trigger<T>(T arg)
         {
             arg = Guard.NotNull(arg, nameof(arg));
 
             IHandler[] handlers;
-           
+
+            bool anyReplied = false;
             if (_orderedHooks.TryGetValue(typeof(T), out handlers))
             {
                 bool log = !(arg is OnGameTickTrigger tickTrigger && tickTrigger.TickerType == Verse.TickerType.Normal);
-                if (log) Logging.LogVerbose($"Triggering hooks of type {typeof(T).FullName} with argument: {arg}");
+                if (log && IsVerboseEnabled) LogVerbose($"Triggering hooks of type {typeof(T).FullName} with argument: {arg}");
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     var handler = handlers[i];
                     if (handler is IHook<T> hook)
                     {
-                        if(log) LogVerbose($"Triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                        if(log && IsVerboseEnabled) LogVerbose($"Triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                         try
                         {
-                            if (hook.OnTrigger(arg) && hook.Once)
+                            var handled = hook.OnTrigger(arg);
+                            if (handled)
+                            {
+                                anyReplied = true;
+                            }
+                            if (handled && hook.Once)
                             {
                                 UnregisterHook(hook);
                             }
@@ -176,7 +191,63 @@ namespace HomebrewDot.Net.Rimworld.Hooks
                     }
                 }
             }
+            return anyReplied;
         }
+        /// <inheritdoc/>
+        public void TriggerDelayed<T>(T arg)
+        {
+            arg = Guard.NotNull(arg, nameof(arg));
+            var workContext = new DelayedTrigger<T>();
+            workContext.arg = arg;
+            var work = RaiseCooperativeWork.From<DelayedTrigger<T>>(() => Trigger(workContext).GetEnumerator(), workContext);
+            if (Trigger(work))
+            {
+                return;
+            }
+            else
+            {
+                Trigger(arg);
+            }
+        }
+
+        /// <inheritdoc/>
+        private IEnumerable Trigger<T>(DelayedTrigger<T> work)
+        {
+            var arg = Guard.NotNull(work.arg, nameof(work.arg));
+
+            IHandler[] handlers;
+
+            if (_orderedHooks.TryGetValue(typeof(T), out handlers))
+            {
+                bool log = !(arg is OnGameTickTrigger tickTrigger && tickTrigger.TickerType == Verse.TickerType.Normal);
+                if (log && IsVerboseEnabled) LogVerbose($"Triggering hooks of type {typeof(T).FullName} with argument: {arg}");
+                for (int i = 0; i < handlers.Length; i++)
+                {
+                    var handler = handlers[i];
+                    if (handler is IHook<T> hook)
+                    {
+                        if (log && IsVerboseEnabled) LogVerbose($"Triggering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                        try
+                        {
+                            var handled = hook.OnTrigger(arg);
+                            if (handled && hook.Once)
+                            {
+                                UnregisterHook(hook);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError($"Exception occurred while triggering hook of type {typeof(T).FullName} owned by {hook.Owner}: {ex}");
+                        }
+                    }
+                    if (work.IsOverRunTime)
+                    {
+                        yield break;
+                    }
+                }
+            }
+        }
+
         /// <inheritdoc/>
         public IHook<T>[] UnregisterAllBy<T>(object owner)
         {
@@ -215,7 +286,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             {
                 lock (hooks)
                 {
-                    LogVerbose($"Unregistering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                    if (IsVerboseEnabled) LogVerbose($"Unregistering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
                     hooks.Remove(hook);
 
                     HashSet<IHandler> ownerHooks;
@@ -237,6 +308,11 @@ namespace HomebrewDot.Net.Rimworld.Hooks
                     _orderedHooks[typeof(T)] = orderedHooks;
                 }
             }
+        }
+
+        private class DelayedTrigger<T> : CooperativeWorkContext
+        {
+            public T arg;
         }
     }
 }

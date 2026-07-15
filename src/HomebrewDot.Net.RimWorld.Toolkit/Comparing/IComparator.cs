@@ -51,6 +51,6 @@ namespace HomebrewDot.Net.Rimworld.Comparing
         /// <param name="contextParameter">The parameter expression representing the context dictionary.</param>
         /// <param name="context">A dictionary containing context information that might be needed for the comparison.</param>
         /// <returns>An expression representing the compiled condition.</returns>
-        Expression Compile(ParameterExpression inputParameter, IConditionDef condition, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> context);
+        Expression Compile(ParameterExpression inputParameter, object input, IConditionDef condition, ParameterExpression contextParameter, IReadOnlyDictionary<string, object> context);
     }
 }

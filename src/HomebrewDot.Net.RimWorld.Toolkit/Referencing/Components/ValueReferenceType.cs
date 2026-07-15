@@ -39,7 +39,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         }
 
         /// <inheritdoc/>
-        public Expression Compile(ParameterExpression inputParameter, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context)
+        public Expression Compile(ParameterExpression inputParameter, object input, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context)
         {
             return value is null ? ToolkitConstants.Expressions<object>.Default : Expression.Constant(value);
         }

@@ -1,6 +1,9 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -15,6 +18,8 @@ using HomebrewDot.Net.Rimworld.Collecting.Models;
 using HomebrewDot.Net.Rimworld.Collecting.Triggers;
 using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Extensions;
+using HomebrewDot.Net.Rimworld.Generic;
 using HomebrewDot.Net.Rimworld.Generic.Models;
 using HomebrewDot.Net.Rimworld.Hooks;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
@@ -31,7 +36,9 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 using Verse.AI.Group;
+using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
+using LinqExpression = System.Linq.Expressions.Expression;
 
 namespace HomebrewDot.Net.Rimworld
 {
@@ -108,6 +115,7 @@ namespace HomebrewDot.Net.Rimworld
             Services.Register<IReferenceType>(PropertyReferenceType.Instance, PropertyReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(ValueReferenceType.Instance, ValueReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(StatReferenceType.Instance, StatReferenceType.DefaultTypeName);
+            Services.Register<IReferenceType>(CompReferenceType.Instance, CompReferenceType.DefaultTypeName);
 
             // Input helpers
             Toolkit.Services.Register<IReferenceTypeInputHelper>(StateReferenceTypeInputHelper.Instance, StatReferenceType.DefaultTypeName);
@@ -157,6 +165,7 @@ namespace HomebrewDot.Net.Rimworld
             {
                 Services.Register<IOperatorType>(MatchOperatorType.Instance, alias);
             }
+            Services.Register<IOperatorType>(InOperatorType.Instance, InOperatorType.DefaultTypeName);
         }
 
         /// <summary>
@@ -228,15 +237,8 @@ namespace HomebrewDot.Net.Rimworld
                     Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Instance, (e) =>
                     {
                         StartIndexing(e.Game, true);
-                        // Take snapshot 1 tick after loading to ensure a quick loading of the snapshot.
-                        Hooks.Manager.Trigger(new PreparingSnapshotTrigger(Manager));
-                        Hooks.Manager.RegisterHook<OnGameTickTrigger>(Instance, (tick) =>
-                        {
-                            Manager.Snapshot();
-                            return true;
-                        }, true, priority: 0);
                     }, priority: byte.MaxValue)
-                             .RegisterHook<ToolkitSettings.Changed>(Instance, e => StartIndexing(Current.Game));
+                                 .RegisterHook<ToolkitSettings.Changed>(Instance, e => StartIndexing(Current.Game));
                 });
             }
 
@@ -425,17 +427,21 @@ namespace HomebrewDot.Net.Rimworld
                 }
             }
 
+            /// <summary>
+            /// Tools for working with indexers, which are responsible for defining how data is indexed and stored in the snapshot database. This includes methods for registering new indexers, building indexers using a fluent builder pattern, and helper methods for creating common types of indexers based on properties. Indexers registered through this class will be automatically initialized and configured to define their own database schema for indexing data, allowing for flexible and customizable indexing of game data in the snapshot database. It's important to note that when registering a new indexer with the same name as an existing one, the existing indexer will be unregistered and replaced with the new one, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
+            /// </summary>
             public static class Indexers
             {
                 // Fields
-                private readonly static IDictionary<string, (IIndexer Indexer, Action<IDatabaseSchemaBuilder> Configure)> _indexers = new Dictionary<string, (IIndexer Indexer, Action<IDatabaseSchemaBuilder> Configure)>(StringComparer.OrdinalIgnoreCase);
+                private readonly static IDictionary<string, (object Indexer, Action<IDatabaseSchemaBuilder> Configure)> _indexers = new Dictionary<string, (object Indexer, Action<IDatabaseSchemaBuilder> Configure)>(StringComparer.OrdinalIgnoreCase);
 
                 /// <summary>
-                /// Registers an indexer with the given name and configuration. If an indexer with the same name already exists, it will be unregistered and replaced with the new one. The indexer will be initialized and its configuration action will be added to the schema configuration event, allowing it to define its own database schema for indexing data. It's important to note that registering a new indexer with the same name as an existing one will replace the existing indexer and its configuration, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
+                /// Registers an indexer with the given name and configuration.
                 /// </summary>
                 /// <param name="name">The name of the indexer. Mainly just used for deduplication. Name should be the property being indexed so when multiple sources want to index the same property, they can use the same name.</param>
                 /// <param name="indexer">The indexer instance to register.</param>
-                public static void RegisterIndexer(string name, IIndexer indexer)
+                /// <param name="overwrite">Indicates whether to overwrite an existing indexer with the same name. If true, the existing indexer will be unregistered and replaced with the new one.</param>
+                public static void RegisterIndexer<T>(string name, IIndexer<T> indexer, bool overwrite = false) where T : class
                 {
                     name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                     indexer = Helpers.Guard.NotNull(indexer, nameof(indexer));
@@ -443,6 +449,11 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         if (_indexers.TryGetValue(name, out var existing))
                         {
+                            if (!overwrite)
+                            {
+                                return;
+                            }
+
                             Toolkit.Indexing.ConfigureSchema -= existing.Configure;
                             if (existing.Indexer is IDisposable disposable)
                             {
@@ -455,7 +466,7 @@ namespace HomebrewDot.Net.Rimworld
                             indexer.Initialize();
                             var configure = new Action<IDatabaseSchemaBuilder>(x =>
                             {
-                                x.OnInserting(indexer.Index);
+                                x.WithListener(indexer);
                             });
                             Toolkit.Indexing.ConfigureSchema += configure;
 
@@ -472,13 +483,14 @@ namespace HomebrewDot.Net.Rimworld
                 /// <typeparam name="T">The type of the objects being indexed.</typeparam>
                 /// <param name="name">The name of the indexer.</param>
                 /// <param name="builder">The action to configure the indexer.</param>
-                public static void BuildIndexer<T>(string name, Action<IIndexerBuilder<T>> builder) where T : class
+                /// <param name="overwrite">Indicates whether to overwrite an existing indexer with the same name. If true, the existing indexer will be unregistered and replaced with the new one.</param>
+                public static void BuildIndexer<T>(string name, Action<IIndexerBuilder<T>> builder, bool overwrite = false) where T : class
                 {
                     name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                     builder = Helpers.Guard.NotNull(builder, nameof(builder));
                     var indexer = new TrackedIndexer<T>();
                     builder(indexer);
-                    RegisterIndexer(name, indexer);
+                    RegisterIndexer(name, indexer, overwrite);
                 }
                 /// <summary>
                 /// Helper method to create and register a new indexer for a specific property using the provided property expression.
@@ -487,13 +499,14 @@ namespace HomebrewDot.Net.Rimworld
                 /// <typeparam name="T">The type of the objects being indexed.</typeparam>
                 /// <typeparam name="TProperty">The type of the property being indexed.</typeparam>
                 /// <param name="propertyExpression">The expression representing the property to index.</param>
-                public static void ByProperty<T>(Expression<Func<T, object>> propertyExpression) where T : class
+                public static void ByProperty<T, TProperty>(Expression<Func<T, TProperty>> propertyExpression) where T : class
                 {
                     propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
                     var memberInfo = Helpers.Expression.GetMember(propertyExpression);
-                    var name = $"{typeof(T).FullName}.{memberInfo.Name}";
+                    var metadataKey = IndexMetadataKey<TProperty>.Get($"{typeof(T).FullName}.{memberInfo.Name}");
                     var lambda = propertyExpression.Compile();
-                    BuildIndexer<T>(name, builder => builder.Set(memberInfo.Name, x => lambda(x), true));
+                    var tracker = new PropertyChangeTracker<T, TProperty>(lambda, metadataKey);
+                    Indexing.ConfigureManager += x => x.WithChangeTracker(tracker);
                 }
                 /// <summary>
                 /// Helper method to create and register a new indexer for a specific nested property using the provided property expression.
@@ -502,17 +515,19 @@ namespace HomebrewDot.Net.Rimworld
                 /// <typeparam name="TProperty">The type of the nested property being indexed.</typeparam>
                 /// <param name="propertyExpression">The expression representing the nested property to index.</param>
                 /// <param name="metadataKey">The key to use for storing the metadata. If null, the name of the last property in the nested path will be used.</param>
-                public static void ByNestedProperty<T>(Expression<Func<T, object>> propertyExpression, string metadataKey = null) where T : class
+                public static void ByNestedProperty<T, TProperty>(Expression<Func<T, TProperty>> propertyExpression, string metadataKey = null) where T : class
                 {
                     propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
-                    var propertyInfos = Helpers.Expression.GetNestedProperties(propertyExpression);
+                    var propertyInfos = Helpers.Expression.GetNestedMembers(propertyExpression);
                     var name = $"{typeof(T).FullName}.{string.Join(".", propertyInfos.Select(p => p.Name))}";
                     if (string.IsNullOrEmpty(metadataKey))
                     {
                         metadataKey = propertyInfos.Last().Name;
                     }
+                    var typedKey = IndexMetadataKey<TProperty>.Get(metadataKey);
                     var lambda = propertyExpression.Compile();
-                    BuildIndexer<T>(name, builder => builder.Set(metadataKey, x => lambda(x), true));
+                    var tracker = new PropertyChangeTracker<T, TProperty>(lambda, typedKey);
+                    Indexing.ConfigureManager += x => x.WithChangeTracker(tracker);
                 }
             }
 
@@ -608,6 +623,62 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         return Manager.DatabaseSnapshot?.GetTable<Verse.ThingDef>(FullTableName);
                     }
+
+                    private static readonly IndexMetadataKey<int> ResearchTrackerKey = IndexMetadataKey<int>.Get(nameof(HarmonyThingGatherer.ResearchTracker));
+                    /// <summary>
+                    /// Adds an indexer that checks if the current def is used as a construction material in any of the building recipes in the game.
+                    /// Only applies to things that are buildable (researched) by the player.
+                    /// </summary>
+                    public static void TrackIsConstructionMaterial()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsConstructionMaterial.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => Current.Game != null)
+                            .When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.TryGetValue(ResearchTrackerKey.Name, out var researchCounter) || (int)researchCounter != HarmonyThingGatherer.ResearchTracker))
+                            .Set(ToolkitConstants.Def.Thing.IsConstructionMaterial, t =>
+                            {
+                                if(t is ThingDef def)
+                                {
+                                    // Setup cache based on research count
+                                    var buildableDefs = Cache<int, (IReadOnlyCollection<ThingDef> Costs, IReadOnlyCollection<StuffCategoryDef> Stuffs)>.GetOrSet(HarmonyThingGatherer.ResearchTracker, () =>
+                                    {
+                                        var buildables = DefDatabase<BuildableDef>.AllDefsListForReading
+                                                                                  .Where(x => x.IsResearchFinished && x.BuildableByPlayer)
+                                                                                  .ToArray();
+                                        var costs = buildables.SelectMany(b => (IReadOnlyList<ThingDefCountClass>)b.CostList ?? Array.Empty<ThingDefCountClass>())
+                                                              .Select(c => c.thingDef)
+                                                              .Distinct()
+                                                              .ToHashSet();
+
+                                        var stuffCategories = buildables.Where(b => b.MadeFromStuff)
+                                                                        .SelectMany(b => b.stuffCategories)
+                                                                        .Distinct()
+                                                                        .ToHashSet();
+
+                                        return (costs, stuffCategories);
+                                    });
+                                    if (HarmonyThingGatherer.ResearchTracker > 0)
+                                    {
+                                        Cache<int, (IReadOnlyCollection<ThingDef> Costs, IReadOnlyCollection<StuffCategoryDef> Stuffs)>.Invalidate(HarmonyThingGatherer.ResearchTracker - 1);
+                                    }
+
+                                    var (costs, stuffCategories) = buildableDefs;
+
+                                    if (costs.Contains(t))
+                                    {
+                                        return true;
+                                    }
+                                    if (def.stuffProps != null && def.stuffProps.categories != null && def.stuffProps.categories.Any(c => stuffCategories.Contains(c)))
+                                    {
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            })
+                            .Set(ResearchTrackerKey, x => HarmonyThingGatherer.ResearchTracker, false);
+                        });
+                    }
+
                     private static void Configure(ITableBuilder<Verse.Def> builder)
                     {
                         builder.WithSubTable<Verse.ThingDef>(TableName);
@@ -802,6 +873,7 @@ namespace HomebrewDot.Net.Rimworld
                     }
                 }
             }
+
             /// <summary>
             /// Helper class for working with the <see cref="Thing"/> table in the snapshot database.
             /// </summary>
@@ -847,12 +919,65 @@ namespace HomebrewDot.Net.Rimworld
                 }
                 private static void Configure(IDatabaseSchemaBuilder builder)
                 {
-                    builder.WithTable<Verse.Thing>(TableName);
+                    builder.WithTable<Verse.Thing>(TableName, x => x.TrackChanges());
                 }
                 private static void ConfigureGathering(ISnapshotOrchestratorBuilder builder)
                 {
                     builder.With(HarmonyThingGatherer.Instance)
                            .With(MapThingGatherer.Instance);
+                }
+
+                /// <summary>
+                /// Adds an indexer that tracks the mod ID for each Thing and Def in the game.
+                /// </summary>
+                public static void TrackModId()
+                {
+                    Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.ModId.Name, x =>
+                    {
+                        x.Requires(IndexMetadataKey.Get($"{typeof(Verse.Thing)}.{nameof(Verse.Thing.def)}"), x => x.def)
+                        .When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => i is null || !i.Metadata.ContainsKey(ToolkitConstants.Thing.ModId.Name))
+                        .Set(ToolkitConstants.Thing.ModId, t =>
+                        {
+                            return t.def?.modContentPack?.PackageId?.ToLower() ?? "unknown";
+                        });
+                    });
+                    Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Thing.ModId.Name, x =>
+                    {
+                        x.Requires(IndexMetadataKey.Get($"{typeof(Verse.Def)}.{nameof(Verse.Def.modContentPack)}"), x => x.modContentPack)
+                        .When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => !i.Metadata.ContainsKey(ToolkitConstants.Thing.ModId.Name))
+                        .Set(ToolkitConstants.Thing.ModId, t =>
+                        {
+                            return t.modContentPack?.PackageId?.ToLower() ?? "unknown";
+                        });
+                    });
+                }
+
+                /// <summary>
+                /// Adds an indexer that checks if the current Thing is an Odyssey unique item.
+                /// </summary>
+                public static void TrackIsUnique()
+                {
+                    if (ToolkitConstants.Odyssey.IsLoaded)
+                    {
+                        Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.IsUnique.Name, x =>
+                        {
+                            x.Requires(IndexMetadataKey.Get($"{nameof(Verse.Thing)}.{nameof(ThingWithComps.AllComps)}"), x => x is ThingWithComps tc ? tc.AllComps?.Count : null)
+                            .When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v is ThingWithComps)
+                             .Set(ToolkitConstants.Thing.IsUnique, t =>
+                            {
+                                bool isUnique = Helpers.Comp.HasComp(t, ToolkitConstants.Odyssey.UniqueWeaponCompName);
+
+                                if (!isUnique && ToolkitConstants.Mods.MakeItUnique.IsLoaded)
+                                {
+                                    if (ToolkitConstants.Mods.MakeItUnique.IsApparelLoaded || t.def.IsWeapon)
+                                    {
+                                        isUnique = t.def.defName?.EndsWith(ToolkitConstants.Mods.MakeItUnique.UniqueDefSuffix, StringComparison.OrdinalIgnoreCase) ?? false;
+                                    }
+                                }
+                                return isUnique;
+                            });
+                        });
+                    }
                 }
 
                 /// <summary>
@@ -907,18 +1032,56 @@ namespace HomebrewDot.Net.Rimworld
         /// <summary>
         /// Tools for collecting game data into collections based on defined conditions and criteria, allowing for efficient organization and retrieval of related data.
         /// </summary>
+        [StaticConstructorOnStartup]
         public static class Collecting
         {
-
             static Collecting()
             {
                 Helpers.Invoking.Safe(() =>
                 {
-                    Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(Toolkit.Instance, errorHandler =>
+                    Toolkit.Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Toolkit.Instance, e =>
                     {
-                        ReloadDefaultComparator();
-                    }, false);
+                        WarmupCache();
+                        Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(Toolkit.Instance, e =>
+                        {
+                            WarmupCache(true);
+                        }, false, priority: byte.MaxValue);
+                    }, true, priority: byte.MaxValue);
                 });
+            }
+            private static void WarmupCache(bool reset = false)
+            {
+                if (Comparator is CollectionComparator comparator)
+                {
+                    if (reset)
+                    {
+                        comparator.ClearCache();
+                    }
+                    var allCollections = GetAllDefinitions();
+                    if (allCollections.Count > 0)
+                    {
+                        Stopwatch stopwatch = null;
+                        if (Logging.IsPerformanceEnabled)
+                        {
+                            stopwatch = Stopwatch.StartNew();
+                            Logging.LogPerformance("Warming up collection caches");
+                        }
+                        Type[] scanTypes = [typeof(Thing), typeof(ThingDef)];
+                        var dbType = typeof(TrackingIndexed<object>).GetGenericTypeDefinition();
+                        var indexedType = typeof(Indexed<object>).GetGenericTypeDefinition();
+                        var allTypes = Helpers.ScanForTypes(x =>
+                        {
+                            return x.IsClass && !x.IsAbstract && !x.IsGenericTypeDefinition && scanTypes.Any(s => s.IsAssignableFrom(x));
+                        }).SelectMany(x => new Type[] { x, dbType.MakeGenericType(x), indexedType.MakeGenericType(x) });
+                        comparator.WarmupCache(allCollections, allTypes);
+                        if (Logging.IsPerformanceEnabled)
+                        {
+                            stopwatch.Stop();
+                            var elapsed = stopwatch.Elapsed;
+                            Logging.LogPerformance($"Warmed up collection caches in {elapsed.TotalMilliseconds}ms");
+                        }
+                    }
+                }
             }
 
             // Fields
@@ -970,7 +1133,7 @@ namespace HomebrewDot.Net.Rimworld
             {
                 lock (_lock)
                 {
-                    if (_comparator is Comparator collectionComparator)
+                    if (_comparator is CollectionComparator)
                     {
                         _comparator = null;
                     }
@@ -989,6 +1152,12 @@ namespace HomebrewDot.Net.Rimworld
                         Invoking.Safe(() =>
                         {
                             collector.StopCollecting();
+                        });
+                    }
+                    foreach (var collector in _collectors.Values)
+                    {
+                        Invoking.Safe(() =>
+                        {
                             collector.StartCollecting(Comparator, _collectionDefinitions);
                         });
                     }
@@ -1009,7 +1178,7 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     _collectionDefinitions[name] = definition;
                 }
-                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, definition, null, true));
+                Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, definition, null, true));
             }
             /// <summary>
             /// Adds a new collector with the specified name and collector instance. The collection definition associated with the collector will also be added using the same name. If a collector with the same name already exists, it will be overwritten with the new collector and definition.
@@ -1038,7 +1207,7 @@ namespace HomebrewDot.Net.Rimworld
                     }
                 }
 
-                Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, true));
+                Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, collection, collector, true));
             }
             /// <summary>
             /// Adds a new collector with the specified name and collector instance. The collection definition associated with the collector will also be added using the same name. If a collector with the same name already exists, it will be overwritten with the new collector and definition.
@@ -1083,7 +1252,7 @@ namespace HomebrewDot.Net.Rimworld
                     }
                 }
 
-                if(removed) Toolkit.Hooks.Manager?.LazyTrigger(() => new OnCollectionsChanged(name, collection, collector, false));
+                if (removed) Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, collection, collector, false));
             }
 
             /// <summary>
@@ -1321,6 +1490,7 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         return namedService;
                     }
+                    return default;
                 }
 
                 var all = GetAll<T>(false);
@@ -1384,22 +1554,111 @@ namespace HomebrewDot.Net.Rimworld
                 var type = Type.GetType(typeName);
                 if (type != null) return type;
 
-                // Try with Verse and Rimworld prefixes
-                var verseTypeName = $"Verse.{typeName}";
-                type = Type.GetType(verseTypeName);
-                if (type != null) return type;
+                var potentialNames = new[]
+                {
+                    typeName,
+                    $"{typeof(Def).Namespace}.{typeName}",
+                    $"{typeof(CompProperties_Explosive).Namespace}.{typeName}"
+                };
 
-                var rimworldTypeName = $"RimWorld.{typeName}";
-                type = Type.GetType(rimworldTypeName);
-                if (type != null) return type;
+                // Try with Verse and Rimworld prefixes
+                for (int i = 1; i < potentialNames.Length; i++)
+                {
+                    type = Type.GetType(potentialNames[i]);
+                    if (type != null) return type;
+                }
 
                 // Brute force search by suffix
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    type = assembly.GetTypes().FirstOrDefault(t => t.Name.EndsWith(typeName, StringComparison.OrdinalIgnoreCase));
+                    try
+                    {
+                        for (int i = 0; i < potentialNames.Length; i++)
+                        {
+                            type = assembly.GetType(potentialNames[i]);
+                            if (type != null) return type;
+                        }
+                        type = assembly.GetTypes().FirstOrDefault(t => t.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+                    }
+                    catch (ReflectionTypeLoadException e)
+                    {
+                        // Ignore assemblies that can't be loaded
+                        type = e.Types.FirstOrDefault(t => t != null && t.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+                    }
                     if (type != null) return type;
                 }
                 return null;
+            }
+
+            /// <summary>
+            /// Scans all loaded assemblies for types.
+            /// </summary>
+            /// <param name="condition">Optional condition for types to return</param>
+            /// <returns>All loaded types optionally matching <paramref name="condition"/> when provided</returns>
+            public static IEnumerable<Type> ScanForTypes(Predicate<Type> condition = null)
+            {
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type[] types;
+                    try
+                    {
+                        types = assembly.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException e)
+                    {
+
+                        types = e.Types;
+                    }
+                    if(types?.Length > 0)
+                    {
+                        foreach(var type in types)
+                        {
+                            if (type == null) continue;
+                            if (condition == null || condition(type))
+                            {
+                                yield return type;
+                            }
+                        }
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Contains helper methods for working with RimWorld's Comp system, which allows for modular components to be attached to game objects.
+            /// </summary>
+            public static class Comp
+            {
+                /// <summary>
+                /// Checks if the specified <paramref name="thing"/> has a component of the type specified by <paramref name="compName"/>. The method first attempts to retrieve the <see cref="Type"/> object for the component using the provided name. If the type is found and is assignable from <see cref="ThingComp"/>, it then checks if the <paramref name="thing"/> has a component of that type. If the type cannot be found or is not a valid component type, the method returns false.
+                /// </summary>
+                /// <param name="thing">The thing to check for the component.</param>
+                /// <param name="compName">The name of the component type to check for.</param>
+                /// <returns>True if the thing has the specified component; otherwise, false.</returns>
+                public static bool HasComp(Thing thing, string compName)
+                {
+                    if (thing == null || string.IsNullOrWhiteSpace(compName)) return false;
+                    var compType = Toolkit.Cache<string, Type>.GetOrSet(compName, () => TryGetType(compName));
+                    if (compType == null)
+                    {
+                        return false;
+                    }
+                    else if (!typeof(ThingComp).IsAssignableFrom(compType))
+                    {
+                        return false;
+                    }
+
+                    var tryGetComp = Toolkit.Cache<Type, Func<Thing, ThingComp>>.GetOrSet(compType, () =>
+                    {
+                        var method = ToolkitConstants.Reflections.TryGetComp.GetGenericMethodDefinition().MakeGenericMethod(compType);
+                        var inputParameter = System.Linq.Expressions.Expression.Parameter(typeof(Thing), "thing");
+                        var call = System.Linq.Expressions.Expression.Call(method, inputParameter);
+                        var lambda = System.Linq.Expressions.Expression.Lambda<Func<Thing, ThingComp>>(call, inputParameter);
+                        return lambda.Compile();
+                    });
+
+                    var comp = tryGetComp(thing);
+                    return comp != null;
+                }
             }
 
             /// <summary>
@@ -1515,6 +1774,10 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         return methodCall.Method;
                     }
+                    else if (expression.Body is UnaryExpression unaryExpression && unaryExpression.Operand is MethodCallExpression unaryMethodCall)
+                    {
+                        return unaryMethodCall.Method;
+                    }
                     throw new ArgumentException("Expression must be a method call.", nameof(expression));
                 }
 
@@ -1533,6 +1796,11 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         return methodCall.Method;
                     }
+                    else if (expression.Body is UnaryExpression unaryExpression && unaryExpression.Operand is MethodCallExpression unaryMethodCall)
+                    {
+                        return unaryMethodCall.Method;
+                    }
+
                     throw new ArgumentException("Expression must be a method call.", nameof(expression));
                 }
 
@@ -1545,13 +1813,18 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>The <see cref="MethodInfo"/> of the called method.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static MethodInfo GetMethod<T, TResult>(Expression<Func<T, TResult>> expression)
+                public static MethodInfo GetMethod<T>(Expression<Func<T, object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     if (expression.Body is MethodCallExpression methodCall)
                     {
                         return methodCall.Method;
                     }
+                    else if (expression.Body is UnaryExpression unaryExpression && unaryExpression.Operand is MethodCallExpression unaryMethodCall)
+                    {
+                        return unaryMethodCall.Method;
+                    }
+
                     throw new ArgumentException("Expression must be a method call.", nameof(expression));
                 }
 
@@ -1622,12 +1895,16 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>The <see cref="PropertyInfo"/> of the corresponding property for the specified generic type.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static PropertyInfo GetProperty<T, TProperty>(Expression<Func<T, TProperty>> expression)
+                public static PropertyInfo GetProperty<T>(Expression<Func<T, object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     if (expression.Body is MemberExpression memberExpression && memberExpression.Member is PropertyInfo propertyInfo)
                     {
                         return propertyInfo;
+                    }
+                    else if (expression.Body is UnaryExpression unaryExpression && unaryExpression.Operand is MemberExpression unaryMemberExpression && unaryMemberExpression.Member is PropertyInfo unaryPropertyInfo)
+                    {
+                        return unaryPropertyInfo;
                     }
                     throw new ArgumentException("Expression must be a property access.", nameof(expression));
                 }
@@ -1639,12 +1916,16 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>The <see cref="PropertyInfo"/> of the corresponding property.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static PropertyInfo GetProperty<TProperty>(Expression<Func<TProperty>> expression)
+                public static PropertyInfo GetProperty(Expression<Func<object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     if (expression.Body is MemberExpression memberExpression && memberExpression.Member is PropertyInfo propertyInfo)
                     {
                         return propertyInfo;
+                    }
+                    else if (expression.Body is UnaryExpression unaryExpression && unaryExpression.Operand is MemberExpression unaryMemberExpression && unaryMemberExpression.Member is PropertyInfo unaryPropertyInfo)
+                    {
+                        return unaryPropertyInfo;
                     }
                     throw new ArgumentException("Expression must be a property access.", nameof(expression));
                 }
@@ -1656,7 +1937,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>An array of <see cref="PropertyInfo"/> objects representing the nested properties.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static PropertyInfo[] GetNestedProperties<TProperty>(Expression<Func<TProperty>> expression)
+                public static PropertyInfo[] GetNestedProperties(Expression<Func<object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     var properties = new List<PropertyInfo>();
@@ -1667,6 +1948,11 @@ namespace HomebrewDot.Net.Rimworld
                         {
                             properties.Add(propertyInfo);
                             currentExpression = memberExpression.Expression;
+                        }
+                        else if (currentExpression is UnaryExpression unaryExpression && unaryExpression.Operand is MemberExpression unaryMemberExpression && unaryMemberExpression.Member is PropertyInfo unaryPropertyInfo)
+                        {
+                            properties.Add(unaryPropertyInfo);
+                            currentExpression = unaryMemberExpression.Expression;
                         }
                         else
                         {
@@ -1685,7 +1971,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>An array of <see cref="PropertyInfo"/> objects representing the nested properties.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static PropertyInfo[] GetNestedProperties<T, TProperty>(Expression<Func<T, TProperty>> expression)
+                public static PropertyInfo[] GetNestedProperties<T>(Expression<Func<T, object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     var properties = new List<PropertyInfo>();
@@ -1696,6 +1982,11 @@ namespace HomebrewDot.Net.Rimworld
                         {
                             properties.Add(propertyInfo);
                             currentExpression = memberExpression.Expression;
+                        }
+                        else if (currentExpression is UnaryExpression unaryExpression && unaryExpression.Operand is MemberExpression unaryMemberExpression && unaryMemberExpression.Member is PropertyInfo unaryPropertyInfo)
+                        {
+                            properties.Add(unaryPropertyInfo);
+                            currentExpression = unaryMemberExpression.Expression;
                         }
                         else
                         {
@@ -1714,7 +2005,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>The <see cref="MemberInfo"/> of the accessed member.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static MemberInfo GetMember<T, TMember>(Expression<Func<T, TMember>> expression)
+                public static MemberInfo GetMember<T, TProperty>(Expression<Func<T, TProperty>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
 
@@ -1747,7 +2038,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// <returns>The <see cref="MemberInfo"/> of the accessed member.</returns>
                 /// <exception cref="ArgumentNullException"></exception>
                 /// <exception cref="ArgumentException"></exception>
-                public static MemberInfo GetMember<TMember>(Expression<Func<TMember>> expression)
+                public static MemberInfo GetMember(Expression<Func<object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
 
@@ -1816,7 +2107,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// <param name="expression">The expression representing the nested member access or method call.</param>
                 /// <returns>An array of <see cref="MemberInfo"/> representing the nested members in the order they are accessed.</returns>
                 /// <exception cref="ArgumentNullException">Thrown if <paramref name="expression"/> is null.</exception>
-                public static MemberInfo[] GetNestedMembers<TProperty>(Expression<Func<TProperty>> expression)
+                public static MemberInfo[] GetNestedMembers(Expression<Func<object>> expression)
                 {
                     if (expression == null) throw new ArgumentNullException(nameof(expression));
                     var members = new List<MemberInfo>();
@@ -1845,6 +2136,121 @@ namespace HomebrewDot.Net.Rimworld
                     }
                     members.Reverse();
                     return members.ToArray();
+                }
+
+                /// <summary>
+                /// Compiles a loop expression that iterates over the elements of an input collection. The method takes an input expression, its type, and a loop body function that defines the operations to be performed on each element of the collection. The loop body function receives the current element, its type, and a label target for breaking out of the loop. The method handles both typed collections (e.g., arrays, lists) and untyped collections (e.g., IEnumerable) and generates the appropriate loop structure based on the input type.
+                /// </summary>
+                /// <param name="input">The input expression representing the collection to iterate over.</param>
+                /// <param name="inputType">The type of the input collection.</param>
+                /// <param name="loopBody">A function that defines the operations to be performed on each element of the collection.</param>
+                /// <returns>A LinqExpression representing the compiled loop.</returns>
+                public static LinqExpression CompileLoop(LinqExpression input, Type inputType, Func<LinqExpression, Type, LabelTarget, LinqExpression> loopBody)
+                {
+                    var rightInputVariable = LinqExpression.Variable(inputType, "rightInput");
+                    var assignRightInput = LinqExpression.Assign(rightInputVariable, input);
+                    var collectionType = (typeof(IEnumerable<object>).IsAssignableFrom(inputType) || inputType.IsArray) && inputType != typeof(string) ? inputType : typeof(IEnumerable);
+                    var collectionVariable = LinqExpression.Variable(collectionType, "collection");
+                    if (collectionType.Equals(typeof(IEnumerable)))
+                    {
+                        collectionVariable = LinqExpression.Variable(typeof(IEnumerable<object>), "collection");
+                        // Runtime check for IEnumerable
+                        var isCollectionMethod = Helpers.Expression.GetMethod(() => typeof(Type).IsCollection());
+                        var getTypeMethod = Helpers.Expression.GetMethod(() => typeof(object).GetType());
+                        var enumerateMethod = Helpers.Expression.GetMethod<IEnumerable>(x => x.Enumerate());
+                        var assignCollection = LinqExpression.Assign(collectionVariable, LinqExpression.Call(enumerateMethod, LinqExpression.Convert(input, typeof(IEnumerable))));
+
+                        var inputIsNotNull = LinqExpression.NotEqual(input, LinqExpression.Default(inputType));
+                        var inputIsCollection = LinqExpression.Call(isCollectionMethod, LinqExpression.Call(input, getTypeMethod.Name, Array.Empty<Type>()));
+                        var runTimeLoop = CompileLoop(collectionVariable, typeof(IEnumerable<object>), loopBody);
+                        var nonLoop = loopBody(input, inputType, null);
+
+                        var ifNotNullAndCollection = LinqExpression.IfThenElse(
+                            LinqExpression.AndAlso(inputIsNotNull, inputIsCollection),
+                            LinqExpression.Block(assignCollection, runTimeLoop),
+                            nonLoop
+                        );
+
+                        return LinqExpression.Block(new[] { rightInputVariable, collectionVariable }, assignRightInput, ifNotNullAndCollection);
+                    }
+                    else
+                    {
+                        // We have a typed collection so we can use that directly to avoid boxing/unboxing
+                        
+                        var loopBreak = LinqExpression.Label("LoopBreak");
+                        if (collectionType.IsArray || typeof(IReadOnlyList<object>).IsAssignableFrom(collectionType))
+                        {
+                            // Use indexing since it's faster than enumerating for arrays and lists
+                            Type elementType;
+                            LinqExpression getLength;
+                            if (collectionType.IsArray)
+                            {
+                                elementType = collectionType.GetElementType();
+                                getLength = LinqExpression.Property(collectionVariable, nameof(Array.Length));
+                            }
+                            else
+                            {
+                                elementType = collectionType.GetGenericArguments().Single();
+                                getLength = LinqExpression.Property(collectionVariable, nameof(IReadOnlyCollection<object>.Count));
+                            }
+                            var indexVariable = LinqExpression.Variable(typeof(int), "index");
+                            var lengthVariable = LinqExpression.Variable(typeof(int), "length");
+                            var currentItemVariable = LinqExpression.Variable(elementType, "currentItem");
+                            var assignLength = LinqExpression.Assign(lengthVariable, getLength);
+
+                            LinqExpression getItem;
+                            if (collectionType.IsArray)
+                            {
+                                getItem = LinqExpression.ArrayIndex(collectionVariable, indexVariable);
+                            }
+                            else
+                            {
+                                var indexerProperty = collectionType.GetProperty("Item");
+                                getItem = LinqExpression.Property(collectionVariable, indexerProperty, indexVariable);
+                            }
+
+                            var loop = LinqExpression.Loop(
+                                LinqExpression.Block(
+                                    LinqExpression.IfThenElse(
+                                        LinqExpression.LessThan(indexVariable, lengthVariable),
+                                        LinqExpression.Block(
+                                            LinqExpression.Assign(currentItemVariable, getItem),
+                                            loopBody(currentItemVariable, elementType, loopBreak),
+                                            LinqExpression.PostIncrementAssign(indexVariable)
+                                        ),
+                                        LinqExpression.Break(loopBreak)
+                                    )
+                                ),
+                                loopBreak
+                            );
+
+                            return LinqExpression.Block(new[] { rightInputVariable, collectionVariable, currentItemVariable, indexVariable, lengthVariable}, assignRightInput, LinqExpression.Assign(collectionVariable, input), assignLength, loop);
+                        }
+                        else
+                        {
+                            // Use enumerator<T> for other IEnumerable<T> types
+                            var elementType = collectionType.GetGenericArguments().Single();
+                            var enumeratorVariable = LinqExpression.Variable(typeof(IEnumerator<>).MakeGenericType(elementType), "enumerator");
+                            var getEnumeratorCall = LinqExpression.Call(collectionVariable, collectionType.GetMethod(nameof(IEnumerable<object>.GetEnumerator)));
+                            var enumeratorMoveNextCall = LinqExpression.Call(enumeratorVariable, typeof(IEnumerator).GetMethod(nameof(IEnumerator.MoveNext)));
+                            var enumeratorCurrentProperty = LinqExpression.Property(enumeratorVariable, nameof(IEnumerator<object>.Current));
+                            var enumeratorDisposeCall = LinqExpression.Call(enumeratorVariable, typeof(IDisposable).GetMethod(nameof(IDisposable.Dispose)));
+                            var assignEnumerator = LinqExpression.Assign(enumeratorVariable, getEnumeratorCall);
+
+                            var loop = LinqExpression.Loop(
+                                LinqExpression.IfThenElse(
+                                    enumeratorMoveNextCall,
+                                    LinqExpression.Block(
+                                        loopBody(enumeratorCurrentProperty, elementType, loopBreak)
+                                    ),
+                                    LinqExpression.Break(loopBreak)
+                                ),
+                                loopBreak
+                            );
+
+                            return LinqExpression.Block(new[] { rightInputVariable, collectionVariable, enumeratorVariable }, assignRightInput, LinqExpression.Assign(collectionVariable, input), assignEnumerator, loop, enumeratorDisposeCall);
+                        }
+                    }
                 }
             }
 
@@ -1929,39 +2335,8 @@ namespace HomebrewDot.Net.Rimworld
                     if (string.IsNullOrWhiteSpace(propertyName)) return null;
 
                     var objType = obj.GetType();
-                    var gettersForType = _typeGetters.GetOrAdd(objType, _ => new ConcurrentDictionary<string, Func<object, object>>());
                     var memberName = propertyName.Trim();
-                    if (!gettersForType.TryGetValue(memberName, out var getter))
-                    {
-                        var typedTraversingType = typeof(Traversing<>).MakeGenericType(objType);
-                        var tryGetPropertyGetterMethod = typedTraversingType.GetMethod(nameof(Traversing<object>.TryGetPropertyGetter), PublicStatic);
-                        if (tryGetPropertyGetterMethod == null)
-                        {
-                            gettersForType[memberName] = null;
-                            return null;
-                        }
-
-                        var parameters = new object[] { memberName, null };
-                        if ((bool)tryGetPropertyGetterMethod.Invoke(null, parameters) && parameters[1] is Delegate typedGetter)
-                        {
-                            // Build an object-based wrapper by first casting to Func<T, object> and then invoking it.
-                            var typedGetterDelegateType = typeof(Func<,>).MakeGenericType(objType, typeof(object));
-                            var objectParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "x");
-                            var castedObject = System.Linq.Expressions.Expression.Convert(objectParameter, objType);
-                            var castedTypedGetter = System.Linq.Expressions.Expression.Convert(
-                                System.Linq.Expressions.Expression.Constant(typedGetter),
-                                typedGetterDelegateType);
-                            var invocation = System.Linq.Expressions.Expression.Invoke(castedTypedGetter, castedObject);
-                            var lambda = System.Linq.Expressions.Expression.Lambda<Func<object, object>>(invocation, objectParameter);
-                            getter = lambda.Compile();
-                        }
-                        else
-                        {
-                            getter = null;
-                        }
-
-                        gettersForType[memberName] = getter;
-                    }
+                    var getter = GetTypeMemberGetter(objType, memberName);
                     if (getter == null)
                     {
                         return null;
@@ -2071,54 +2446,464 @@ namespace HomebrewDot.Net.Rimworld
                         .Where(x => !string.IsNullOrWhiteSpace(x))
                         .ToArray();
                 }
+
+                /// <summary>
+                /// Walks the property path starting from the root and tries to determine the type of the final property or field in the path. If any segment of the path does not exist, it returns typeof(object) as a fallback since it could be traversed based on the runtime type.
+                /// </summary>
+                /// <param name="rootType">The root type to start the path traversal from.</param>
+                /// <param name="propertyPath">The dot-delimited property path to traverse.</param>
+                /// <returns>The type of the final property or field in the path, or typeof(object) if any segment does not exist.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                public static Type TryWalkPath(Type rootType, string propertyPath)
+                {
+                    if (rootType == null) throw new ArgumentNullException(nameof(rootType));
+                    if (string.IsNullOrWhiteSpace(propertyPath)) return rootType;
+                    var returnType = typeof(object);
+                    var segments = SplitPath(propertyPath);
+                    return TryWalkPath(rootType, segments);
+                }
+
+                /// <summary>
+                /// Walks the property path starting from the root and tries to determine the type of the final property or field in the path. If any segment of the path does not exist, it returns typeof(object) as a fallback since it could be traversed based on the runtime type.
+                /// </summary>
+                /// <param name="rootType">The root type to start the path traversal from.</param>
+                /// <param name="propertyPath">The array of property names representing the path to traverse.</param>
+                /// <returns>The type of the final property or field in the path, or typeof(object) if any segment does not exist.</returns>
+                /// <exception cref="ArgumentNullException"></exception>
+                public static Type TryWalkPath(Type rootType, string[] propertyPath)
+                {
+                    if (rootType == null) throw new ArgumentNullException(nameof(rootType));
+                    if (propertyPath == null || propertyPath.Length == 0) return rootType;
+                    var returnType = typeof(object);
+                    var segments = propertyPath;
+                    var currentType = rootType;
+                    foreach (var member in segments)
+                    {
+                        var members = GetMembers(currentType).ToDictionary(m => m.Name, m => m);
+                        if (members.TryGetValue(member, out var memberInfo))
+                        {
+                            if (memberInfo is PropertyInfo propertyInfo)
+                            {
+                                currentType = propertyInfo.PropertyType;
+                            }
+                            else if (memberInfo is FieldInfo fieldInfo)
+                            {
+                                currentType = fieldInfo.FieldType;
+                            }
+                            else
+                            {
+                                return returnType;
+                            }
+                        }
+                        else
+                        {
+                            return returnType;
+                        }
+                    }
+
+                    return currentType;
+                }
+
+                /// <summary>
+                /// Walks the property path starting from the <see cref="IIndexed{T}"/> generic type and tries to determine the type of the final property or field in the path. If any segment of the path does not exist, it returns typeof(object) as a fallback since it could be traversed based on the runtime type. 
+                /// </summary>
+                /// <param name="indexedType">The <see cref="IIndexed{T}"/> generic type to start the path traversal from.</param>
+                /// <param name="propertyPath">The property path to traverse.</param>
+                /// <returns>The type of the final property or field in the path, or typeof(object) if any segment does not exist.</returns>
+                public static Type TryWalkIndexedPath(Type indexedType, string propertyPath)
+                {
+                    indexedType = Guard.NotNull(indexedType, nameof(indexedType));
+                    if (string.IsNullOrWhiteSpace(propertyPath)) return indexedType;
+                    if (!indexedType.IsGenericType) return TryWalkPath(indexedType, propertyPath);
+                    var indexedValueType = indexedType.GetGenericArguments().Single();
+                    var returnType = typeof(object);
+                    var segments = SplitPath(propertyPath);
+                    var metadataKey = segments[0];
+                    var rootType = TryGetIndexedMetadataType(indexedType, metadataKey);
+                    return TryWalkPath(rootType, segments.Skip(1).ToArray());
+                }
+
+                /// <summary>
+                /// Attempts to get the type of a metadata property or field from an <see cref="IIndexed{T}"/> generic type based on the provided metadata key. If the metadata key corresponds to a property or field in the indexed value type, it returns the type of that member. If no matching member is found, it returns typeof(object) as a fallback. This method can be useful for scenarios where you need to dynamically determine the type of a metadata property or field in an indexed collection.
+                /// </summary>
+                /// <param name="indexedType">The generic type implementing <see cref="IIndexed{T}"/>.</param>
+                /// <param name="metadataKey">The metadata key to look up.</param>
+                /// <returns>The type of the metadata property or field, or typeof(object) if not found.</returns>
+                public static Type TryGetIndexedMetadataType(Type indexedType, string metadataKey)
+                {
+                    indexedType = Guard.NotNull(indexedType, nameof(indexedType));
+                    if (string.IsNullOrWhiteSpace(metadataKey)) return typeof(object);
+                    if (!indexedType.IsGenericType) return typeof(object);
+                    var indexedValueType = indexedType.GetGenericArguments().Single();
+                    var members = GetMembers(indexedValueType).ToDictionary(m => m.Name, m => m);
+                    if (members.TryGetValue(metadataKey, out var memberInfo))
+                    {
+                        if (memberInfo is PropertyInfo propertyInfo)
+                        {
+                            return propertyInfo.PropertyType;
+                        }
+                        else if (memberInfo is FieldInfo fieldInfo)
+                        {
+                            return fieldInfo.FieldType;
+                        }
+                    }
+                    // Try case insensitive match if no exact match was found
+                    var caseInsensitiveMatch = members.FirstOrDefault(m => string.Equals(m.Key, metadataKey, StringComparison.OrdinalIgnoreCase));
+                    if (caseInsensitiveMatch.Value != null)
+                    {
+                        if (caseInsensitiveMatch.Value is PropertyInfo propertyInfo)
+                        {
+                            return propertyInfo.PropertyType;
+                        }
+                        else if (caseInsensitiveMatch.Value is FieldInfo fieldInfo)
+                        {
+                            return fieldInfo.FieldType;
+                        }
+                    }
+                    return typeof(object);
+                }
+
+                /// <summary>
+                /// Gets a compiled getter function for the specified member name of the given type. The method first checks if a getter for the member name already exists in the cache for the specified type. If it does, it returns it. If not, it attempts to find a property or field with the given name in the type using reflection. If found, it creates a lambda expression to access that member, compiles it into a delegate, caches it for future use, and returns it. If no matching property or field is found, it caches a null value for that member name and returns null.
+                /// </summary>
+                /// <param name="type">The type to get the getter for</param>
+                /// <param name="memberName">The name of the member to get the getter for</param>
+                /// <returns>A compiled getter function for the specified member, or null if not found</returns>
+                public static Func<object, object> GetTypeMemberGetter(Type type, string memberName)
+                {
+                    var gettersForType = _typeGetters.GetOrAdd(type, _ => new ConcurrentDictionary<string, Func<object, object>>());
+                    memberName = memberName.Trim();
+
+                    if (!gettersForType.TryGetValue(memberName, out var getter))
+                    {
+                        var typedTraversingType = typeof(Traversing<>).MakeGenericType(type);
+                        var tryGetPropertyGetterMethod = typedTraversingType.GetMethod(nameof(Traversing<object>.TryGetPropertyGetter), PublicStatic);
+                        if (tryGetPropertyGetterMethod == null)
+                        {
+                            gettersForType[memberName] = null;
+                            return null;
+                        }
+
+                        var parameters = new object[] { memberName, null };
+                        if ((bool)tryGetPropertyGetterMethod.Invoke(null, parameters) && parameters[1] is Delegate typedGetter)
+                        {
+                            // Build an object-based wrapper by first casting to Func<T, object> and then invoking it.
+                            var typedGetterDelegateType = typeof(Func<,>).MakeGenericType(type, typeof(object));
+                            var objectParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "x");
+                            var castedObject = System.Linq.Expressions.Expression.Convert(objectParameter, type);
+                            var castedTypedGetter = System.Linq.Expressions.Expression.Convert(
+                                System.Linq.Expressions.Expression.Constant(typedGetter),
+                                typedGetterDelegateType);
+                            var invocation = System.Linq.Expressions.Expression.Invoke(castedTypedGetter, castedObject);
+                            var lambda = System.Linq.Expressions.Expression.Lambda<Func<object, object>>(invocation, objectParameter);
+                            getter = lambda.Compile();
+                        }
+                        else
+                        {
+                            getter = null;
+                        }
+                        gettersForType[memberName] = getter;
+                    }
+                    return getter;
+                }
+                /// <summary>
+                /// Generates a full getter expression for the specified property path starting from the given input expression and type. The method constructs a series of expressions that access each property or field in the path, handling null checks for reference types along the way. It returns a block expression that includes variable declarations for intermediate values and the final value of the last property in the path. This can be useful for scenarios where you need to dynamically generate code to access nested properties or fields in an object hierarchy.
+                /// </summary>
+                /// <param name="input">The input expression representing the object from which to start the property path.</param>
+                /// <param name="inputType">The type of the input expression.</param>
+                /// <param name="propertyPath">The dot-separated path of properties to access.</param>
+                /// <returns>A LinqExpression representing the full getter for the specified property path.</returns>
+                public static LinqExpression GenerateFullGetter(LinqExpression input, Type inputType, string propertyPath)
+                {
+                    input = Guard.NotNull(input, nameof(input));
+                    inputType = Guard.NotNull(inputType, nameof(inputType));
+                    propertyPath = Guard.NotNull(propertyPath, nameof(propertyPath));
+                    var properties = SplitPath(propertyPath);
+                    return GenerateFullGetter(input, inputType, properties);
+                }
+                /// <summary>
+                /// Generates a full getter expression for the specified property path starting from the given input expression and type. The method constructs a series of expressions that access each property or field in the path, handling null checks for reference types along the way. It returns a block expression that includes variable declarations for intermediate values and the final value of the last property in the path. This can be useful for scenarios where you need to dynamically generate code to access nested properties or fields in an object hierarchy.
+                /// </summary>
+                /// <param name="input">The input expression representing the object from which to start the property path.</param>
+                /// <param name="inputType">The type of the input expression.</param>
+                /// <param name="propertyPath">The dot-separated path of properties to access.</param>
+                /// <returns>A LinqExpression representing the full getter for the specified property path.</returns>
+                public static LinqExpression GenerateFullGetter(LinqExpression input, Type inputType, string[] propertyPath)
+                {
+                    input = Guard.NotNull(input, nameof(input));
+                    inputType = Guard.NotNull(inputType, nameof(inputType));
+                    propertyPath = Guard.NotNull(propertyPath, nameof(propertyPath));
+                    var properties = propertyPath;
+                    if (properties is null || properties.Length == 0)
+                    {
+                        return input;
+                    }
+                    var valueGetters = new (LinqExpression Expression, LinqExpression[] Actions, Type ReturnType)[properties.Length];
+                    var currentType = inputType;
+                    var inputVariable = System.Linq.Expressions.Expression.Variable(inputType, "input");
+                    var assignInput = System.Linq.Expressions.Expression.Assign(inputVariable, input);
+                    var variables = new List<ParameterExpression>() { inputVariable };
+                    var returnType = typeof(object);
+
+                    for (int i = 0; i < properties.Length; i++)
+                    {
+                        var propertyName = properties[i];
+                        LinqExpression instance;
+                        Type instanceType;
+                        if (i == 0)
+                        {
+                            instance = inputVariable;
+                            instanceType = inputType;
+                        }
+                        else
+                        {
+                            var valueGetter = valueGetters[i - 1];
+                            instance = valueGetter.Expression;
+                            instanceType = valueGetter.ReturnType;
+                        }
+                        // Try fully typed first, then fallback to object-based getter
+                        var members = GetMembers(currentType).ToDictionary(m => m.Name, m => m);
+                        if (members.TryGetValue(propertyName, out var memberInfo))
+                        {
+                            if (memberInfo is PropertyInfo propertyInfo)
+                            {
+                                var getProperty = System.Linq.Expressions.Expression.Property(
+                                    instance,
+                                    propertyInfo
+                                );
+                                currentType = propertyInfo.PropertyType;
+                                var propertyBufferVariable = System.Linq.Expressions.Expression.Variable(currentType, i == properties.Length - 1 ? "result" : $"{i}");
+                                variables.Add(propertyBufferVariable);
+                                var assignPropertyBuffer = System.Linq.Expressions.Expression.Assign(propertyBufferVariable, getProperty);
+                                valueGetters[i] = (propertyBufferVariable, new[] { assignPropertyBuffer }, currentType);
+                                continue;
+                            }
+                            else if (memberInfo is FieldInfo fieldInfo)
+                            {
+                                var getField = System.Linq.Expressions.Expression.Field(
+                                    instance,
+                                    fieldInfo
+                                );
+                                currentType = fieldInfo.FieldType;
+                                var fieldBufferVariable = System.Linq.Expressions.Expression.Variable(currentType, i == properties.Length - 1 ? "result" : $"{i}");
+                                variables.Add(fieldBufferVariable);
+                                var assignFieldBuffer = System.Linq.Expressions.Expression.Assign(fieldBufferVariable, getField);
+                                valueGetters[i] = (fieldBufferVariable, new[] { assignFieldBuffer }, currentType);
+                                continue;
+                            }
+                        }
+
+
+                        var traverseMethod = Helpers.Expression.GetMethod(() => Helpers.Traversing.Traverse(null, null));
+                        currentType = typeof(object);
+                        var traverseCall = System.Linq.Expressions.Expression.Call(
+                            traverseMethod,
+                            instance,
+                            System.Linq.Expressions.Expression.Constant(propertyName)
+                        );
+                        var bufferVariable = System.Linq.Expressions.Expression.Variable(currentType, $"{i}");
+                        variables.Add(bufferVariable);
+                        var assignBuffer = System.Linq.Expressions.Expression.Assign(bufferVariable, traverseCall);
+                        valueGetters[i] = (bufferVariable, new[] { assignBuffer }, currentType);
+                    }
+                    returnType = currentType;
+
+                    var actions = new List<LinqExpression> { assignInput };
+                    for (int i = 0; i < valueGetters.Length; i++)
+                    {
+                        var valueGetter = valueGetters[i];
+                        if (i == 0)
+                        {
+                            var inputIsValueType = inputType.IsValueType;
+                            if (inputIsValueType)
+                            {
+                                if (valueGetter.Actions.Length > 0)
+                                {
+                                    actions.AddRange(valueGetter.Actions);
+                                }
+                            }
+                            else
+                            {
+                                var ifNotNull = System.Linq.Expressions.Expression.IfThen(
+                                    System.Linq.Expressions.Expression.NotEqual(inputVariable, System.Linq.Expressions.Expression.Constant(null)),
+                                    System.Linq.Expressions.Expression.Block(valueGetter.Actions)
+                                );
+                                actions.Add(ifNotNull);
+                            }
+                        }
+                        else
+                        {
+                            var lastGetter = valueGetters[i - 1];
+                            var lastGetterIsValueType = lastGetter.ReturnType.IsValueType;
+                            if (lastGetterIsValueType)
+                            {
+                                if (valueGetter.Actions.Length > 0)
+                                {
+                                    actions.AddRange(valueGetter.Actions);
+                                }
+                            }
+                            else
+                            {
+                                var ifNotNull = System.Linq.Expressions.Expression.IfThen(
+                                    System.Linq.Expressions.Expression.NotEqual(lastGetter.Expression, System.Linq.Expressions.Expression.Constant(null)),
+                                    System.Linq.Expressions.Expression.Block(valueGetter.Actions)
+                                );
+                                actions.Add(ifNotNull);
+                            }
+                        }
+                    }
+
+                    actions.Add(valueGetters.Last().Expression);
+
+                    var block = System.Linq.Expressions.Expression.Block(variables, actions);
+                    return block;
+                }
             }
 
             /// <summary>
             /// Helper class for logging with fallback to console output.
             /// </summary>
+            [StaticConstructorOnStartup]
             public static class Logging
             {
+                static Logging()
+                {
+                    Invoking.Safe(() =>
+                    {
+                        Hooks.Manager.RegisterHook<ToolkitSettings.Changed>(Instance, e =>
+                        {
+                            Verbose = e.Settings.Verbose;
+                            Performance = e.Settings.PerformanceLogging;
+                            Log("Updated logging settings");
+                        });
+                    });
+                }
+
+                private static bool IsBroken = false;
+                internal static bool Verbose = Invoking.Safe(() => Toolkit.Settings.Verbose, false);
+                internal static bool Performance = Invoking.Safe(() => Toolkit.Settings.PerformanceLogging, false);
+                /// <summary>
+                /// If verbose logging is enabled.
+                /// </summary>
+                public static bool IsVerboseEnabled => Verbose;
+                /// <summary>
+                /// If performance logging is enabled. Returns true when either performance logging setting is on or verbose logging is enabled.
+                /// </summary>
+                public static bool IsPerformanceEnabled => Verbose || Performance;
+
                 /// <summary>
                 /// Logs an informational message with fallback to console output.
                 /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 public static void Log(string message)
-                    => Write(() => Verse.Log.Message(message), "INFO", message);
+                    => Write(LogLevel.INF, message);
 
                 /// <summary>
                 /// Logs a warning message with fallback to console output.
                 /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 public static void LogWarning(string message)
-                    => Write(() => Verse.Log.Warning(message), "WARN", message);
+                    => Write(LogLevel.WRN, message);
 
                 /// <summary>
                 /// Logs an error message with fallback to console output.
                 /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 public static void LogError(string message)
-                    => Write(() => Verse.Log.Error(message), "ERROR", message);
+                    => Write(LogLevel.ERR, message);
 
                 /// <summary>
                 /// Logs a verbose message with fallback to console output.
                 /// </summary>
-                public static void LogVerbose(string message)
-                    => Write(() =>
-                    {
-                        if (Toolkit.Settings.Verbose)
-                        {
-                            Verse.Log.Message(message);
-                        }
-                    }, "DBG", message);
-
-                private static void Write(Action verseLogger, string level, string message)
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public static void LogVerbose(Func<string> message)
                 {
+                    if (Verbose)
+                    {
+                        Write(LogLevel.DBG, message());
+                    }
+                }
+
+                /// <summary>
+                /// Logs a verbose message with fallback to console output.
+                /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public static void LogVerbose(string message)
+                {
+                    if (Verbose)
+                    {
+                        Write(LogLevel.DBG, message);
+                    }
+                }
+
+                /// <summary>
+                /// Logs a performance metric message. Enabled via the PerformanceLogging setting or when verbose logging is active.
+                /// Use for timing, throughput, and snapshot progress metrics.
+                /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public static void LogPerformance(Func<string> message)
+                {
+                    if (IsPerformanceEnabled)
+                    {
+                        Write(LogLevel.PRF, message());
+                    }
+                }
+
+                /// <summary>
+                /// Logs a performance metric message. Enabled via the PerformanceLogging setting or when verbose logging is active.
+                /// Use for timing, throughput, and snapshot progress metrics.
+                /// </summary>
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public static void LogPerformance(string message)
+                {
+                    if (IsPerformanceEnabled)
+                    {
+                        Write(LogLevel.PRF, message);
+                    }
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                private static void Write(LogLevel logLevel, string message)
+                {
+                    if (IsBroken)
+                    {
+                        Console.WriteLine($"[{logLevel}] {message}");
+                        return;
+                    }
+
                     try
                     {
-                        verseLogger();
+                        switch (logLevel)
+                        {
+                            case LogLevel.PRF:
+                            case LogLevel.DBG:
+                            case LogLevel.INF:
+                                Verse.Log.Message(message);
+                                break;
+                            case LogLevel.WRN:
+                                Verse.Log.Warning(message);
+                                break;
+                            case LogLevel.ERR:
+                                Verse.Log.Error(message);
+                                break;
+                        }
+
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[{level}] {message}");
-                        Console.WriteLine($"[{level}] Verse logging failed: {ex}");
+                        Console.WriteLine($"[{logLevel}] {message}");
+                        Console.WriteLine($"[{logLevel}] Verse logging failed: {ex}");
+                        IsBroken = true;
                     }
+                }
+
+                private enum LogLevel
+                {
+                    DBG,
+                    INF,
+                    WRN,
+                    ERR,
+                    PRF
                 }
             }
 
@@ -2206,6 +2991,51 @@ namespace HomebrewDot.Net.Rimworld
                     }
                 });
             }
+
+            /// <summary>
+            /// Invalidates the cache entry for the specified key by removing it from the cache. Returns true if the entry was successfully removed, or false if the key was not found in the cache. This can be useful for scenarios where cached data may become stale or needs to be refreshed based on certain conditions.
+            /// </summary>
+            /// <param name="key">The key of the cache entry to invalidate.</param>
+            /// <returns>True if the cache entry was successfully removed; otherwise, false.</returns>
+            public static bool Invalidate(TKey key)
+            {
+                return _cache.TryRemove(key, out _);
+            }
+        }
+
+        /// <summary>
+        /// Simple pool of objects to re-use during the lifetime of the game to reduce gc pressure.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        public static class Pool<T> where T : IPoolable, new()
+        {
+            // Fields
+            private readonly static Queue<T> _pool = new Queue<T>(1024);
+
+            /// <summary>
+            /// Rent a new object from the pool.
+            /// </summary>
+            /// <returns>A instance of <typeparamref name="T"/> rented from the pool, or a new instance if the pool is empty</returns>
+            public static T Rent()
+            {
+                if(_pool.TryDequeue(out var rented))
+                {
+                    return rented;
+                }
+
+                return new T();
+            }
+
+            /// <summary>
+            /// Returns an object to the pool.
+            /// </summary>
+            /// <param name="value">The object to return</param>
+            public static void Return(T value)
+            {
+                value = Guard.NotNull(value, nameof(value));
+                value.Reset();
+                _pool.Enqueue(value);
+            }
         }
     }
     /// <summary>
@@ -2230,6 +3060,12 @@ namespace HomebrewDot.Net.Rimworld
         /// This will log detailed information about the gathering process, including what is being gathered and when, as well as any potential issues or errors that occur during gathering. Use this option if you want to get insights into how the toolkit is operating or if you're trying to troubleshoot any problems with data gathering. Keep in mind that enabling verbose logging may result in a large amount of log output, so it's generally recommended to use this option only when needed for debugging purposes.
         /// </summary>
         public bool Verbose = false;
+        /// <summary>
+        /// Enables performance logging for the toolkit, which logs timing metrics and snapshot progress without the full verbosity of verbose logging.
+        /// Useful for profiling snapshot building, collection loading, and other performance-critical paths without the noise of informational debug messages.
+        /// When enabled, performance metrics are logged alongside verbose messages if verbose is also enabled.
+        /// </summary>
+        public bool PerformanceLogging = false;
 
         /// <inheritdoc cref="ToolkitSettings"/>
         public ToolkitSettings()
@@ -2245,6 +3081,8 @@ namespace HomebrewDot.Net.Rimworld
         {
             DynamicGatheringEnabled = Toolkit.Helpers.Guard.NotNull(settings, nameof(settings)).DynamicGatheringEnabled;
             SlowGatheringEnabled = settings.SlowGatheringEnabled;
+            Verbose = settings.Verbose;
+            PerformanceLogging = settings.PerformanceLogging;
         }
 
         /// <inheritdoc/>
@@ -2252,11 +3090,22 @@ namespace HomebrewDot.Net.Rimworld
         {
             base.ExposeData();
 
+            // Capture old values so we only fire Changed when something actually changed
+            var oldDynamicGathering = DynamicGatheringEnabled;
+            var oldSlowGathering = SlowGatheringEnabled;
+            var oldVerbose = Verbose;
+            var oldPerformanceLogging = PerformanceLogging;
+
             Scribe_Values.Look(ref DynamicGatheringEnabled, nameof(DynamicGatheringEnabled), defaultValue: false);
             Scribe_Values.Look(ref SlowGatheringEnabled, nameof(SlowGatheringEnabled), defaultValue: false);
             Scribe_Values.Look(ref Verbose, nameof(Verbose), defaultValue: false);
+            Scribe_Values.Look(ref PerformanceLogging, nameof(PerformanceLogging), defaultValue: false);
 
-            if (Scribe.mode == LoadSaveMode.Saving)
+            if (Scribe.mode == LoadSaveMode.Saving
+                && (oldDynamicGathering != DynamicGatheringEnabled
+                    || oldSlowGathering != SlowGatheringEnabled
+                    || oldVerbose != Verbose
+                    || oldPerformanceLogging != PerformanceLogging))
             {
                 Toolkit.Hooks.Manager.Trigger(new Changed(this));
             }

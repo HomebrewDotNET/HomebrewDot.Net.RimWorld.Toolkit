@@ -39,6 +39,13 @@ namespace HomebrewDot.Net.Rimworld
                 "Enable verbose logging for debugging purposes.");
             Toolkit.Settings.Verbose = verbose;
 
+            var perfLogging = Toolkit.Settings.PerformanceLogging;
+            listing.CheckboxLabeled(
+                "Performance Logging",
+                ref perfLogging,
+                "Log snapshot timing and throughput metrics without full verbose debug output.");
+            Toolkit.Settings.PerformanceLogging = perfLogging;
+
             listing.End();
         }
     }

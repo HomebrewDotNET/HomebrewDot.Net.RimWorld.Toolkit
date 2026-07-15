@@ -16,12 +16,19 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
     /// <typeparam name="T">The type of objects to be collected.</typeparam>
     public class Collector<T> : ICollector<T> where T : class
     {
-        // Fields
-        private readonly object _lock = new object();
-        private readonly HashSet<T> _collected = new HashSet<T>();
+        /// <summary>
+        /// The current set of collected objects.
+        /// </summary>
+        protected readonly HashSet<T> _collected = new HashSet<T>();
         private readonly ICollectionDef _definition;
-        private IReadOnlyDictionary<string, ICollectionDef> _collections = null;
-        private ICollectionComparator _comparer = null;
+        /// <summary>
+        /// A dictionary of collection definitions keyed by their names. Used to resolve references between collections.
+        /// </summary>
+        protected IReadOnlyDictionary<string, ICollectionDef> _collections = null;
+        /// <summary>
+        /// The comparator used to determine if objects match the collection definition.
+        /// </summary>
+        protected ICollectionComparator _comparer = null;
         private event Action<T> _onCollected;
         private event Action<T> _onRemoved;
         private event Action<IReadOnlyCollection<T>> _onClear;
@@ -32,17 +39,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             add
             {
-                lock (_lock)
-                {
-                    _onCollected += value;
-                }
+                _onCollected += value;
             }
             remove
             {
-                lock (_lock)
-                {
-                    _onCollected -= value;
-                }
+                _onCollected -= value;
             }
         }
         /// <inheritdoc/>
@@ -50,17 +51,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             add
             {
-                lock (_lock)
-                {
-                    _onRemoved += value;
-                }
+                _onRemoved += value;
             }
             remove
             {
-                lock (_lock)
-                {
-                    _onRemoved -= value;
-                }
+                _onRemoved -= value;
             }
         }
         /// <inheritdoc/>
@@ -68,17 +63,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             add
             {
-                lock (_lock)
-                {
-                    _onClear += value;
-                }
+                _onClear += value;
             }
             remove
             {
-                lock (_lock)
-                {
-                    _onClear -= value;
-                }
+                _onClear -= value;
             }
         }
 
@@ -106,15 +95,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return false;
             }
-            var itemContext = new Dictionary<string, object>(context?.Count ?? 0);
-            if (context != null)
-            {
-                foreach (var kvp in context)
-                {
-                    itemContext[kvp.Key] = kvp.Value;
-                }
-            }
-            return _comparer.Matches(_definition, obj, _collections, itemContext);
+            return _comparer.Matches(_definition, obj, _collections, context);
         }
         /// <inheritdoc/>
         public virtual bool Collect(T obj, IReadOnlyDictionary<string, object> context)
@@ -127,37 +108,8 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return false;
             }
-            var itemContext = new Dictionary<string, object>(context?.Count ?? 0);
-            if (context != null)
-            {
-                foreach (var kvp in context)
-                {
-                    itemContext[kvp.Key] = kvp.Value;
-                }
-            }
-            if (_comparer.Matches(_definition, obj, _collections, itemContext))
-            {
-                lock (_lock)
-                {
-                    if (_collected.Add(obj))
-                    {
-                        _onCollected?.Invoke(obj);
-                    }
-                }
-                return true;
-            }
-            else if (Contains(obj))
-            {
-                lock (_lock)
-                {
-                    if (_collected.Remove(obj))
-                    {
-                        _onRemoved?.Invoke(obj);
-                    }
-                }
-            }
-
-            return false;
+            var matches = _comparer.Matches(_definition, obj, _collections, context);
+            return HandleMatch(obj, matches);
         }
         /// <inheritdoc/>
         public virtual IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
@@ -170,28 +122,27 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 return (castedObj, x.Matches);
             });
         }
-        private void HandleMatch(T obj, bool matches)
+        /// <summary>
+        /// Handles the result of a match on <paramref name="obj"/>.
+        /// </summary>
+        /// <param name="obj">The object that was checked</param>
+        /// <param name="matches">The result of the match</param>
+        /// <returns>True if added, otherwise false</returns>
+        protected bool HandleMatch(T obj, bool matches)
         {
             if (matches)
             {
-                lock (_lock)
+                if (_collected.Add(obj))
                 {
-                    if (_collected.Add(obj))
-                    {
-                        _onCollected?.Invoke(obj);
-                    }
+                    _onCollected?.Invoke(obj);
+                    return true;
                 }
             }
-            else if (Contains(obj))
+            else
             {
-                lock (_lock)
-                {
-                    if (_collected.Remove(obj))
-                    {
-                        _onRemoved?.Invoke(obj);
-                    }
-                }
+                Remove(obj);
             }
+            return false;
         }
         /// <inheritdoc/>
         public virtual bool Remove(T obj)
@@ -200,17 +151,14 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             {
                 return false;
             }
-            lock (_lock)
+            if (_collected.Remove(obj))
             {
-                if (_collected.Remove(obj))
-                {
-                    _onRemoved?.Invoke(obj);
-                    return true;
-                }
-                else
-                {
-                    return false;
-                }
+                _onRemoved?.Invoke(obj);
+                return true;
+            }
+            else
+            {
+                return false;
             }
         }
         /// <inheritdoc/>
@@ -222,41 +170,29 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public IReadOnlyCollection<T> GetAll()
         {
             T[] array;
-            lock (_lock)
-            {
-                array = new T[_collected.Count];
-                _collected.CopyTo(array);
-            }
+            array = new T[_collected.Count];
+            _collected.CopyTo(array);
             return array;
         }
         /// <inheritdoc/>
         public virtual void StartCollecting(ICollectionComparator comparer, IReadOnlyDictionary<string, ICollectionDef> collections)
         {
-            lock (_lock)
-            {
-                _collections = collections;
-                _comparer = comparer;
-                _collected.Clear();
-            }
+            _collections = collections;
+            _comparer = comparer;
+            _collected.Clear();
         }
         /// <inheritdoc/>
         public virtual void StopCollecting()
         {
-            lock (_lock)
-            {
-                _collections = null;
-                _comparer = null;
-                _collected.Clear();
-            }
+            _collections = null;
+            _comparer = null;
+            _collected.Clear();
         }
         /// <inheritdoc/>
-        void ICollector.Clear()
+        public void Clear()
         {
-            lock (_lock)
-            {
-                _onClear?.Invoke(_collected);
-                _collected.Clear();
-            }
+            _onClear?.Invoke(_collected);
+            _collected.Clear();
         }
         /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator()

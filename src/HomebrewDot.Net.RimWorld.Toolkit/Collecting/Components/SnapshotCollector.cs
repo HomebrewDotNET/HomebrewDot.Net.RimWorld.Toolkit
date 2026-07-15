@@ -1,20 +1,23 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Extensions;
 using HomebrewDot.Net.Rimworld.Generic.Models;
 using HomebrewDot.Net.Rimworld.Hooks;
+using HomebrewDot.Net.Rimworld.Hooks.Triggers;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Indexing.Triggers;
 using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
+using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
-using HomebrewDot.Net.Rimworld.Extensions;
 
 namespace HomebrewDot.Net.Rimworld.Collecting.Components
 {
@@ -22,19 +25,19 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
     /// Collector that listens for new snapshots being taken by the <see cref="ISnapshotManager"/> and pushes all items of type <typeparamref name="T"/> from the snapshot to the underlying collector, using the provided function to determine which items to push.
     /// </summary>
     /// <typeparam name="T">The type of items to collect from the snapshot.</typeparam>
-    public class SnapshotCollector<T> : ICollector<T>, ICollector<IIndexed<T>>, IHook<OnSnapshotTakenTrigger> where T : class
+    public class SnapshotCollector<T> : Collector<T>, ICollector<IIndexed<T>>, IHook<OnSnapshotTakenTrigger> where T : class
     {
         // Fields
-        private readonly ICollector<IIndexed<T>> _collector;
+        private readonly ISnapshotManager _snapshotManager;
         private readonly IHookManager _hookmanager;
         private readonly Func<IReadOnlyDatabase, IEnumerable<IIndexed<T>>> _getThingsToPush;
-        private readonly Func<IReadOnlyDatabase, int> _getVersion;
-        private IReadOnlyDatabase _lastSnapshot;
-        private event Action<T> _onCollected;
-        private event Action<T> _onRemoved;
-        private event Action<IReadOnlyCollection<T>> _onClear;
+        private readonly Func<IReadOnlyDatabase, IDatabaseObject> _getDataInfo;
+        private bool _static;
 
         // State
+        private event Action<IIndexed<T>> _onCollected;
+        private event Action<IIndexed<T>> _onRemoved;
+        private event Action<IReadOnlyCollection<IIndexed<T>>> _onClear;
         private int _lastVersion = -1;
 
         // Properties
@@ -42,62 +45,6 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// The version of the last snapshot that was loaded. This is used to determine if a new snapshot has been taken when the <see cref="OnTrigger"/> method is called, and can also be used by external code to track which version of the snapshot the collector is currently using. The version is determined by the function provided in the constructor, which defaults to using the <see cref="IReadOnlyDatabase.Version"/> property of the snapshot.
         /// </summary>
         public int Version => _lastVersion;
-        /// <inheritdoc/>
-        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnCollected
-		{
-			add
-			{
-				_collector.OnCollected += value;
-			}
-
-			remove
-			{
-				_collector.OnCollected -= value;
-			}
-		}
-		/// <inheritdoc/>
-		event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnRemoved
-		{
-			add
-			{
-				_collector.OnRemoved += value;
-			}
-
-			remove
-			{
-				_collector.OnRemoved -= value;
-			}
-		}
-		/// <inheritdoc/>
-		public event Action<T> OnCollected { add { _onCollected += value; } remove { _onCollected -= value; } }
-        /// <inheritdoc/>
-		public event Action<T> OnRemoved { add { _onRemoved += value; } remove { _onRemoved -= value; } }
-		/// <inheritdoc/>
-		public event Action<IReadOnlyCollection<IIndexed<T>>> OnClear
-        {
-            add
-            {
-                _collector.OnClear += value;
-            }
-
-            remove
-            {
-                _collector.OnClear -= value;
-            }
-        }
-		/// <inheritdoc/>
-		event Action<IReadOnlyCollection<T>> ICollector<T>.OnClear
-        {
-            add
-            {
-                _onClear += value;
-            }
-
-            remove
-            {
-                _onClear -= value;
-			}
-        }
 
         private static readonly Dictionary<string, object> CompareContext = new Dictionary<string, object>
         {
@@ -115,263 +62,196 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// <param name="hookmanager">The hook manager used to listen for snapshot events.</param>
         /// <param name="getVersion">Returns the version for tracking changes</param>
         /// <param name="getThingsToPush">A function that determines which items to push from the snapshot. If null, all items of type <typeparamref name="T"/> will be pushed.</param>
-        public SnapshotCollector(ICollector<IIndexed<T>> collector, IHookManager hookmanager, Func<IReadOnlyDatabase, int> getVersion = null, Func<IReadOnlyDatabase, IEnumerable<IIndexed<T>>> getThingsToPush = null)
+        /// <param name="isStatic">If true, the collector will only collect items from the first snapshot it receives and will ignore subsequent snapshots. If false, the collector will continue to collect items from new snapshots as they are taken.</param>
+        public SnapshotCollector(
+            ICollectionDef definition,
+            ISnapshotManager snapshotManager,
+            IHookManager hookmanager,
+            Func<IReadOnlyDatabase, IDatabaseObject> getVersion = null,
+            Func<IReadOnlyDatabase, IEnumerable<IIndexed<T>>> getThingsToPush = null,
+            bool isStatic = false) : base(definition)
         {
-            _collector = Guard.NotNull(collector, nameof(collector));
-            _collector.OnCollected += item =>
-            {
-                _onCollected?.Invoke(item.Value);
-            };
-            _collector.OnRemoved += item =>
-            {
-                _onRemoved?.Invoke(item.Value);
-            };
-            _collector.OnClear += items =>
-            {
-                _onClear?.Invoke(items.Select(i => i.Value).ToList());
-            };
-			_hookmanager = Guard.NotNull(hookmanager, nameof(hookmanager));
+            _hookmanager = Guard.NotNull(hookmanager, nameof(hookmanager));
+            _snapshotManager = Guard.NotNull(snapshotManager, nameof(snapshotManager));
             _getThingsToPush = getThingsToPush ?? GetThingsToPush;
-            _getVersion = getVersion ?? (snapshot => snapshot.Version);
+            _getDataInfo = getVersion ?? (db => db);
+            _static = isStatic;
+        }
+        /// <inheritdoc/>
+        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnCollected
+        {
+            add
+            {
+                _onCollected += value;
+            }
+            remove
+            {
+                _onCollected -= value;
+            }
+        }
+        /// <inheritdoc/>
+        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnRemoved
+        {
+            add
+            {
+                _onRemoved += value;
+            }
+            remove
+            {
+                _onRemoved -= value;
+            }
+        }
+        /// <inheritdoc/>
+        event Action<IReadOnlyCollection<IIndexed<T>>> ICollector<IIndexed<T>>.OnClear
+        {
+            add
+            {
+                _onClear += value;
+            }
+            remove
+            {
+                _onClear -= value;
+            }
         }
 
-        /// <inheritdoc/>
-        public ICollectionDef Definition => _collector.Definition;
-        /// <inheritdoc/>
-        public int Count => _collector.Count;
         /// <inheritdoc/>
         public object Owner => this;
         /// <inheritdoc/>
-        public bool Once => false;
+        public bool Once => _static;
         /// <inheritdoc/>
         public byte Priority => byte.MaxValue;
-
-        /// <inheritdoc/>
-        public bool CanCollect(T obj, IReadOnlyDictionary<string, object> context)
-        {
-            if(_lastSnapshot is null)
-            {
-                return false;
-            }
-
-            var indexed = _lastSnapshot.Find<T>(obj);
-            if (indexed is null)
-            {
-                return false;
-            }
-            return _collector.CanCollect(indexed, context);
-        }
-        /// <inheritdoc/>
-        public bool CanCollect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
-        {
-            return _collector.CanCollect(obj, context);
-        }
-
-        /// <inheritdoc/>
-        public void Clear()
-        {
-            lock (_collector)
-            {
-                _collector.Clear();
-            }
-        }
-        /// <inheritdoc/>
-        public bool Collect(T obj, IReadOnlyDictionary<string, object> context)
-        {
-            lock (_collector)
-            {
-                if (_lastSnapshot is null)
-                {
-                    return false;
-                }
-                var indexed = _lastSnapshot.Find<T>(obj);
-                if (indexed is null)
-                {
-                    return false;
-                }
-                return _collector.Collect(indexed, context);
-            }
-        }
-
-		/// <inheritdoc/>
-		public bool Remove(T obj)
-		{
-			if(_lastSnapshot is null)
-            {
-                return false;
-			}
-            if(obj is null)
-            {
-                return false;
-			}
-            lock(_collector)
-            {
-                var indexed = _lastSnapshot.Find<T>(obj);
-                if (indexed is null)
-                {
-                    return false;
-                }
-                return _collector.Remove(indexed);
-			}
-		}
-		/// <inheritdoc/>
-		public bool Remove(IIndexed<T> obj)
-		{
-			return _collector.Remove(obj);
-		}
-		/// <inheritdoc/>
-		public bool Collect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
-        {
-            lock(_collector)
-            {
-                return _collector.Collect(obj, context);
-            }
-        }
-
-        /// <inheritdoc/>
-        IEnumerable<(IIndexed<T> Obj, bool Collected)> ICollector<IIndexed<T>>.Collect(IEnumerable<IIndexed<T>> objects, IReadOnlyDictionary<string, object> context)
-        {
-            return _collector.Collect(objects, context);
-        }
-        /// <inheritdoc/>
-        public IEnumerable<(T Obj, bool Collected)> Collect(IEnumerable<T> objects, IReadOnlyDictionary<string, object> context)
-        {
-            objects = Guard.NotNull(objects, nameof(objects));
-            return _collector.Collect(objects.Select(x =>
-            {
-                if (_lastSnapshot is null)
-                {
-                    return null;
-                }
-                var indexed = _lastSnapshot.Find<T>(x);
-                return indexed;
-            }).Where(indexed => indexed != null), context)
-                .Select(result => (result.Obj.Value, result.Collected));
-        }
-
-        /// <inheritdoc/>
-        public bool Contains(T obj)
-        {
-            lock(_collector)
-            {
-                if (_lastSnapshot is null)
-                {
-                    return false;
-                }
-                var indexed = _lastSnapshot.Find<T>(obj);
-                if (indexed is null)
-                {
-                    return false;
-                }
-                return _collector.Contains(indexed);
-            }
-        }
-        /// <inheritdoc/>
-        public bool Contains(IIndexed<T> obj)
-        {
-            return _collector.Contains(obj);
-        }
-
-        /// <inheritdoc/>
-        public IReadOnlyCollection<T> GetAll()
-        {
-            lock (_collector)
-            {
-                return _collector.GetAll().Select(indexed => indexed.Value).ToList();
-            }
-        }
-        /// <inheritdoc/>
-        public IEnumerator GetEnumerator()
-        {
-            return GetAll().GetEnumerator();
-        }
 
         /// <inheritdoc/>
         public bool OnTrigger(OnSnapshotTakenTrigger arg)
         {
             var snapshot = Guard.NotNull(arg?.Snapshot, nameof(arg.Snapshot));
-            var newVersion = _getVersion(snapshot);
-            if(newVersion == _lastVersion)
+            var newData = _getDataInfo(snapshot);
+            if (newData is null)
             {
-                Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newVersion}, but version {_lastVersion} has already been processed, skipping");
+                if(Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger, but the provided getDataInfo function returned null for snapshot {snapshot.Version}, skipping");
                 return false;
             }
-            _lastVersion = newVersion;
-            LoadFrom(snapshot);
+            if (newData.Version == _lastVersion)
+            {
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but version {_lastVersion} has already been processed, skipping");
+                return false;
+            }
+
+            var context = new WorkContext();
+            if (Once || arg.IsForced)
+            {
+                context.NoInterval();
+                context.snapshot = snapshot;
+                context.data = newData;
+                LoadFrom(context).ExecuteEnumerable();
+            }
+            else
+            {
+                context.snapshot = snapshot;
+                context.data = newData;
+                var work = RaiseCooperativeWork.From<WorkContext>(() => LoadFrom(context).GetEnumerator(), context);
+                bool accepted = _hookmanager.Trigger(work);
+                if (!accepted)
+                {
+                    context.NoInterval();
+                    LoadFrom(context).ExecuteEnumerable();
+                }
+            }
+
             return true;
         }
         /// <summary>
         /// Pushes all items of type <typeparamref name="T"/> from the provided snapshot to the underlying collector, using the provided function to determine which items to push. This is called automatically when a new snapshot is taken, but can also be called manually to load from an existing snapshot. If the provided snapshot is null, this method will do nothing.
         /// </summary>
         /// <param name="snapshot">The snapshot from which to load items.</param>
-        public void LoadFrom(IReadOnlyDatabase snapshot)
+        private IEnumerable LoadFrom(WorkContext workContext)
         {
-            snapshot = Guard.NotNull(snapshot, nameof(snapshot));
-            _lastSnapshot = snapshot;
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var thingsToPush = _getThingsToPush(snapshot);
-            if(thingsToPush is null)
-            {
-                return;
-            }
+            var snapshot = Guard.NotNull(workContext?.snapshot, nameof(workContext.snapshot));
+            var data = workContext?.data;
+            if (data is null) yield break;
+            workContext.CheckInterval = 8;
             var counter = 0;
             var total = 0;
-            lock (_collector)
+            var fromChanges = data.TrackingChanges && data.Version - 1 == _lastVersion && data.Version > 0;
+            if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loading {_lastVersion} => {data.Version} (fromChanges={fromChanges})");
+            _lastVersion = data.Version;
+            var context = CompareContext;
+            if (fromChanges)
             {
-                Clear();
-                var context = CompareContext;
-                foreach(var (thing, collected) in _collector.Collect(thingsToPush, context))
+                var changedItems = data.Changed?.OfType<IIndexed<T>>() ?? Array.Empty<IIndexed<T>>();
+                var deletedItems = data.Deleted?.OfType<IIndexed<T>>() ?? Array.Empty<IIndexed<T>>();
+                var deleted = 0;
+                foreach (var (thing, collected) in _comparer.Matches(Definition, changedItems, _collections, context))
                 {
-                    if(collected)
+                    workContext.LogWork();
+                    if (HandleMatch(thing.Value, collected))
                     {
                         counter++;
                     }
                     total++;
+                    if (workContext.WaitForNextTick)
+                    {
+                        yield return null;
+                    }
                 }
+
+                foreach (var removed in deletedItems)
+                {
+                    workContext.LogWork();
+                    if (Remove(removed.Value))
+                    {
+                        _onRemoved?.Invoke(removed);
+                        deleted++;
+                    }
+                    if (workContext.WaitForNextTick)
+                    {
+                        yield return null;
+                    }
+                }
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} changed items and {deleted} deleted items from snapshot {_lastVersion} changes");
             }
-            Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} items from snapshot {_lastVersion} in {stopwatch.ElapsedMilliseconds}ms");
+            else
+            {
+                Clear();
+                var thingsToPush = _getThingsToPush(snapshot);
+                if (thingsToPush is null)
+                {
+                    yield break;
+                }
+                foreach (var (thing, collected) in _comparer.Matches(Definition, thingsToPush, _collections, context))
+                {
+                    workContext.LogWork();
+                    if (HandleMatch(thing.Value, collected))
+                    {
+                        counter++;
+                    }
+                    total++;
+                    if (workContext.WaitForNextTick)
+                    {
+                        yield return null;
+                    }
+                }
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} items from snapshot {_lastVersion}");
+            }
         }
 
         /// <inheritdoc/>
-        public void StartCollecting(ICollectionComparator comparer, IReadOnlyDictionary<string, ICollectionDef> collections)
+        public override void StartCollecting(ICollectionComparator comparer, IReadOnlyDictionary<string, ICollectionDef> collections)
         {
-            lock (_collector)
-            {
-                _collector.StartCollecting(comparer, collections);
-                _hookmanager.RegisterHook(this);
-            }
-            IReadOnlyDatabase currentSnapshot = null;
-            try
-            {
-                currentSnapshot = Toolkit.Indexing.Manager?.Database;
-            }
-            catch (Exception ex)
-            {
-                Toolkit.Helpers.Logging.LogWarning($"Unable to load current snapshot during collector startup: {ex.Message}");
-            }
+            base.StartCollecting(comparer, collections);
+            _hookmanager.RegisterHook(this);
+            var currentSnapshot = _snapshotManager.Database;
             if (currentSnapshot != null)
             {
-                LoadFrom(currentSnapshot);
+                OnTrigger(new OnSnapshotTakenTrigger(currentSnapshot, true));
             }
         }
         /// <inheritdoc/>
-        public void StopCollecting()
+        public override void StopCollecting()
         {
-            lock (_collector)
-            {
-                _hookmanager.UnregisterHook(this);
-                _collector.StopCollecting();
-            }
-        }
-        /// <inheritdoc/>
-        IReadOnlyCollection<IIndexed<T>> ICollector<IIndexed<T>>.GetAll()
-        {
-            return _collector.GetAll();
-        }
-        /// <inheritdoc/>
-        IReadOnlyCollection<object> ICollector.GetAll()
-        {
-            return GetAll();
+            base.StopCollecting();
+
+            _hookmanager.UnregisterHook(this);
         }
 
         /// <inheritdoc/>
@@ -386,6 +266,46 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 }
             }
         }
+        /// <inheritdoc/>
+        bool ICollector<IIndexed<T>>.Collect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
+        {
+            return Collect(obj.Value, context);
+        }
+        /// <inheritdoc/>
+        IEnumerable<(IIndexed<T> Obj, bool Collected)> ICollector<IIndexed<T>>.Collect(IEnumerable<IIndexed<T>> objects, IReadOnlyDictionary<string, object> context)
+        {
+            foreach (var obj in objects)
+            {
+                yield return (obj, Collect(obj.Value, context));
+            }
+        }
+        /// <inheritdoc/>
+        bool ICollector<IIndexed<T>>.Remove(IIndexed<T> obj)
+        {
+            return Remove(obj.Value);
+        }
+        /// <inheritdoc/>
+        IReadOnlyCollection<IIndexed<T>> ICollector<IIndexed<T>>.GetAll()
+        {
+            var all = GetAll();
+            return _snapshotManager.DatabaseSnapshot.Find((IEnumerable<T>)_collected).ToArray();
+        }
+        /// <inheritdoc/>
+        bool ICollector<IIndexed<T>>.Contains(IIndexed<T> obj)
+        {
+            return Contains(obj.Value);
+        }
+        /// <inheritdoc/>
+        bool ICollector<IIndexed<T>>.CanCollect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
+        {
+            return CanCollect(obj.Value, context);
+        }
+
+        private class WorkContext : CooperativeWorkContext
+        {
+            internal IReadOnlyDatabase snapshot;
+            internal IDatabaseObject data;
+        }
     }
 
     /// <summary>
@@ -399,12 +319,38 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// <typeparam name="T">The type of items to collect from the snapshot.</typeparam>
         /// <typeparam name="TReturn">The type of the collection builder.</typeparam>
         /// <param name="builder">The collection builder.</param>
-        /// <param name="getVersion">A function to get the version of the snapshot.</param>
+        /// <param name="getDataInfo">A function to get the data info of the snapshot.</param>
         /// <param name="getThingsToPush">A function to get the items to push from the snapshot.</param>
+        /// <param name="isStatic">If true, the collector will only collect items from the first snapshot it receives and will ignore subsequent snapshots. If false, the collector will continue to collect items from new snapshots as they are taken.</param>
         /// <returns>The collection builder.</returns>
-        public static TReturn CollectFromSnapshot<TReturn, T>(this ICollectionBuilder<TReturn> builder, Func<IReadOnlyDatabase, int> getVersion = null, Func<IReadOnlyDatabase, IEnumerable<IIndexed<T>>> getThingsToPush = null)
+        public static TReturn CollectFromSnapshot<TReturn, T>(this ICollectionBuilder<TReturn> builder, Func<IReadOnlyDatabase, IDatabaseObject> getDataInfo = null, Func<IReadOnlyDatabase, IEnumerable<IIndexed<T>>> getThingsToPush = null, bool isStatic = false)
+        where TReturn : ICollectionBuilder<TReturn>
+        where T : class
+        => Guard.NotNull(builder, nameof(builder)).CollectWith(collectionDef => new SnapshotCollector<T>(collectionDef, Toolkit.Indexing.Manager, Toolkit.Hooks.Manager, getDataInfo, getThingsToPush, isStatic));
+        /// <summary>
+        /// Collects items from the current snapshot of the database, and continues to collect from new snapshots as they are taken. The provided function is used to determine which items to collect from each snapshot. If the function is null, all items of type <typeparamref name="T"/> will be collected from each snapshot.
+        /// </summary>
+        /// <typeparam name="T">The type of items to collect from the snapshot.</typeparam>
+        /// <typeparam name="TReturn">The type of the collection builder.</typeparam>
+        /// <param name="builder">The collection builder.</param>
+        /// <param name="tableName">The name of the table to get the data info of the snapshot.</param>
+        /// <param name="isStatic">If true, the collector will only collect items from the first snapshot it receives and will ignore subsequent snapshots. If false, the collector will continue to collect items from new snapshots as they are taken.</param>
+        /// <returns>The collection builder.</returns>
+        public static TReturn CollectFromSnapshot<TReturn, T>(this ICollectionBuilder<TReturn> builder, string tableName, bool isStatic = false)
             where TReturn : ICollectionBuilder<TReturn>
             where T : class
-            => Guard.NotNull(builder, nameof(builder)).CollectWith(collectionDef => new SnapshotCollector<T>(new Collector<IIndexed<T>>(collectionDef), Toolkit.Hooks.Manager, getVersion, getThingsToPush));
+        {
+            Guard.NotNull(builder, nameof(builder));
+            Guard.NotNullOrEmpty(tableName, nameof(tableName));
+            return builder.CollectWith(collectionDef => new SnapshotCollector<T>(collectionDef, Toolkit.Indexing.Manager, Toolkit.Hooks.Manager, snapshot => snapshot.GetTable<T>(tableName), snapshot =>
+            {
+                var table = snapshot.GetTable<T>(tableName);
+                if (table is null)
+                {
+                    return Array.Empty<IIndexed<T>>();
+                }
+                return table.Enumerate<IIndexed<T>>();
+            }, isStatic));
+        }
     }
 }

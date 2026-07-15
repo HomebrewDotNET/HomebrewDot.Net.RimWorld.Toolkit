@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Generic;
 
 namespace HomebrewDot.Net.Rimworld.Referencing
 {
     /// <summary>
     /// Represents a reference to an object or value that can be resolved at a later time using its type and value.
     /// </summary>
-    public interface IReference
+    public interface IReference : ICacheable
     {
         /// <summary>
         /// Gives an indication about the type of reference this is, which can be used to determine how to resolve it. 

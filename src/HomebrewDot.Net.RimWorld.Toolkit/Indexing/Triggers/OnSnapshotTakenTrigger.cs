@@ -14,12 +14,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Triggers
         /// The snapshot that was taken.
         /// </summary>
         public IReadOnlyDatabase Snapshot { get; }
+        /// <summary>
+        /// If the current snapshot is a forced snapshot.
+        /// </summary>
+        public bool IsForced { get; }
 
         /// <inheritdoc cref="OnSnapshotTakenTrigger"/>
         /// <param name="snapshot"><see cref="Snapshot"/></param>
-        public OnSnapshotTakenTrigger(IReadOnlyDatabase snapshot)
+        public OnSnapshotTakenTrigger(IReadOnlyDatabase snapshot, bool isForced)
         {
             Snapshot = Toolkit.Helpers.Guard.NotNull(snapshot, nameof(snapshot));
+            IsForced = isForced;
         }
     }
 }

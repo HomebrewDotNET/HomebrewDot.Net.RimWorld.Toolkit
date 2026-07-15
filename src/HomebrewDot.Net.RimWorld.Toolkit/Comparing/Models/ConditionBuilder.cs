@@ -54,7 +54,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 {
                     return _conditions;
                 }
-                else if (_state == 4 || _state == 5)
+                else if (_state == 4 || _state == 5 || _state == 10)
                 {
                     FinalizeCondition();
                     return _conditions;
@@ -105,9 +105,9 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         {
             get
             {
-                if (_state != 3)
+                if (_state != 4)
                     throw new InvalidOperationException("Cannot set right operand for condition: left operand not set, or operator not set, or right operand already set.");
-                _state = 4;
+                _state = 5;
                 return this;
             }
         }
@@ -117,11 +117,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         {
             get
             {
-                if(_state < 4)
+                if(!(_state == 4 || _state == 5 || _state == 10))
                     throw new InvalidOperationException("Cannot chain condition with AND: condition being built is not complete (left operand, operator, or right operand not set).");
                 _isOr = false;
-                if(_state == 4 || _state == 5)
-                    FinalizeCondition();
+                FinalizeCondition();
                 _state = 0;
                 return this;
             }
@@ -132,11 +131,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         {
             get
             {
-                if (_state < 4)
-                    throw new InvalidOperationException("Cannot chain condition with AND: condition being built is not complete (left operand, operator, or right operand not set).");
+                if(!(_state == 4 || _state == 5 || _state == 10))
+                    throw new InvalidOperationException("Cannot chain condition with OR: condition being built is not complete (left operand, operator, or right operand not set).");
                 _isOr = true;
-                if (_state == 4 || _state == 5)
-                    FinalizeCondition();
+                FinalizeCondition();
                 _state = 0;
                 return this;
             }
@@ -160,7 +158,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 var nestedBuilder = new ConditionBuilder();
                 _ = groupBuilder(nestedBuilder);
                 _groupConditions = nestedBuilder.Conditions;
-                _state = 5;
+                _state = 10;
             }
             else
             {
@@ -175,7 +173,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             if (_state == 3)
             {
                 _operator = @operator;
-                _state = 3;
+                _state = 4;
             }
             else
             {
@@ -190,7 +188,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             if (_state == 3)
             {
                 _operator = @operator;
-                _state = 3;
+                _state = 4;
             }
             else
             {
@@ -217,7 +215,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         TReturn IConditionOperandBuilder<TReturn>.Reference(IReference reference)
         {
             reference = Guard.NotNull(reference, nameof(reference));
-            if (_state == 4)
+            if (_state == 5)
             {
                 _rightOperand = reference;
             }
@@ -230,7 +228,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
 
         private void FinalizeCondition()
         {
-            if (_state < 4)
+            if (_state != 4 && _state != 5 && _state != 10)
                 throw new InvalidOperationException("Cannot finalize condition: left operand, operator, or right operand not set.");
             _conditions.Add(new ConditionDef
             {
@@ -239,7 +237,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 To = _rightOperand,
                 IsOr = _isOr,
                 Conditions = _groupConditions?.ToArray() ?? Array.Empty<ConditionDef>(),
-                ConditionGroupIsOr = _state == 5 ? _isOr : false
+                ConditionGroupIsOr = _state == 10 ? _isOr : false
             });
             _state = 0;
             _leftOperand = null;
@@ -268,5 +266,21 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
 
         /// <inheritdoc />
         public override IConditionBuilder Return => this;
+
+        /// <summary>
+        /// Builds a <see cref="ConditionDef"/> using the provided build action. The build action is used to configure the condition using the fluent API provided by <see cref="IConditionBuilder"/>.
+        /// </summary>
+        /// <param name="buildAction">The action used to configure the condition.</param>
+        /// <returns>The built <see cref="ConditionDef"/>.</returns>
+        public static ConditionDef Build(Action<IConditionBuilder> buildAction)
+        {
+            buildAction = Guard.NotNull(buildAction, nameof(buildAction));
+            var builder = new ConditionBuilder();
+            buildAction(builder);
+            return builder.Conditions.Count == 1 ? builder.Conditions[0] : new ConditionDef
+            {
+                Conditions = builder.Conditions.ToArray()
+            };
+        }
     }
 }

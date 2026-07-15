@@ -9,14 +9,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing
     /// <summary>
     /// Database containing tables with indexed data.
     /// </summary>
-    public interface IReadOnlyDatabase
+    public interface IReadOnlyDatabase : IDatabaseObject
     {
-        /// <summary>
-        /// The current version of the database.
-        /// Gives an indication if the state of the database has changed since the last time it was accessed, allowing for caching of query results and other optimizations based on the stability of the database state.
-        /// </summary>
-        int Version { get; }
-
         /// <summary>
         /// Gets all tables in the database.
         /// </summary>
@@ -45,6 +39,20 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <returns>An indexed reference to the data if found; otherwise, null.</returns>
         IIndexed<T> Find<T>(T data) where T : class;
         /// <summary>
+        /// Tries to find the specified data in the database and returns an indexed reference to it if found.
+        /// </summary>
+        /// <typeparam name="T">The type to search for</typeparam>
+        /// <param name="data">The instance of the data to find.</param>
+        /// <returns>An enumerable of indexed references to the data if found; otherwise, an empty enumerable.</returns>
+        IEnumerable<IIndexed<T>> Find<T>(IEnumerable<T> data) where T : class;
+        /// <summary>
+        /// Tries to find the specified data in the database and returns an indexed reference to it if found.
+        /// </summary>
+        /// <typeparam name="T">The type to search for</typeparam>
+        /// <param name="data">The instance of the data to find.</param>
+        /// <returns>An enumerable of indexed references to the data if found; otherwise, an empty enumerable.</returns>
+        IEnumerable<IIndexed<T>> Find<T>(IReadOnlyList<T> data) where T : class;
+        /// <summary>
         /// Queries the database for data of type <typeparamref name="T"/> based on the specified search criteria.
         /// </summary>
         /// <typeparam name="T">The type of data to query.</typeparam>
@@ -54,6 +62,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <param name="tableName">Optional. The name of the table to query, using dot notation for sub-tables, e.g., "ParentTable.SubTable". If null, all tables will be queried.</param>
         /// <param name="indexName">Optional. The name of the index to use. If null, the default index will be used.</param>
         /// <returns>A read-only collection of data matching the search criteria.</returns>
-        IReadOnlyCollection<IIndexed<T>> Query<T, TSearch>(string property, TSearch search, string tableName = null, string indexName = null) where T : class;
+        IReadOnlyCollection<T> Query<T, TSearch>(string property, TSearch search, string tableName = null, string indexName = null) where T : class;
     }
 }
