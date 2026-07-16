@@ -18,13 +18,6 @@ namespace HomebrewDot.Net.Rimworld
             var listing = new Listing_Standard();
             listing.Begin(rect);
 
-            var dynamicGathering = Toolkit.Settings.DynamicGatheringEnabled;
-            listing.CheckboxLabeled(
-                "Dynamic Gathering",
-                ref dynamicGathering,
-                "Spread data gathering over ticks between snapshots to reduce spikes. Experimental.");
-            Toolkit.Settings.DynamicGatheringEnabled = dynamicGathering;
-
             var slowGathering = Toolkit.Settings.SlowGatheringEnabled;
             listing.CheckboxLabeled(
                 "Slow Gathering",
