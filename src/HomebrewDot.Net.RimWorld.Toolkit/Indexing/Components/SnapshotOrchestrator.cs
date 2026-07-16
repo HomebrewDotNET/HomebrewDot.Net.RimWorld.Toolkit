@@ -134,12 +134,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 								_pending = null;
 								_ = _snapshotManager.Snapshot().Build();
 							}
-                            else
-                            {
-                                // Finished so notify manager
-                                _pending = null;
-                                _ = _snapshotManager.Snapshot();
-							}
                         }
                         else
                         {

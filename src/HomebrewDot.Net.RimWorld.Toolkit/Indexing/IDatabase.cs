@@ -72,6 +72,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <summary>
         /// Tries to find the specified data in the database and returns an indexed reference to it if found.
         /// </summary>
+        /// <typeparam name="T">The type to search for</typeparam>
+        /// <param name="data">The instance of the data to find.</param>
+        /// <returns>An indexed reference to the data if found; otherwise, null.</returns>
+        IIndexed<T> Find(T data);
+        /// <summary>
+        /// Tries to find the specified data in the database and returns an indexed reference to it if found.
+        /// </summary>
         /// <param name="data">The instance of the data to find.</param>
         /// <returns>An enumerable of indexed references to the data if found; otherwise, an empty enumerable.</returns>
         IEnumerable<IIndexed<T>> Find(IEnumerable<T> data);

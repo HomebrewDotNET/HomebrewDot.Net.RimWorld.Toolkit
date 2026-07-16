@@ -107,49 +107,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
         /// <inheritdoc/>
         public IIndexed<T> Find<T>(T data) where T : class
-        {
-            foreach (var table in GetTables<T>())
-            {
-                if (table.TryFind(data, out var item))
-                {
-                    return item;
-                }
-            }
-            return null;
-        }
+            => AsTyped<T>().Find(data);
         /// <inheritdoc/>
         public IEnumerable<IIndexed<T>> Find<T>(IEnumerable<T> data) where T : class
-        {
-            var tables = GetDbTables<T>();
-            foreach (var item in data)
-            {
-                for (int i = 0; i < tables.Count; i++)
-                {
-                    var table = tables[i];
-                    if (table.TryGet(item, out var indexed))
-                    {
-                        yield return indexed;
-                    }
-                }
-            }
-        }
+            => AsTyped<T>().Find(data);
         /// <inheritdoc/>
         public IEnumerable<IIndexed<T>> Find<T>(IReadOnlyList<T> data) where T : class
-        {
-            var tables = GetDbTables<T>();
-            for (int j = 0; j < data.Count; j++)
-            {
-                for (int i = 0; i < tables.Count; i++)
-                {
-                    var table = tables[i];
-                    var item = data[j];
-                    if (table.TryGet(item, out var indexed))
-                    {
-                        yield return indexed;
-                    }
-                }
-            }
-        }
+        => AsTyped<T>().Find(data);
         /// <inheritdoc/>
         public bool Upsert<T>(T item, ref IndexMetadata metadata) where T : class
             => AsTyped<T>().Upsert(item, ref metadata);
@@ -740,7 +704,20 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _tables = _database.GetDbTables<T>();
                 _listeners = _database._listeners.OfType<IDatabaseListener<T>>().ToArray();
             }
-
+            
+            /// <inheritdoc/>
+            public IIndexed<T> Find(T data)
+            {
+                for (int i = 0; i < _tables.Count; i++)
+                {
+                    var table = _tables[i];
+                    if (table.TryGet(data, out ITrackingIndexed<T> indexed))
+                    {
+                        return indexed;
+                    }
+                }
+                return null;
+            }
             /// <inheritdoc/>
             public IEnumerable<IIndexed<T>> Find(IEnumerable<T> data)
             {
@@ -910,8 +887,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                         catch { Logging.LogError($"Failed to execute {handler}{nameof(IDatabaseListener<T>.OnDeleted)} listener"); }
                     }
                     _database.HasChanges = true;
+                    metadata.Dispose();
                     return true;
                 }
+                metadata.Dispose();
                 return false;
             }
         }
@@ -1123,8 +1102,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     return TryDelete(tableItem, metadata);
                 }
-                
-                _data[tableItem.Value] = tableItem;
+
+                bool added = false;
+                if (!_data.ContainsKey(tableItem.Value))
+                {
+                    _data[tableItem.Value] = tableItem;
+                    added = true;
+                }
                 _listeners ??= _listenersSet.ToArray();
                 for (int i = 0; i < _listeners.Length; i++)
                 {
@@ -1136,31 +1120,43 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     catch { Logging.LogError($"Failed to execute {handler}{nameof(ITableListener<T>.OnDeleted)} listener"); }
                 }
 
-                if(_cachedSnapshot != null)
+                bool changed = added || tableItem.HasChanges || tableItem.IsInsert;
+                if (changed)
+                {
+                    _hasChanges = true;
+                }
+
+                if (changed && _cachedSnapshot != null)
                 {
                     var action = Toolkit.Pool<TableAction>.Rent();
                     action.LogType = LogType.Upsert;
                     action.Entity = (ITrackingIndexed<T>)tableItem;
                     _intentLog.Enqueue(action);
                 }
-                _hasChanges = true;
+                bool subChanged = false;
                 if (_subTables.Count > 0)
                 {
                     foreach (var subTable in _subTables)
                     {
-                        _ = subTable.TryAddOrUpdate(tableItem, metadata);
+                        if (subTable.TryAddOrUpdate(tableItem, metadata))
+                        {
+                            subChanged = true;
+                        }
                     }
                 }
-                for (int i = 0; i < _listeners.Length; i++)
+                if (changed)
                 {
-                    var handler = _listeners[i];
-                    try
+                    for (int i = 0; i < _listeners.Length; i++)
                     {
-                        handler.OnUpserted(tableItem, ref metadata, this);
+                        var handler = _listeners[i];
+                        try
+                        {
+                            handler.OnUpserted(tableItem, ref metadata, this);
+                        }
+                        catch { Logging.LogError($"Failed to execute {handler}{nameof(ITableListener<T>.OnDeleted)} listener"); }
                     }
-                    catch { Logging.LogError($"Failed to execute {handler}{nameof(ITableListener<T>.OnDeleted)} listener"); }
                 }
-                return true;
+                return changed || subChanged;
             }
             return false;
         }

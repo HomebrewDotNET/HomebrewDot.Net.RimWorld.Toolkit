@@ -230,7 +230,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             public bool Push(T data, ref IndexMetadata metadata)
             {
                 data = Guard.NotNull(data, nameof(data));
-                var existing = _manager._database.Find<T>(data);
+                var existing = _typedDb.Find(data);
 
                 if(!_manager._queueEnabled) return Push(data, existing, ref metadata);
 
@@ -264,6 +264,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 if (!HasChanged(data, existing, ref metadata) && existing is not null)
                 {
+                    // Release rejected metadata back to the pools
+                    metadata.Dispose();
                     return false;
                 }
                 return _typedDb.Update(data, existing, ref metadata);

@@ -63,16 +63,15 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             base.GameComponentTick();
             var budget = new TimeSpan(1000L);
             ExecuteWork(budget);
+            if (_currentCycle.Count == 0)
+            {
+                (_currentCycle, _nextCycle) = (_nextCycle, _currentCycle);
+            }
         }
 
         private void ExecuteWork(TimeSpan budget)
         {
             var stopwatch = Stopwatch.StartNew();
-            if (_currentCycle.Count == 0)
-            {
-                (_currentCycle, _nextCycle) = (_nextCycle, _currentCycle);
-            }
-
             bool overbudget = false;
             while(_finalize.TryDequeue(out var completed))
             {

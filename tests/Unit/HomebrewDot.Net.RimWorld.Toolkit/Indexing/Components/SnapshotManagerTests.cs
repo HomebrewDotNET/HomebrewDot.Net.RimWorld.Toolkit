@@ -73,7 +73,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             var existing = new Mock<IIndexed<string>>();
             existing.Setup(e => e.Value).Returns("hello");
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
             _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
                         .Returns(true);
 
@@ -94,7 +94,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var snapshottedExisting = new Mock<IIndexed<string>>();
             existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
 
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
             _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
             _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
                         .Returns(true);
@@ -119,7 +119,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var snapshottedExisting = new Mock<IIndexed<string>>();
 
             // Setup: item exists in database
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
 
             // Setup: snapshot has the item for old-data lookup
             _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
@@ -161,7 +161,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var existingMetadata = new Dictionary<string, object> { ["k1"] = "old" };
             existing.Setup(e => e.Metadata).Returns(existingMetadata);
 
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
             _mockTypedDb.Setup(d => d.Update("hello", existing.Object, ref It.Ref<IndexMetadata>.IsAny))
                         .Returns(true);
 
@@ -356,7 +356,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
 
             // Setup: item exists in database
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
 
             // Setup: snapshot has the item for old-data lookup in Changed()
             _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
@@ -381,7 +381,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var snapshottedExisting = new Mock<IIndexed<string>>();
             existing.Setup(x => x.Snapshot).Returns(snapshottedExisting.Object);
 
-            _mockDatabase.Setup(d => d.Find("hello")).Returns(existing.Object);
+            _mockTypedDb.Setup(d => d.Find("hello")).Returns(existing.Object);
             _mockSnapshot.Setup(s => s.Find("hello")).Returns(snapshottedExisting.Object);
 
             var tracker1 = new Mock<IChangeTracker<string>>();
