@@ -8,17 +8,18 @@ using HomebrewDot.Net.Rimworld.Comparing;
 using HomebrewDot.Net.Rimworld.Indexing;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
 using RimWorld;
+using UnityEngine.Windows;
 using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
-using Expression = System.Linq.Expressions.Expression;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
+using Expression = System.Linq.Expressions.Expression;
 
 namespace HomebrewDot.Net.Rimworld.Referencing.Components
 {
     /// <summary>
     /// Reference type that resolves a reference to a CompProperties or ThingComp from a given input, which can be either a <see cref="Def"/> or a <see cref="Thing"/>. The value is expected to be either the name of the comp type to resolve, or the full type name of the comp type, optionally followed by a pipe character and a path to traverse on the resolved comp. The reference will first attempt to resolve the comp from the def if the input is a def, and if that fails, it will attempt to resolve it from the thing if the input is a thing. If both attempts fail, it will return null.
     /// </summary>
-    public class CompReferenceType : IReferenceType
+    public class CompReferenceType : IReferenceTypeCompileable
     {
         // Statics
         /// <summary>
@@ -140,6 +141,138 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             }
 
             return returnObject;
+        }
+        /// <inheritdoc/>
+        public string GetCacheKey(object input, object value, IReadOnlyDictionary<string, object> context, out Type returnType)
+        {
+            returnType = typeof(object);
+            if (input is null) return null;
+            if (value is null) return null;
+            if (!(input is IIndexed<Def> || input is Def || input is IIndexed<Thing> || input is Thing)) return null;
+            if (!(value is string || value is Type)) return null;
+
+            var compType = TryGetCompType(value, out var properties);
+            if(compType == null) return null;
+            if (properties is not null)
+            {
+                returnType = Toolkit.Helpers.Traversing.TryWalkPath(compType, properties);
+            }
+            else
+            {
+                returnType = compType;
+            }
+
+            return $"{input.GetType()}:{value.GetType()}";
+        }
+        /// <inheritdoc/>
+        public Expression Compile(ParameterExpression inputParameter, object input, ParameterExpression contextParameter, object value, IReadOnlyDictionary<string, object> context)
+        {
+            if (input is null) return null;
+            if (value is null) return null;
+            var compType = TryGetCompType(value, out var properties);
+            if (compType == null) return null;
+            Type returnType;
+            if (properties is not null)
+            {
+                returnType = Toolkit.Helpers.Traversing.TryWalkPath(compType, properties);
+            }
+            else
+            {
+                returnType = compType;
+            }
+
+            var inputType = input.GetType();
+            Expression getInput = inputParameter;
+            bool inputIsDef = false;
+            if(input is Def)
+            {
+                inputIsDef = true;
+                getInput = Expression.Convert(getInput, typeof(Def));
+            }
+            else if(input is IIndexed<Def> indexedDef)
+            {
+                inputIsDef = true;
+                getInput = Expression.Property(Expression.Convert(inputParameter, typeof(IIndexed<Def>)), nameof(indexedDef.Value));
+            }
+            else if (input is Thing)
+            {
+                getInput = Expression.Convert(getInput, typeof(Thing));
+            }
+            else if (input is IIndexed<Thing> thing)
+            {
+                getInput = Expression.Property(Expression.Convert(inputParameter, typeof(IIndexed<Thing>)), nameof(indexedDef.Value));
+            }
+
+            Expression getComp;
+            if (inputIsDef)
+            {
+                var isCompProperties = typeof(CompProperties).IsAssignableFrom(compType);
+                if (!isCompProperties)
+                {
+                    if (IsVerboseEnabled) LogVerbose($"CompReferenceType: Type '{compType.FullName}' is not a CompProperties type. Required when input object is Def");
+                    return null;
+                }
+
+                var thingDefVariable = Expression.Variable(typeof(ThingDef));
+                var compPropertiesVariable = Expression.Variable(compType);
+                var assignThingDef = Expression.Assign(thingDefVariable, Expression.Convert(getInput, typeof(ThingDef)));
+
+                var getMethod = ToolkitConstants.Reflections.GetCompProperties.GetGenericMethodDefinition().MakeGenericMethod(compType);
+                getComp = Expression.Call(thingDefVariable, getMethod);
+
+                var ifThingDefNotNullGetElseDefault = Expression.IfThen(Expression.NotEqual(thingDefVariable, Expression.Default(typeof(ThingDef))),
+                                                                           Expression.Assign(compPropertiesVariable, getComp));
+                getComp = Expression.Block([thingDefVariable, compPropertiesVariable], assignThingDef, ifThingDefNotNullGetElseDefault, compPropertiesVariable);
+            }
+            else
+            {
+                var isThingComp = typeof(ThingComp).IsAssignableFrom(compType);
+                if (!isThingComp)
+                {
+                    if (IsVerboseEnabled) LogVerbose($"CompReferenceType: Type '{compType.FullName}' is not a ThingComp type. Required when input object is Thing");
+                    return null;
+                }
+
+                var getMethod = ToolkitConstants.Reflections.TryGetComp.GetGenericMethodDefinition().MakeGenericMethod(compType);
+                getComp = Expression.Call(getInput, getMethod);
+            }
+
+            if(properties is null)
+            {
+                return getComp;
+            }
+
+            return Toolkit.Helpers.Traversing.GenerateFullGetter(getComp, compType, properties);
+        }
+
+        private Type TryGetCompType(object value, out string properties)
+        {
+            Type compType = value as Type;
+            properties = null;
+            if (compType is null)
+            {
+                var reference = value?.ToString();
+                if (string.IsNullOrWhiteSpace(reference)) return null;
+
+                if (reference.Contains(PathSeparator))
+                {
+                    var split = reference.Split(PathSeparator);
+                    var compTypeName = split[0];
+                    compType = Toolkit.Cache<string, Type>.GetOrSet(compTypeName, () => Toolkit.Helpers.TryGetType(compTypeName), true);
+                    properties = split[1];
+                }
+                else
+                {
+                    compType = Toolkit.Cache<string, Type>.GetOrSet(reference, () => Toolkit.Helpers.TryGetType(reference), true);
+                }
+            }
+
+            if (compType is null)
+            {
+                if (IsVerboseEnabled) LogVerbose($"CompReferenceType: Could not find comp type with name '{value}'");
+                return null;
+            }
+            return compType;
         }
     }
 
