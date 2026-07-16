@@ -1624,6 +1624,43 @@ namespace HomebrewDot.Net.Rimworld
             }
 
             /// <summary>
+            /// Extracts all generic type arguments from all interface defintions of <paramref name="genericType"/> on <paramref name="objectType"/>.
+            /// </summary>
+            /// <param name="objectType">The type to scan the interfaces for</param>
+            /// <param name="genericType">The generic type to get the single generic arguments for</param>
+            /// <returns>An enumerator returning all generic arguments from all matching interfaces</returns>
+            /// <exception cref="NotSupportedException"></exception>
+            public static IEnumerable<Type> GetGenericTypes(Type objectType, Type genericType)
+            {
+                objectType = Guard.NotNull(objectType, nameof(objectType));
+                genericType = Guard.NotNull(genericType, nameof(genericType));
+                Type genericTypeDefinition;
+                if (genericType.IsGenericType)
+                {
+                    genericTypeDefinition = genericType.GetGenericTypeDefinition();
+                }
+                else if(genericType.IsGenericTypeDefinition){
+                    genericTypeDefinition = genericType;
+                }
+                else
+                {
+                    throw new NotSupportedException($"Type {genericType} is not a generic type");
+                }
+                var genericArguments = genericTypeDefinition.GetGenericArguments();
+                if (genericArguments.Length != 1) throw new NotSupportedException($"Type {genericTypeDefinition} contains {genericArguments.Length} generic type arguments. Supports only 1");
+
+                foreach(var interfaceType in objectType.GetInterfaces().Where(x => x.IsGenericType))
+                {
+                    if(interfaceType == null) continue;
+                    if(interfaceType.GetGenericTypeDefinition() == genericTypeDefinition)
+                    {
+                        var arguments = interfaceType.GetGenericArguments();
+                        yield return arguments[0];
+                    }
+                }
+            }
+
+            /// <summary>
             /// Contains helper methods for working with RimWorld's Comp system, which allows for modular components to be attached to game objects.
             /// </summary>
             public static class Comp

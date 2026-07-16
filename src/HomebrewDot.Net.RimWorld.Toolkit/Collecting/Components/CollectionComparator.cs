@@ -52,43 +52,72 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// <param name="types">All the types to warmup the expression tries for</param>
         public void WarmupCache(IReadOnlyDictionary<string, ICollectionDef> collections, IEnumerable<Type> types)
         {
-            foreach (var type in types)
-            {               
+            var collectors = Toolkit.Collecting.GetAllCollectors();
+            var typeCache = new Dictionary<Type, Type[]>();
+            foreach (var collection in collections)
+            {
+                var collectionDef = collection.Value;
+                var collectionName = collection.Key;
+                IEnumerable<Type> collectionTypes;
                 try
                 {
-                    if (!_cacheWarmers.TryGetValue(type, out var cacheWarmer))
+                    if(collectors.TryGetValue(collectionName, out var collector))
                     {
-                        var targetMethod = _matchMethod.MakeGenericMethod(type);
-                        var inputObject = LinqExpression.Parameter(typeof(object), "obj");
-                        var inputCollection = LinqExpression.Parameter(typeof(ICollectionDef), "collection");
-                        var inputCollections = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, ICollectionDef>), "collections");
-                        var inputContext = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
-                        var typedObject = LinqExpression.Parameter(type, "input");
-                        var assignTypedObject = LinqExpression.Assign(typedObject, LinqExpression.Convert(inputObject, type));
-                        var callMethod = LinqExpression.Call(LinqExpression.Constant(this), targetMethod, inputCollection, typedObject, inputCollections, inputContext);
-                        var block = LinqExpression.Block([typedObject], assignTypedObject, callMethod);
-                        var lambda = LinqExpression.Lambda<Func<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>, bool>>(block, inputCollection, inputObject, inputCollections, inputContext);
-                        cacheWarmer = lambda.Compile();
-                        _cacheWarmers[type] = cacheWarmer;
+                        var acceptedTypes = Toolkit.Helpers.GetGenericTypes(collector.GetType(), typeof(ICollector<Verse.Def>));
+                        foreach(var acceptedType in acceptedTypes)
+                        {
+                            if (!typeCache.ContainsKey(acceptedType))
+                            {
+                                var scannedTypes = Helpers.ScanForTypes(x =>
+                                {
+                                    return x.IsClass && !x.IsAbstract && !x.IsGenericTypeDefinition && acceptedType.IsAssignableFrom(x);
+                                });
+                                typeCache[acceptedType] = scannedTypes.ToArray();
+                            }
+                        }
+                        collectionTypes = acceptedTypes.SelectMany(x => typeCache[x]);
                     }
-                    var instance = FormatterServices.GetUninitializedObject(type);
-                    foreach (var collection in collections.Values)
+                    else
                     {
-                        try
-                        {
-                            cacheWarmer(collection, instance, collections, NullDictionary<string, object>.Instance);
-                        }
-                        catch
-                        {
-                            continue;
-                        }
+                        collectionTypes = types;
                     }
+
+                        
                 }
                 catch
                 {
                     continue;
                 }
+
+                foreach (var type in collectionTypes)
+                {
+                    try
+                    {
+                        if (!_cacheWarmers.TryGetValue(type, out var cacheWarmer))
+                        {
+                            var targetMethod = _matchMethod.MakeGenericMethod(type);
+                            var inputObject = LinqExpression.Parameter(typeof(object), "obj");
+                            var inputCollection = LinqExpression.Parameter(typeof(ICollectionDef), "collection");
+                            var inputCollections = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, ICollectionDef>), "collections");
+                            var inputContext = LinqExpression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
+                            var typedObject = LinqExpression.Parameter(type, "input");
+                            var assignTypedObject = LinqExpression.Assign(typedObject, LinqExpression.Convert(inputObject, type));
+                            var callMethod = LinqExpression.Call(LinqExpression.Constant(this), targetMethod, inputCollection, typedObject, inputCollections, inputContext);
+                            var block = LinqExpression.Block([typedObject], assignTypedObject, callMethod);
+                            var lambda = LinqExpression.Lambda<Func<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>, bool>>(block, inputCollection, inputObject, inputCollections, inputContext);
+                            cacheWarmer = lambda.Compile();
+                            _cacheWarmers[type] = cacheWarmer;
+                        }
+                        var instance = FormatterServices.GetUninitializedObject(type); 
+                        cacheWarmer(collectionDef, instance, collections, NullDictionary<string, object>.Instance);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
             }
+            
         }
 
         /// <summary>
