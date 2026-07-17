@@ -22,8 +22,10 @@
 		<RepositoryRoot>$(MSBuildProjectDirectory)\..\..</RepositoryRoot>
 		<RimworldModsRoot Condition="'$(RIMWORLD_MODS_ROOT)' == ''">$(RimworldRoot)\Mods</RimworldModsRoot>
 		<RimworldModsRoot Condition="'$(RIMWORLD_MODS_ROOT)' != ''">$(RIMWORLD_MODS_ROOT)</RimworldModsRoot>
-		<ModTestingFolderName Condition="'$(MOD_TESTING_FOLDER_NAME)' == ''">Homebrewed Toolkit</ModTestingFolderName>
+		<ModTestingFolderName Condition="'$(MOD_TESTING_FOLDER_NAME)' == ''">Homebrewed Toolkit - DEV</ModTestingFolderName>
 		<ModTestingFolderName Condition="'$(MOD_TESTING_FOLDER_NAME)' != ''">$(MOD_TESTING_FOLDER_NAME)</ModTestingFolderName>
+		<PublishedFileIdFileName Condition="'$(PUBLISHED_FILE_ID_FILE_NAME)' == ''">DevPublishedFileId.txt</PublishedFileIdFileName>
+		<PublishedFileIdFileName Condition="'$(PUBLISHED_FILE_ID_FILE_NAME)' != ''">$(PUBLISHED_FILE_ID_FILE_NAME)</PublishedFileIdFileName>
 		<ModTestingTargetDir>$(RimworldModsRoot)\$(ModTestingFolderName)</ModTestingTargetDir>
 	</PropertyGroup>
 
@@ -80,10 +82,11 @@
 		</PropertyGroup>
 
 		<!-- Core mod metadata and built assemblies -->
-		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/About/&quot; &quot;$(ModTestingTargetDirRsync)/About/&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\About')" />
+		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/About/About.xml&quot; &quot;$(ModTestingTargetDirRsync)/About/About.xml&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\About\About.xml')" />
 		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/$(RimworldVersion)/&quot; &quot;$(ModTestingTargetDirRsync)/$(RimworldVersion)/&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\$(RimworldVersion)')" />
 
 		<!-- Optional common mod content folders -->
+		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/About/$(PublishedFileIdFileName)&quot; &quot;$(ModTestingTargetDirRsync)/About/PublishedFileId.txt&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\About\$(PublishedFileIdFileName)')" />
 		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/Defs/&quot; &quot;$(ModTestingTargetDirRsync)/Defs/&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\Defs')" />
 		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/Patches/&quot; &quot;$(ModTestingTargetDirRsync)/Patches/&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\Patches')" />
 		<Exec Command="rsync -a -q --no-perms --delete --mkpath &quot;$(RepositoryRootRsync)/Languages/&quot; &quot;$(ModTestingTargetDirRsync)/Languages/&quot;" Condition="'$(RsyncExitCode)' == '0' and '$(RepositoryRootIsUNC)' != 'True' and Exists('$(RepositoryRootNormalized)\Languages')" />
