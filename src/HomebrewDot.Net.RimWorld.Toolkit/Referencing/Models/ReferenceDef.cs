@@ -21,9 +21,9 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Models
         public string GetCacheKey()
         {
             var sb = new StringBuilder();
-            sb.Append('<').Append(Type).Append(" -> ");
+            sb.Append("{[").Append(Type).Append("]");
             Value.ToCacheKey(sb, true);
-            sb.Append('>');
+            sb.Append('}');
             return sb.ToString();
         }
     }

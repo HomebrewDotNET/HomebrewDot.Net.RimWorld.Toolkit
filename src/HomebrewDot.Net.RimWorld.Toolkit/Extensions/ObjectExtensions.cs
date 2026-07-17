@@ -22,7 +22,7 @@ namespace HomebrewDot.Net.Rimworld.Extensions
         public static StringBuilder ToCacheKey(this object obj, StringBuilder stringBuilder, bool includeTypeNames)
         {
             stringBuilder ??= new StringBuilder();
-            if(includeTypeNames) stringBuilder.Append("(").Append(obj?.GetType().FullName ?? typeof(object).FullName).Append(") ");
+            if(includeTypeNames) stringBuilder.Append("(").Append(obj?.GetType().FullName ?? typeof(object).FullName).Append(")");
             if(obj is null)
             {
                 stringBuilder.Append("null");

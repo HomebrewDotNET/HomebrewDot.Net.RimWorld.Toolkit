@@ -78,9 +78,12 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
 
                 With.ToCacheKey(stringBuilder, includeTypeNames);
 
-                stringBuilder.Append(' ');
+                if(To is not null)
+                {
+                    stringBuilder.Append(' ');
 
-                To.ToCacheKey(stringBuilder, includeTypeNames);
+                    To.ToCacheKey(stringBuilder, includeTypeNames);
+                }
             }
             return stringBuilder;
         }
@@ -113,6 +116,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 stringBuilder = condition.ToString(stringBuilder, includeTypeNames);
                 if (!isLast)
                 {
+                    if (conditionNextLine)
+                    {
+                        stringBuilder.AppendLine();
+                    }
                     stringBuilder.Append(condition.IsOr ? " OR " : " AND ");
                     if (conditionNextLine)
                     {
