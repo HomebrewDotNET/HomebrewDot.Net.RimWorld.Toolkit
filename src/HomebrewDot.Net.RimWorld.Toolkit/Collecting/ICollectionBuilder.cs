@@ -63,6 +63,13 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// <param name="condition">The condition definition to use for excluding items from the collection.</param>
         /// <returns>The builder instance for fluent chaining.</returns>
         TReturn ExcludeFrom(IReadOnlyList<ICollectionConditionDef> condition);
+
+        /// <summary>
+        /// Imports the definition of a collection from an existing <see cref="ICollectionDef"/>, allowing you to reuse previously defined collection conditions and settings.
+        /// </summary>
+        /// <param name="collectionDef">The collection definition to import.</param>
+        /// <returns>The builder instance for fluent chaining.</returns>
+        TReturn FromDef(ICollectionDef collectionDef);
     }
 
     /// <summary>

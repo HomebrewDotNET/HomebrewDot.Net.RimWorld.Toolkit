@@ -34,6 +34,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             } 
         }
 
+        /// <summary>
+        /// Attempts to build a collector for the collection definition.
+        /// </summary>
+        /// <param name="collectionDef">The collection definition for which to build a collector.</param>
+        /// <param name="collector">The resulting collector if the build is successful; otherwise, null.</param>
+        /// <returns>True if the collector was successfully built; otherwise, false.</returns>
         public bool TryBuildCollector(ICollectionDef collectionDef, out ICollector collector)
         {
             collectionDef = Guard.NotNull(collectionDef, nameof(collectionDef));
@@ -76,6 +82,30 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             _exclusions.AddRange(condition);
             return Return;
         }
+        /// <inheritdoc/>
+        TReturn ICollectionBuilder<TReturn>.FromDef(ICollectionDef collectionDef)
+        {
+            collectionDef = Guard.NotNull(collectionDef, nameof(collectionDef));
+            _inclusions.Clear();
+            if (collectionDef.Inclusions != null)
+            {
+                _inclusions.AddRange(collectionDef.Inclusions);
+            }
+            _exclusions.Clear();
+            if (collectionDef.Exclusions != null)
+            {
+                _exclusions.AddRange(collectionDef.Exclusions);
+            }
+            _groupIsOr = collectionDef.InclusionsAreOr;
+
+            if(collectionDef.Conditions != null && collectionDef.Conditions.Count > 0)
+            {
+                _conditions.Clear();
+                _conditions.AddRange(collectionDef.Conditions.Select(c => new ConditionDef(c)));
+            }
+            return Return;
+        }
+
         /// <inheritdoc/>
         TReturn ICollectionBuilder<TReturn>.IncludeFrom(Func<ICollectionConditionBuilder, ICollectionConditionBuilderChain<ICollectionConditionBuilder>> builder)
         {
