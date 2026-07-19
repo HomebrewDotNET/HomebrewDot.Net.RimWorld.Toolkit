@@ -106,11 +106,11 @@ namespace HomebrewDot.Net.Rimworld
             /// <summary>
             /// Cache of property info for the indexed type, keyed by property name.
             /// </summary>
-            public static IReadOnlyDictionary<string, PropertyInfo> IndexedProperties { get; } = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+            public static IReadOnlyDictionary<string, PropertyInfo> IndexedProperties { get; } = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(p => p.Name);
 			/// <summary>
 			/// Cache of field info for the indexed type, keyed by field name.
 			/// </summary>
-			public static IReadOnlyDictionary<string, FieldInfo> IndexedFields { get; } = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance).ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+			public static IReadOnlyDictionary<string, FieldInfo> IndexedFields { get; } = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance).ToDictionary(f => f.Name);
 			/// <summary>
 			/// MethodInfo for object.GetType().
 			/// </summary>
@@ -218,7 +218,27 @@ namespace HomebrewDot.Net.Rimworld
                 /// <summary>
                 /// Key of the metadata that indicates whether a thing is considered a construction material for any def buildable by the player.
                 /// </summary>
-                public readonly static IndexMetadataKey<bool> IsConstructionMaterial = IndexMetadataKey<bool>.Get("IsConstructionMaterial");                
+                public readonly static IndexMetadataKey<bool> IsConstructionMaterial = IndexMetadataKey<bool>.Get("IsConstructionMaterial");
+                /// <summary>
+                /// Key of the metadata that indicates whether a ThingDef is foul (meat or leather from insectoid creatures).
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsFoul = IndexMetadataKey<bool>.Get("IsFoul");
+                /// <summary>
+                /// Key of the metadata that indicates whether a ThingDef is a drinkable beverage.
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsDrink = IndexMetadataKey<bool>.Get("IsDrink");
+                /// <summary>
+                /// Key of the metadata that indicates whether a ThingDef is an alcoholic drink.
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsAlcoholic = IndexMetadataKey<bool>.Get("IsAlcoholic");
+                /// <summary>
+                /// Key of the metadata that indicates whether a ThingDef is a medical item (medicine or medical drug).
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsMedical = IndexMetadataKey<bool>.Get("IsMedical");
+                /// <summary>
+                /// Key of the metadata that indicates whether a ThingDef is a surgical part (body part, prosthetic, bionic, etc.).
+                /// </summary>
+                public readonly static IndexMetadataKey<bool> IsSurgical = IndexMetadataKey<bool>.Get("IsSurgical");
             }
         }
 

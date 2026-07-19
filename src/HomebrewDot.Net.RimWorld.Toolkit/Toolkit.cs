@@ -678,6 +678,140 @@ namespace HomebrewDot.Net.Rimworld
                             .Set(ResearchTrackerKey, x => HarmonyThingGatherer.ResearchTracker, false);
                         });
                     }
+                    /// <summary>
+                    /// Adds an indexer that marks meat and leather defs from non-standard creatures (humanlike, insectoid, entity, fleshbeast, etc.) as foul.
+                    /// A def is considered foul if any source creature is humanlike or has a non-normal flesh type.
+                    /// </summary>
+                    public static void TrackIsFoul()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsFoul.Name)))
+                             .Set(ToolkitConstants.Def.Thing.IsFoul, t =>
+                             {
+                                 if (t is ThingDef def && (def.IsMeat || def.IsLeather))
+                                 {
+                                     foreach (var creature in DefDatabase<ThingDef>.AllDefs)
+                                     {
+                                         if (creature.race != null && !creature.IsCorpse)
+                                         {
+                                             bool isSourceForMeat = def.IsMeat && creature.race.meatDef == def;
+                                             bool isSourceForLeather = def.IsLeather && creature.race.leatherDef == def;
+
+                                             if (isSourceForMeat || isSourceForLeather)
+                                             {
+                                                 if (creature.race.Humanlike || creature.race.FleshType != FleshTypeDefOf.Normal || !creature.race.Animal)
+                                                 {
+                                                     return true;
+                                                 }
+                                             }
+                                         }
+                                     }
+                                 }
+                                 return false;
+                             });
+                        });
+                    }
+
+                    /// <summary>
+                    /// Adds an indexer that marks ThingDefs as drinks (fluid ingestibles like beer, tea, juices, etc.).
+                    /// Flags items where ingestible.foodType has the Fluid flag and the item is not a hard drug.
+                    /// </summary>
+                    public static void TrackIsDrink()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsDrink.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsDrink.Name)))
+                             .Set(ToolkitConstants.Def.Thing.IsDrink, t =>
+                             {
+                                 if (t is ThingDef def && def.ingestible != null)
+                                 {
+                                     if (def.ingestible.foodType.HasFlag(FoodTypeFlags.Fluid))
+                                     {
+                                         if (!def.IsDrug || def.ingestible.drugCategory == DrugCategory.Social)
+                                         {
+                                             return true;
+                                         }
+                                     }
+                                 }
+                                 return false;
+                             });
+                        });
+                    }
+                    /// <summary>
+                    /// Adds an indexer that marks ThingDefs as alcoholic drinks.
+                    /// Flags items where ingestible.foodType has the Liquor flag or has CompProperties_Drug with chemical Alcohol.
+                    /// </summary>
+                    public static void TrackIsAlcoholic()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsAlcoholic.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsAlcoholic.Name)))
+                             .Set(ToolkitConstants.Def.Thing.IsAlcoholic, t =>
+                             {
+                                 if (t is ThingDef def && def.ingestible != null)
+                                 {
+                                     if (def.ingestible.foodType.HasFlag(FoodTypeFlags.Liquor))
+                                     {
+                                         return true;
+                                     }
+                                     var compDrug = def.GetCompProperties<CompProperties_Drug>();
+                                     if (compDrug != null && compDrug.chemical == ChemicalDefOf.Alcohol)
+                                     {
+                                         return true;
+                                     }
+                                 }
+                                 return false;
+                             });
+                        });
+                    }
+
+                    /// <summary>
+                    /// Adds an indexer that marks ThingDefs as medical items (medicine or medical drugs).
+                    /// Flags items where IsMedicine is true or IsDrug with drugCategory Medical.
+                    /// </summary>
+                    public static void TrackIsMedical()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsMedical.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsMedical.Name)))
+                             .Set(ToolkitConstants.Def.Thing.IsMedical, t =>
+                             {
+                                 if (t is ThingDef def)
+                                 {
+                                     if (def.IsMedicine)
+                                     {
+                                         return true;
+                                     }
+                                     if (def.IsDrug && def.ingestible != null && def.ingestible.drugCategory == DrugCategory.Medical)
+                                     {
+                                         return true;
+                                     }
+                                 }
+                                 return false;
+                             });
+                        });
+                    }
+
+                    /// <summary>
+                    /// Adds an indexer that marks ThingDefs as surgical parts (body parts, prosthetics, bionics, etc.).
+                    /// Flags items in the BodyParts thing category tree.
+                    /// </summary>
+                    public static void TrackIsSurgical()
+                    {
+                        Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsSurgical.Name, x =>
+                        {
+                            x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsSurgical.Name)))
+                             .Set(ToolkitConstants.Def.Thing.IsSurgical, t =>
+                             {
+                                 if (t is ThingDef def)
+                                 {
+                                     return def.IsWithinCategory(ThingCategoryDefOf.BodyParts);
+                                 }
+                                 return false;
+                             });
+                        });
+                    }
 
                     private static void Configure(ITableBuilder<Verse.Def> builder)
                     {
