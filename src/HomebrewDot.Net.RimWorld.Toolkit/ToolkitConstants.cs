@@ -111,6 +111,7 @@ namespace HomebrewDot.Net.Rimworld
 			/// Cache of field info for the indexed type, keyed by field name.
 			/// </summary>
 			public static IReadOnlyDictionary<string, FieldInfo> IndexedFields { get; } = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance).ToDictionary(f => f.Name);
+
 			/// <summary>
 			/// MethodInfo for object.GetType().
 			/// </summary>

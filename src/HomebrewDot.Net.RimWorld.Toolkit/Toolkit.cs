@@ -2480,7 +2480,10 @@ namespace HomebrewDot.Net.Rimworld
                     }
                     foreach (var field in ToolkitConstants.ObjectCache<T>.IndexedFields.Values)
                     {
-                        yield return field;
+                        if (!ToolkitConstants.ObjectCache<T>.IndexedProperties.ContainsKey(field.Name))
+                        {
+                            yield return field;
+                        }
                     }
                 }
             }
