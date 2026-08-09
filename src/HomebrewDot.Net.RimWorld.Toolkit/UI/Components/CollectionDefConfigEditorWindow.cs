@@ -210,7 +210,8 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
                     var rowRect = new Rect(0f, y, viewRect.width, RowHeight);
                     var editRect = new Rect(rowRect.xMax - 98f, rowRect.y, SmallButtonWidth, RowHeight);
                     var deleteRect = new Rect(rowRect.xMax - 60f, rowRect.y, SmallButtonWidth, RowHeight);
-                    var textWidth = rowRect.width - 102f;
+                    var logicRect = new Rect(rowRect.xMax - 162f, rowRect.y, LogicButtonWidth, RowHeight);
+                    var textWidth = rowRect.width - (i < items.Count - 1 ? 166f : 102f) - 8f;
                     var textRect = new Rect(rowRect.x + 4f, rowRect.y + 4f, textWidth, RowHeight - 8f);
 
                     if (Mouse.IsOver(rowRect))
@@ -220,6 +221,12 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
 
                     Widgets.DrawMenuSection(rowRect);
                     Widgets.Label(textRect, BuildCollectionConditionSummary(condition));
+
+                    if (i < items.Count - 1)
+                    {
+                        var logicLabel = condition.IsOr ? "OR" : "AND";
+                        DrawActionButton(logicRect, logicLabel, () => condition.IsOr = !condition.IsOr);
+                    }
 
                     var editIndex = i;
                     DrawActionButton(editRect, "E", () =>
@@ -269,7 +276,8 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
                 ? $"[{condition.ToReferenceType}:{condition.ToReferenceValue}]"
                 : (condition.ToDefault ?? condition.ToNumber.ToString() ?? condition.ToDecimal.ToString() ?? "(empty)");
 
-            return $"{compare} {condition.Operator ?? "?"} {to}";
+            var op = condition.Inverted ? $"not {condition.Operator ?? "?"}" : (condition.Operator ?? "?");
+            return $"{compare} {op} {to}";
         }
 
         private static string BuildCollectionConditionSummary(CollectionConditionDefConfig condition)
@@ -280,16 +288,11 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
             }
 
             var parts = new List<string>();
-            parts.Add(condition.Name ?? "(no name)");
+            parts.Add((condition.Inverted ? "not " : "") + (condition.Name ?? "(no name)"));
 
             if (!string.IsNullOrEmpty(condition.By))
             {
                 parts.Add($"by: {condition.By}");
-            }
-
-            if (condition.Inverted)
-            {
-                parts.Add("inverted");
             }
 
             return string.Join(", ", parts);

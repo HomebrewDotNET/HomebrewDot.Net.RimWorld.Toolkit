@@ -164,7 +164,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
 
             if (Inverted)
             {
-                stringBuilder.Append("NOT ");
+                stringBuilder.Append("not ");
             }
             stringBuilder.Append("IN ")
                          .Append(Name);

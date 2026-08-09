@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Verse;
 
 namespace HomebrewDot.Net.Rimworld.Extensions
 {
@@ -74,6 +75,30 @@ namespace HomebrewDot.Net.Rimworld.Extensions
             if (obj is null) return false;
             if (obj is string) return false;
             return obj is System.Collections.IEnumerable;
+        }
+
+        /// <summary>
+        /// Creates a dictionary from an enumerable source, safely handling duplicate keys by ignoring subsequent entries with the same key. This method is useful when you want to create a dictionary from a collection of items but want to ensure that only the first occurrence of each key is included in the resulting dictionary.
+        /// </summary>
+        /// <typeparam name="T">The type of the elements in the source enumerable.</typeparam>
+        /// <typeparam name="TKey">The type of the keys in the resulting dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of the values in the resulting dictionary.</typeparam>
+        /// <param name="source">The source enumerable.</param>
+        /// <param name="keySelector">A function to extract the key from each element.</param>
+        /// <param name="valueSelector">A function to extract the value from each element.</param>
+        /// <returns>A dictionary containing the elements from the source enumerable, with duplicate keys ignored.</returns>
+        public static Dictionary<TKey, TValue> ToDictionarySafe<T, TKey, TValue>(this IEnumerable<T> source, Func<T, TKey> keySelector, Func<T, TValue> valueSelector)
+        {
+            var dictionary = new Dictionary<TKey, TValue>();
+            foreach (var item in source)
+            {
+                var key = keySelector(item);
+                if (!dictionary.ContainsKey(key))
+                {
+                    dictionary[key] = valueSelector(item);
+                }
+            }
+            return dictionary;
         }
     }
 }

@@ -37,6 +37,9 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         public const char PathSeparator = '|';
 
         /// <inheritdoc/>
+        public bool RequiresValue => true;
+
+        /// <inheritdoc/>
         public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
         {
             if(value is null) return null;
@@ -218,7 +221,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
                 var assignThingDef = Expression.Assign(thingDefVariable, Expression.Convert(getInput, typeof(ThingDef)));
 
                 var getMethod = ToolkitConstants.Reflections.GetCompProperties.GetGenericMethodDefinition().MakeGenericMethod(compType);
-                getComp = Expression.Call(thingDefVariable, getMethod);
+                getComp = getMethod.IsStatic ? Expression.Call(getMethod, thingDefVariable) : Expression.Call(thingDefVariable, getMethod);
 
                 var ifThingDefNotNullGetElseDefault = Expression.IfThen(Expression.NotEqual(thingDefVariable, Expression.Default(typeof(ThingDef))),
                                                                            Expression.Assign(compPropertiesVariable, getComp));
@@ -234,7 +237,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
                 }
 
                 var getMethod = ToolkitConstants.Reflections.TryGetComp.GetGenericMethodDefinition().MakeGenericMethod(compType);
-                getComp = Expression.Call(getInput, getMethod);
+                getComp = getMethod.IsStatic ? Expression.Call(getMethod, getInput) : Expression.Call(getInput, getMethod);
             }
 
             if(properties is null)

@@ -39,6 +39,9 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         }
 
         /// <inheritdoc/>
+        public bool RequiresValue => true;
+
+        /// <inheritdoc/>
         public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
         {
             if(value is null)
@@ -143,18 +146,21 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
                 var castItem = Expression.Convert(getItemCall, metadataType);
                 var ifContainsKey = Expression.IfThen(containsKeyCall, Expression.Assign(metadataVariable, castItem));
                 actions.Add(ifContainsKey);
+                Type blockReturnType;
                 if (propertyPath.Length > 1)
                 {
                     var remainingPath = propertyPath.Skip(1).ToArray();
                     var traverseExpression = Helpers.Traversing.GenerateFullGetter(metadataVariable, metadataType, remainingPath);
                     actions.Add(traverseExpression);
+                    blockReturnType = traverseExpression.Type;
                 }
                 else
                 {
                     actions.Add(metadataVariable);
+                    blockReturnType = metadataVariable.Type;
                 }
 
-                var block = Expression.Block(new[] { metadataVariable, inputVariable }, actions);
+                var block = Expression.Block(blockReturnType, new[] { metadataVariable, inputVariable }, actions);
                 return block;
             }
             else

@@ -70,6 +70,10 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
             Widgets.CheckboxLabeled(new Rect(content.x, line + 6f, content.width, 28f), "Combine with next using OR", ref _config.IsOr);
             line += RowHeight + 8f;
 
+            // Inverted checkbox
+            Widgets.CheckboxLabeled(new Rect(content.x, line + 6f, content.width, 28f), "Inverted (Not)", ref _config.Inverted);
+            line += RowHeight + 8f;
+
             // Error label
             if (!string.IsNullOrEmpty(_error))
             {
@@ -198,17 +202,20 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
                 cursorX = helperRect.xMax + 4f;
             }
 
-            // Value text field
-            var valueWidth = Mathf.Max(0f, fieldRect.xMax - cursorX);
-            var valueRect = new Rect(cursorX, fieldRect.y, valueWidth, fieldRect.height);
+            // Value text field (only shown when the selected reference type requires a value)
+            if (ReferenceTypeRequiresValue(type))
+            {
+                var valueWidth = Mathf.Max(0f, fieldRect.xMax - cursorX);
+                var valueRect = new Rect(cursorX, fieldRect.y, valueWidth, fieldRect.height);
 
-            if (isCompare)
-            {
-                _config.CompareValue = Widgets.TextField(valueRect, _config.CompareValue ?? string.Empty);
-            }
-            else
-            {
-                _config.ToReferenceValue = Widgets.TextField(valueRect, _config.ToReferenceValue ?? string.Empty);
+                if (isCompare)
+                {
+                    _config.CompareValue = Widgets.TextField(valueRect, _config.CompareValue ?? string.Empty);
+                }
+                else
+                {
+                    _config.ToReferenceValue = Widgets.TextField(valueRect, _config.ToReferenceValue ?? string.Empty);
+                }
             }
         }
 
@@ -332,6 +339,16 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
                 initialSelection: initialSelection));
         }
 
+        private bool ReferenceTypeRequiresValue(string type)
+        {
+            if (string.IsNullOrEmpty(type))
+            {
+                return true;
+            }
+
+            return !_referenceTypes.TryGetValue(type, out var referenceType) || referenceType.RequiresValue;
+        }
+
         private bool ValidateInputs()
         {
             _error = string.Empty;
@@ -343,9 +360,14 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
 
             if (_config.IsCompareReferenceMode)
             {
-                if (string.IsNullOrEmpty(_config.CompareType) || string.IsNullOrEmpty(_config.CompareValue))
+                if (string.IsNullOrEmpty(_config.CompareType))
                 {
-                    _error = "Compare type and value are required";
+                    _error = "Compare type is required";
+                    return false;
+                }
+                if (ReferenceTypeRequiresValue(_config.CompareType) && string.IsNullOrEmpty(_config.CompareValue))
+                {
+                    _error = "Compare value is required";
                     return false;
                 }
             }
@@ -357,9 +379,14 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
 
             if (_config.IsToReferenceMode)
             {
-                if (string.IsNullOrEmpty(_config.ToReferenceType) || string.IsNullOrEmpty(_config.ToReferenceValue))
+                if (string.IsNullOrEmpty(_config.ToReferenceType))
                 {
-                    _error = "To reference type and value are required";
+                    _error = "To reference type is required";
+                    return false;
+                }
+                if (ReferenceTypeRequiresValue(_config.ToReferenceType) && string.IsNullOrEmpty(_config.ToReferenceValue))
+                {
+                    _error = "To reference value is required";
                     return false;
                 }
             }

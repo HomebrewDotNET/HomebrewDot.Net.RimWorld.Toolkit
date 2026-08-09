@@ -21,7 +21,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
     public class SnapshotOrchestrator : ISnapshotOrchestrator, ISnapshotOrchestratorBuilder, IDisposable
     {
         // Fields
-        private readonly object _lock = new object();
         private readonly HashSet<IDataGatherer> _dataGatherers = new HashSet<IDataGatherer>();
         private readonly IHookManager _hookManager;
         private readonly bool _useLongTicks;
@@ -50,7 +49,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             snapshotManager = Guard.NotNull(snapshotManager, nameof(snapshotManager));
 
-            lock (_lock)
             {
                 _game = game;
                 _snapshotManager = snapshotManager;
@@ -138,8 +136,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                         else
                         {
                             _pending = null;
+                            // Snapshot work finished so notify manager to finalize
+                            _ = _snapshotManager.Snapshot();
                         }
-					}
+                    }
 
                     if (!isSnapshotWindow)
                     {
@@ -157,12 +157,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                         else
                         {
                             var work = _pending.CreateWork();
-                            work.OnCompleted(() =>
-                            {
-                                // Finished so notify manager
-                                _pending = null;
-                                _ = _snapshotManager.Snapshot();
-                            });
                             _hookManager.Trigger(work);
                         }
 					}
@@ -187,12 +181,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <inheritdoc/>
         ISnapshotOrchestratorBuilder ISnapshotOrchestratorBuilder.With(IDataGatherer dataGatherer)
         {
-            lock(_lock)
+            if (!_dataGatherers.Contains(Guard.NotNull(dataGatherer, nameof(dataGatherer))))
             {
-                if (!_dataGatherers.Contains(Guard.NotNull(dataGatherer, nameof(dataGatherer))))
-                {
-                    _dataGatherers.Add(dataGatherer);
-                }
+                _dataGatherers.Add(dataGatherer);
             }
             return this;
         }
@@ -200,7 +191,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <inheritdoc />
         public void Dispose()
         {
-            lock (_lock)
             {
                 // Unregister all hooks to clean up
                 _hookManager.UnregisterAllBy<OnGameTickTrigger>(this);

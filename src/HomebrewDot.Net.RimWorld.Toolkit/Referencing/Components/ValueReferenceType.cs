@@ -29,6 +29,9 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         }
 
         /// <inheritdoc/>
+        public bool RequiresValue => true;
+
+        /// <inheritdoc/>
         public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
             => value;
         /// <inheritdoc/>

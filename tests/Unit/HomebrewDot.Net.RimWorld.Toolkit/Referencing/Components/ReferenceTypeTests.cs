@@ -146,4 +146,50 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
             Assert.Equal("Indexed", IndexedReferenceType.DefaultTypeName);
         }
     }
+
+    public class ReferenceTypeRequiresValueTests
+    {
+        [Fact]
+        public void SelfReferenceType_DoesNotRequireValue()
+        {
+            Assert.False(SelfReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void ValueReferenceType_RequiresValue()
+        {
+            Assert.True(ValueReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void IndexedReferenceType_RequiresValue()
+        {
+            Assert.True(IndexedReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void PropertyReferenceType_RequiresValue()
+        {
+            Assert.True(PropertyReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void CompReferenceType_RequiresValue()
+        {
+            Assert.True(CompReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void StatReferenceType_RequiresValue()
+        {
+            Assert.True(StatReferenceType.Instance.RequiresValue);
+        }
+
+        [Fact]
+        public void DelegateReferenceType_RequiresValue()
+        {
+            var sut = new DelegateReferenceType((input, value, context) => value);
+            Assert.True(sut.RequiresValue);
+        }
+    }
 }

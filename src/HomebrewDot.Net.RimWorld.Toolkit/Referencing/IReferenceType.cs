@@ -20,6 +20,11 @@ namespace HomebrewDot.Net.Rimworld.Referencing
         /// <param name="context">A dictionary containing additional information that might be needed for the resolution process.</param>
         /// <returns>The resolved object or value.</returns>
         object Resolve(object input, object value, IReadOnlyDictionary<string, object> context);
+
+        /// <summary>
+        /// Indicates whether this reference type requires a value to be specified in order to resolve the reference. Reference types that resolve to a fixed object (such as the input itself) do not require a value and can be used without one.
+        /// </summary>
+        bool RequiresValue { get; }
     }
 
     /// <summary>

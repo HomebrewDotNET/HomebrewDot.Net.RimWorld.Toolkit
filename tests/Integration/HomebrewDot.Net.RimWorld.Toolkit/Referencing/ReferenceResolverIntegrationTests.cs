@@ -39,6 +39,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing
         {
             private readonly IReferenceType _inner;
             public NonCompileableProxy(IReferenceType inner) { _inner = inner; }
+            public bool RequiresValue => true;
             public object Resolve(object input, object value, IReadOnlyDictionary<string, object> context)
                 => _inner.Resolve(input, value, context);
         }

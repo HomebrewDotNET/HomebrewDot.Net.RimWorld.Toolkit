@@ -115,6 +115,35 @@ namespace HomebrewDot.Net.RimWorld.Tests.Collecting.Components
             Assert.Equal(0, sut.Count);
         }
 
+        [Fact]
+        public void OnMonitoredCollected_EvaluatesConditionAgainstItem_NotAgainstDefinition()
+        {
+            var sut = new MonitorCollector<string>(new CollectionDef(), "MonCol");
+
+            object capturedObj = null;
+            var comparator = new Mock<ICollectionComparator>();
+            comparator.Setup(c => c.Matches(
+                    It.IsAny<ICollectionDef>(),
+                    It.IsAny<object>(),
+                    It.IsAny<IReadOnlyDictionary<string, ICollectionDef>>(),
+                    It.IsAny<IReadOnlyDictionary<string, object>>()))
+                .Callback<ICollectionDef, object, IReadOnlyDictionary<string, ICollectionDef>, IReadOnlyDictionary<string, object>>(
+                    (collection, obj, collections, context) => capturedObj = obj)
+                .Returns((ICollectionDef collection, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context) => Equals(obj, "hello"));
+
+            sut.StartCollecting(comparator.Object, new Dictionary<string, ICollectionDef>());
+
+            // Invoke the private event handler directly: this is the path that runs when
+            // the monitored collection reports a newly collected item.
+            var method = typeof(MonitorCollector<string>).GetMethod("OnMonitoredCollected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            method.Invoke(sut, new object[] { "hello" });
+
+            // The condition must be evaluated against the collected item, not the definition.
+            Assert.Equal("hello", capturedObj);
+            Assert.True(sut.Contains("hello"));
+            Assert.Equal(1, sut.Count);
+        }
+
         // The CollectFromCollection extension method is tested indirectly through
         // the ToolkitCollectingTests integration tests which exercise the full fluent API.
 

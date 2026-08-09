@@ -100,12 +100,16 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                 }
             });
 
+            var rightInputIsNotNull = rightExpressionType.IsValueType
+                ? (Expression)Expression.Constant(true)
+                : Expression.NotEqual(rightInputVariable, Expression.Constant(null, rightExpressionType));
+
             var block = Expression.Block(
                 new[] { inputVariable, rightInputVariable, resultVariable },
                 assignInput,
                 assignRightInput,
                 Expression.Assign(resultVariable, Expression.Constant(false)),
-                loop,
+                Expression.IfThen(rightInputIsNotNull, loop),
                 resultVariable
             );
             return block;

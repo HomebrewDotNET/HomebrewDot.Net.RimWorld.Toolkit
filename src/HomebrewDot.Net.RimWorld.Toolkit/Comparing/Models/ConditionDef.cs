@@ -31,6 +31,8 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         /// <inheritdoc/>
         public bool IsOr { get; set; }
         /// <inheritdoc/>
+        public bool Inverted { get; set; }
+        /// <inheritdoc/>
         IReadOnlyList<IConditionDef> IConditionDef.Conditions => Conditions;
 
         /// <inheritdoc cref="ConditionDef"/>
@@ -48,6 +50,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             With = conditionDef.With;
             To = conditionDef.To;
             IsOr = conditionDef.IsOr;
+            Inverted = conditionDef.Inverted;
         }
         /// <inheritdoc/>
         public string GetCacheKey() => ToString(null, true).ToString();
@@ -75,6 +78,11 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 Compare.ToCacheKey(stringBuilder, includeTypeNames);
 
                 stringBuilder.Append(' ');
+
+                if (Inverted)
+                {
+                    stringBuilder.Append("not ");
+                }
 
                 With.ToCacheKey(stringBuilder, includeTypeNames);
 

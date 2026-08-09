@@ -28,6 +28,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Models
             Assert.Equal(0.0, config.ToDecimal);
             Assert.Equal(string.Empty, config.Operator);
             Assert.False(config.IsOr);
+            Assert.False(config.Inverted);
         }
 
         [Fact]
@@ -50,6 +51,40 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Models
             var toRef = (IReference)result.To;
             Assert.Equal(ValueReferenceType.DefaultTypeName, toRef.Type);
             Assert.Equal("hello", toRef.Value);
+        }
+
+        [Fact]
+        public void ToConditionDef_WithInverted_PreservesInvertedOnDef()
+        {
+            var config = new ConditionDefConfig
+            {
+                CompareDefault = "def.label",
+                Operator = "Equals",
+                ToDefault = "hello",
+                Inverted = true,
+            };
+
+            var result = config.ToConditionDef();
+
+            Assert.True(result.Inverted);
+        }
+
+        [Fact]
+        public void FromConditionDef_WithInverted_RestoresInvertedOnConfig()
+        {
+            var def = new ConditionDef
+            {
+                Compare = new ReferenceDef { Type = IndexedReferenceType.DefaultTypeName, Value = "def.label" },
+                With = "Equals",
+                To = new ReferenceDef { Type = ValueReferenceType.DefaultTypeName, Value = "hello" },
+                IsOr = true,
+                Inverted = true,
+            };
+
+            var config = ConditionDefConfig.FromConditionDef(def);
+
+            Assert.True(config.Inverted);
+            Assert.True(config.IsOr);
         }
 
         [Fact]

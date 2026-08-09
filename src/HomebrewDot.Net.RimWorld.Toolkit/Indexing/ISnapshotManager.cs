@@ -29,16 +29,18 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <typeparam name="T">The type of the data to be indexed.</typeparam>
         /// <param name="data">The data to be indexed.</param>
         /// <param name="metadata">Optional metadata associated with the data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
-        bool Push<T>(T data, ref IndexMetadata metadata) where T : class;
+        bool Push<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
         /// <summary>
         /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
         /// </summary>
         /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
         /// <param name="data">The data that was destroyed.</param>
         /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
-        bool Destroyed<T>(T data, ref IndexMetadata metadata) where T : class;
+        bool Destroyed<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
 
         /// <summary>
         /// Gets or creates a typed snapshot manager for <typeparamref name="T"/>.
@@ -70,17 +72,18 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// Pushes <paramref name="data"/> to be indexed in the current pending snapshot.
         /// </summary>
         /// <param name="data">The data to be indexed.</param>
-        /// <param name="changed">Can be set to true to force an update, saves some time by skipping has changed checks</param>
         /// <param name="metadata">Optional metadata associated with the data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
-        bool Push(T data, ref IndexMetadata metadata);
+        bool Push(T data, ref IndexMetadata metadata, bool allowBuffering = true);
         /// <summary>
         /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
         /// </summary>
         /// <param name="data">The data that was destroyed.</param>
         /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
-        bool Destroyed(T data, ref IndexMetadata metadata);
+        bool Destroyed(T data, ref IndexMetadata metadata, bool allowBuffering = true);
     }
 
     /// <summary>

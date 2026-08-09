@@ -39,6 +39,11 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Template
                 right = temp;
             }
 
+            // Coerce enum operands to a comparable numeric type before the native operator path and the
+            // IComparable fallback, which otherwise throws when Enum.CompareTo receives a different numeric
+            // type (e.g. a byte-backed QualityCategory compared against an int).
+            NormalizeEnumOperands(ref left, ref right);
+
             var isMatched = Compare(left, right, _operatorType);
             if(!isMatched.HasValue && left is IComparable comparable)
             {

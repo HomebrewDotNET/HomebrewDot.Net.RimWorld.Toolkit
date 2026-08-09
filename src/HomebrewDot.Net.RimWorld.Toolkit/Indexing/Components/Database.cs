@@ -37,13 +37,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             if (!_indexedCreator.TryGetValue(type, out var creator))
             {
-                lock (_indexedCreator)
+                if (!_indexedCreator.TryGetValue(type, out creator))
                 {
-                    if (!_indexedCreator.TryGetValue(type, out creator))
-                    {
-                        creator = CreateCreatorForType(type);
-                        _indexedCreator[type] = creator;
-                    }
+                    creator = CreateCreatorForType(type);
+                    _indexedCreator[type] = creator;
                 }
             }
             return creator;
@@ -71,7 +68,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public const char TableNameSeparator = '.';
 
         // Fields
-        private readonly object _lock = new object();
         private readonly List<Table> _tables = new List<Table>();
         private readonly Dictionary<string, Table> _tablesByName = new Dictionary<string, Table>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Type, IReadOnlyList<Table>> _tablesByAssignableTypeCache = new Dictionary<Type, IReadOnlyList<Table>>();
@@ -84,6 +80,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private HashSet<IIndexed<object>> _changedItems;
         private HashSet<IIndexed<object>> _deletedItems;
         private SnapshotBuilder _snapshotBuilder;
+        private Dictionary<object, DatabaseAction> _pending = new Dictionary<object, DatabaseAction>();
         private Queue<DatabaseAction> _intentLog = new Queue<DatabaseAction>();
         private Queue<DatabaseAction> _snapshotIntentLog;
 
@@ -205,7 +202,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             try
             {
                 IsDeploying = true;
-                lock (_lock)
                 {
                     _tables.Clear();
                     _tablesByName.Clear();
@@ -216,8 +212,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     _tablesByAssignableTypeCache.Clear();
                     _typedDatabases.Clear();
                     _intentLog?.Clear();
+                    _pending.Clear();
                     Version = 0;
                     _cachedSnapshot = null;
+                    _snapshotBuilder?.Reset();
+                    _snapshotBuilder = null;
 
                     schemaBuilder(this);
                 }
@@ -254,13 +253,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             var type = typeof(T);
             if (!_typedDatabases.TryGetValue(type, out var typedDb))
             {
-                lock (_lock)
+                if (!_typedDatabases.TryGetValue(type, out typedDb))
                 {
-                    if (!_typedDatabases.TryGetValue(type, out typedDb))
-                    {
-                        typedDb = new TypedDatabase<T>(this);
-                        _typedDatabases[type] = typedDb;
-                    }
+                    typedDb = new TypedDatabase<T>(this);
+                    _typedDatabases[type] = typedDb;
                 }
             }
             return (IDatabase<T>)typedDb;
@@ -274,18 +270,15 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             var table = GetTable<T>(name);
             if (table is null)
             {
-                lock (_lock)
+                if (!_tablesByName.ContainsKey(name))
                 {
-                    if (!_tablesByName.ContainsKey(name))
-                    {
-                        var newTable = predicate != null
-                            ? new Table<T>(this, null, name, predicate, (name, table) => _tablesByName[name] = table)
-                            : new Table<T>(this, null, name, false, (name, table) => _tablesByName[name] = table);
-                        _tables.Add(newTable);
-                        _tablesByName[name] = newTable;
-                        Log($"Added {(predicate != null ? "filtered " : string.Empty)}table {name} of type {typeof(T).Name} to database schema");
-                        tableBuilder?.Invoke((ITableBuilder<T>)newTable);
-                    }
+                    var newTable = predicate != null
+                        ? new Table<T>(this, null, name, predicate, (name, table) => _tablesByName[name] = table)
+                        : new Table<T>(this, null, name, false, (name, table) => _tablesByName[name] = table);
+                    _tables.Add(newTable);
+                    _tablesByName[name] = newTable;
+                    Log($"Added {(predicate != null ? "filtered " : string.Empty)}table {name} of type {typeof(T).Name} to database schema");
+                    tableBuilder?.Invoke((ITableBuilder<T>)newTable);
                 }
             }
             else
@@ -342,17 +335,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _deletedItems.Clear();
                 ((IDatabaseSchemaBuilder)this).OnInserted((i,m,d) =>
                 {
-                    lock (_changedItems)
-                    {
-                        _changedItems.Add(i);
-                    }
+                    _changedItems.Add(i);
                 });
                 ((IDatabaseSchemaBuilder)this).OnDeleted((i, m, d) =>
                 {
-                    lock (_deletedItems)
-                    {
-                        _deletedItems.Add(i);
-                    }
+                    _deletedItems.Add(i);
                 });
             }
             TrackingChanges = true;
@@ -383,7 +370,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             // Fields
             private IReadOnlyDictionary<string, object> _metadata;
-            private readonly object _lock = new object();
             private Dictionary<string, object> _mutableMetadata;
             private Dictionary<string, object> _indexedBy;
             private int _hashCode;
@@ -400,12 +386,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     if (_indexedBy == null)
                     {
-                        lock (_lock)
+                        if (_indexedBy == null)
                         {
-                            if (_indexedBy == null)
-                            {
-                                _indexedBy = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-                            }
+                            _indexedBy = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
                         }
                     }
                     return _indexedBy;
@@ -491,13 +474,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                         _snapshot._mutableMetadata[kvp.Key] = kvp.Value;
                     }
 
-                    foreach(var key in _snapshot._mutableMetadata.Keys.ToArray())
+                    var keysToRemove = Toolkit.Pool<PooledList<string>>.Rent();
+                    foreach(var key in _snapshot._mutableMetadata.Keys)
                     {
                         if (!_mutableMetadata.ContainsKey(key))
                         {
-                            _snapshot._mutableMetadata.Remove(key);
+                            keysToRemove.Collection.Add(key);
                         }
                     }
+                    for(int i = 0; i < keysToRemove.Collection.Count; i++)
+                    {
+                        _snapshot._mutableMetadata.Remove(keysToRemove.Collection[i]);
+                    }
+                    Toolkit.Pool<PooledList<string>>.Return(keysToRemove);
                 }
                 return _snapshot;
             }
@@ -631,6 +620,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     pendingWork.LastSuccess = true;
                     yield break;
                 }
+                if (!table.TrackingChanges) yield break;
                 IsSyncing = true;
                 _changedItems.Clear();
                 _deletedItems.Clear();
@@ -809,12 +799,20 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if (anyInserted || trackedItem.HasChanges)
                 {
-                    if(_database._cachedSnapshot != null)
+                    if(_database._cachedSnapshot != null && _database.TrackingChanges)
                     {
-                        var action = Toolkit.Pool<DatabaseAction>.Rent();
-                        action.LogType = LogType.Upsert;
-                        action.Entity = trackedItem;
-                        _database._intentLog.Enqueue(action);
+                        if (_database._pending.TryGetValue(trackedItem, out var pendingAction))
+                        {
+                            pendingAction.LogType = LogType.Upsert;
+                        }
+                        else
+                        {
+                            var action = Toolkit.Pool<DatabaseAction>.Rent();
+                            action.LogType = LogType.Upsert;
+                            action.Entity = trackedItem;
+                            _database._intentLog.Enqueue(action);
+                            _database._pending[trackedItem] = action;
+                        }
                     }
                     _database.HasChanges = true;
                     for (int i = 0; i < _listeners.Length; i++)
@@ -870,12 +868,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if (anyDeleted)
                 {
-                    if(_database._cachedSnapshot != null)
+                    if(_database._cachedSnapshot != null && _database.TrackingChanges)
                     {
-                        var action = Toolkit.Pool<DatabaseAction>.Rent();
-                        action.LogType = LogType.Delete;
-                        action.Entity = typedItem;
-                        _database._intentLog.Enqueue(action);
+                        if (_database._pending.TryGetValue(typedItem, out var pendingAction))
+                        {
+                            pendingAction.LogType = LogType.Delete;
+                        }
+                        else
+                        {
+                            var action = Toolkit.Pool<DatabaseAction>.Rent();
+                            action.LogType = LogType.Delete;
+                            action.Entity = typedItem;
+                            _database._intentLog.Enqueue(action);
+                        }
                     }
                     for (int i = 0; i < _listeners.Length; i++)
                     {
@@ -986,8 +991,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                 }
 
+                if (_database.HasChanges)
+                {
+                    _database.Version++;
+                }
                 _database.HasChanges = false;
-                _database.Version++;
                 _database._cachedSnapshot = new ReadOnlyDatabaseSnapshot(_database, snapshots, snapshotsByName);
                 _database._changedItems?.Clear();
                 _database._deletedItems?.Clear();
@@ -998,6 +1006,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             internal void Reset()
             {
                 Snapshot = null;
+                _pendingWork.Cancel();
                 _pendingWork = null;
             }
 
@@ -1039,6 +1048,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         // State
         private bool _hasChanges = true;
         private SnapshotTable _cachedSnapshot;
+        private Dictionary<ITrackingIndexed<T>, TableAction> _pending = new Dictionary<ITrackingIndexed<T>, TableAction>();
+        private Dictionary<ITrackingIndexed<T>, Dictionary<string, TableAction>> _pendingIndex = new Dictionary<ITrackingIndexed<T>, Dictionary<string, TableAction>>();
         private Queue<TableAction> _intentLog = new Queue<TableAction>();
         private Queue<TableAction> _snapshotIntentLog = new Queue<TableAction>();
         private ITableListener<T>[] _listeners;
@@ -1128,10 +1139,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if (changed && _cachedSnapshot != null)
                 {
-                    var action = Toolkit.Pool<TableAction>.Rent();
-                    action.LogType = LogType.Upsert;
-                    action.Entity = (ITrackingIndexed<T>)tableItem;
-                    _intentLog.Enqueue(action);
+                    var typedTableItem = (ITrackingIndexed<T>)tableItem;
+                    if (_pending.TryGetValue(typedTableItem, out var pendingAction))
+                    {
+                        pendingAction.LogType = LogType.Upsert;
+                    }
+                    else
+                    {
+                        var action = Toolkit.Pool<TableAction>.Rent();
+                        action.LogType = LogType.Upsert;
+                        action.Entity = (ITrackingIndexed<T>)tableItem;
+                        _intentLog.Enqueue(action);
+                        _pending[typedTableItem] = action;
+                    }
                 }
                 bool subChanged = false;
                 if (_subTables.Count > 0)
@@ -1177,10 +1197,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if(_cachedSnapshot != null)
                 {
-                    var action = Toolkit.Pool<TableAction>.Rent();
-                    action.LogType = LogType.Delete;
-                    action.Entity = (ITrackingIndexed<T>)item;
-                    _intentLog.Enqueue(action);
+                    var typedItem = (ITrackingIndexed<T>)item;
+                    if(_pending.TryGetValue(typedItem, out var pendingAction))
+                    {
+                        pendingAction.LogType = LogType.Delete;
+                    }
+                    else
+                    {
+                        var action = Toolkit.Pool<TableAction>.Rent();
+                        action.LogType = LogType.Delete;
+                        action.Entity = (ITrackingIndexed<T>)item;
+                        _intentLog.Enqueue(action);
+                        _pending[typedItem] = action;
+                    }
                 }
                 _hasChanges = true;
                 for (int i = 0; i < _listeners.Length; i++)
@@ -1221,10 +1250,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 if (index.TryGetValue(search, out var indexedSet))
                 {
-                    lock (indexedSet)
-                    {
-                        return indexedSet.ToArray();
-                    }
+                    return indexedSet.ToArray();
                 }
             }
             return Array.Empty<T>();
@@ -1289,117 +1315,117 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             self.OnInserted((i, m, t) =>
             {
                 var indexValue = propertySelector(i);
-                Dictionary<object, HashSet<T>> index;
-                lock (_indexes)
+                if (!_indexes.TryGetValue(fullIndexName, out var index))
                 {
-                    if (!_indexes.TryGetValue(fullIndexName, out index))
-                    {
-                        return;
-                    }
+                    return;
                 }
                 if (i is ITrackingIndexed<T> tracked)
                 {
-                    lock (tracked)
+                    if (!tracked.IndexedBy.TryGetValue(propertyName, out var existingIndexValue))
                     {
-                        if (tracked.IndexedBy.TryGetValue(propertyName, out var existingIndexValue))
-                        {
-                            if (Equals(existingIndexValue, indexValue))
-                            {
-                                return;
-                            }
-                            // Remove from old index value
-                            lock (index)
-                            {
-                                if (index.TryGetValue(existingIndexValue, out var existingSet))
-                                {
-                                    lock (existingSet)
-                                    {
-                                        existingSet.Remove(tracked.Value);
-                                    }
-                                    if(_cachedSnapshot != null)
-                                    {
-                                        var action = Toolkit.Pool<TableAction>.Rent();
-                                        action.LogType = LogType.IndexRemove;
-                                        action.Entity = tracked;
-                                        action.IndexName = fullIndexName;
-                                        action.IndexValue = tracked.Value;
-                                        _intentLog.Enqueue(action);
-                                    }
-                                }
-                            }
-                            tracked.IndexedBy.Remove(propertyName);
-                        }
+                        existingIndexValue = null;
+                    }
+                    if (existingIndexValue is not null && Equals(existingIndexValue, indexValue))
+                    {
+                        return;
+                    }
 
-                        if (filter != null && !filter(tracked.Value))
-                        {
-                            return;
-                        }
+                    // The entity was indexed under a different value: drop it from the old bucket
+                    if (existingIndexValue is not null && index.TryGetValue(existingIndexValue, out var existingSet))
+                    {
+                        existingSet.Remove(tracked.Value);
+                    }
+                    // Record the old-value removal so the snapshot drops it too
+                    if (existingIndexValue is not null && _cachedSnapshot != null)
+                    {
+                        var removeAction = Toolkit.Pool<TableAction>.Rent();
+                        removeAction.IndexLogType = LogType.IndexRemove;
+                        removeAction.Entity = tracked;
+                        removeAction.IndexName = fullIndexName;
+                        removeAction.IndexValue = existingIndexValue;
+                        _intentLog.Enqueue(removeAction);
+                    }
 
-                        if (indexValue is not null)
+                    if (indexValue is null)
+                    {
+                        tracked.IndexedBy.Remove(propertyName);
+                        return;
+                    }
+
+                    if (filter != null && !filter(tracked.Value))
+                    {
+                        return;
+                    }
+
+                    if (!index.TryGetValue(indexValue, out var set))
+                    {
+                        set = new HashSet<T>();
+                        index[indexValue] = set;
+                    }
+                    set.Add(tracked.Value);
+                    if (_cachedSnapshot != null)
+                    {
+                        if (_pendingIndex.TryGetValue(tracked, out var pendingActions) && pendingActions.TryGetValue(fullIndexName, out var pendingAction))
                         {
-                            HashSet<T> set;
-                            lock (index)
+                            pendingAction.IndexLogType = LogType.IndexUpdate;
+                            pendingAction.IndexValue = indexValue;
+                        }
+                        else
+                        {
+                            var action = Toolkit.Pool<TableAction>.Rent();
+                            action.IndexLogType = LogType.IndexUpdate;
+                            action.Entity = tracked;
+                            action.IndexName = fullIndexName;
+                            action.IndexValue = indexValue;
+                            _intentLog.Enqueue(action);
+                            if (!_pendingIndex.TryGetValue(tracked, out pendingActions))
                             {
-                                if (!index.TryGetValue(indexValue, out set))
-                                {
-                                    set = new HashSet<T>();
-                                    index[indexValue] = set;
-                                }
+                                pendingActions = new Dictionary<string, TableAction>();
+                                _pendingIndex[tracked] = pendingActions;
                             }
-                            lock (set)
-                            {
-                                set.Add(tracked.Value);
-                            }
-                            if(_cachedSnapshot != null)
-                            {
-                                var action = Toolkit.Pool<TableAction>.Rent();
-                                action.LogType = LogType.IndexUpdate;
-                                action.Entity = tracked;
-                                action.IndexName = fullIndexName;
-                                action.IndexValue = tracked.Value;
-                                _intentLog.Enqueue(action);
-                            }
-                            tracked.IndexedBy.Add(propertyName, indexValue);
+                            pendingActions[fullIndexName] = action;
                         }
                     }
+                    tracked.IndexedBy[propertyName] = indexValue;
                 }
             }).OnDeleted((i, m, t) =>
             {
-                Dictionary<object, HashSet<T>> index;
-                lock (_indexes)
+                if (!_indexes.TryGetValue(fullIndexName, out var index))
                 {
-                    if (!_indexes.TryGetValue(fullIndexName, out index))
-                    {
-                        return;
-                    }
+                    return;
                 }
                 if (i is ITrackingIndexed<T> tracked)
                 {
-                    lock (tracked)
+                    if (tracked.IndexedBy.TryGetValue(propertyName, out var existingIndexValue))
                     {
-                        if (tracked.IndexedBy.TryGetValue(propertyName, out var existingIndexValue))
+                        if (index.TryGetValue(existingIndexValue, out var existingSet))
                         {
-                            lock (index)
+                            existingSet.Remove(tracked.Value);
+                            if (_cachedSnapshot != null)
                             {
-                                if (index.TryGetValue(existingIndexValue, out var existingSet))
+                                if (_pendingIndex.TryGetValue(tracked, out var pendingActions) && pendingActions.TryGetValue(fullIndexName, out var pendingAction))
                                 {
-                                    lock (existingSet)
+                                    pendingAction.IndexLogType = LogType.IndexRemove;
+                                    pendingAction.IndexValue = existingIndexValue;
+                                }
+                                else
+                                {
+                                    var action = Toolkit.Pool<TableAction>.Rent();
+                                    action.IndexLogType = LogType.IndexRemove;
+                                    action.Entity = tracked;
+                                    action.IndexName = fullIndexName;
+                                    action.IndexValue = existingIndexValue;
+                                    _intentLog.Enqueue(action);
+                                    if (!_pendingIndex.TryGetValue(tracked, out pendingActions))
                                     {
-                                        existingSet.Remove(tracked.Value);
+                                        pendingActions = new Dictionary<string, TableAction>();
+                                        _pendingIndex[tracked] = pendingActions;
                                     }
-                                    if(_cachedSnapshot != null)
-                                    {
-                                        var action = Toolkit.Pool<TableAction>.Rent();
-                                        action.LogType = LogType.IndexRemove;
-                                        action.Entity = tracked;
-                                        action.IndexName = fullIndexName;
-                                        action.IndexValue = tracked.Value;
-                                        _intentLog.Enqueue(action);
-                                    }
+                                    pendingActions[fullIndexName] = action;
                                 }
                             }
-                            tracked.IndexedBy.Remove(propertyName);
                         }
+                        tracked.IndexedBy.Remove(propertyName);
                     }
                 }
             });
@@ -1566,17 +1592,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _deletedItems.Clear();
                 ((ITableBuilder<T>)this).OnInserted((i, m, t) =>
                 {
-                    lock (_changedItems)
-                    {
-                        _changedItems.Add(i);
-                    }
+                    _changedItems.Add(i);
                 });
                 ((ITableBuilder<T>)this).OnDeleted((i, m, t) =>
                 {
-                    lock (_deletedItems)
-                    {
-                        _deletedItems.Add(i);
-                    }
+                    _deletedItems.Add(i);
                 });
             }
             TrackingChanges = true;
@@ -1657,7 +1677,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 return false;
             }
 
-            public IEnumerable Apply(IDatabaseObject table, Queue<TableAction> intentLog, PendingWorkContext pendingWork)
+            public IEnumerable Apply(Table<T> table, Queue<TableAction> intentLog, PendingWorkContext pendingWork)
             {
                 if (intentLog is null || intentLog.Count == 0)
                 {
@@ -1669,6 +1689,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _deletedItems.Clear();
                 while (intentLog.TryDequeue(out var action))
                 {
+                    var entity = action.Entity;
                     try
                     {
                         using (action)
@@ -1677,11 +1698,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                             switch (action.LogType)
                             {
                                 case LogType.Upsert:
-                                    var entity = action.Entity.TakeSnapshot();
-                                    _data[action.Entity.Value] = entity;
+                                    var snapshotEntity = action.Entity.TakeSnapshot();
+                                    _data[action.Entity.Value] = snapshotEntity;
                                     if (TrackingChanges)
                                     {
-                                        _changedItems.Add(entity);
+                                        _changedItems.Add(snapshotEntity);
                                     }
                                     break;
                                 case LogType.Delete:
@@ -1692,6 +1713,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                                         _deletedItems.Add(entityToDelete);
                                     }
                                     break;
+                            }
+
+                            switch(action.IndexLogType)
+                            {
                                 case LogType.IndexUpdate:
                                     var index = _indexes[action.IndexName];
                                     if (!index.TryGetValue(action.IndexValue, out var set))
@@ -1721,6 +1746,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                         pendingWork.LastSuccess = false;
                         yield break;
                     }
+                    finally
+                    {
+                        table._pending.Remove(entity);
+                        table._pendingIndex.Remove(entity);
+                    }
 
                     if (pendingWork.WaitForNextTick)
                     {
@@ -1749,21 +1779,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     return _snapshotData;
                 }
-                lock (_data)
+                if (_snapshotData != null)
                 {
-                    if (_snapshotData != null)
-                    {
-                        return _snapshotData;
-                    }
-                    _snapshotData = _data.Values.ToArray();
                     return _snapshotData;
                 }
+                _snapshotData = _data.Values.ToArray();
+                return _snapshotData;
             }
         }
 
         private class TableAction : IPoolable, IDisposable
         {
-            public LogType LogType;
+            public LogType? LogType; 
+            public LogType? IndexLogType;
             public ITrackingIndexed<T> Entity;
             public string IndexName;
             public object IndexValue;
@@ -1774,6 +1802,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
             public void Reset()
             {
+                LogType = null;
+                IndexLogType = null;
                 Entity = null;
                 IndexName = null;
                 IndexValue = null;

@@ -30,11 +30,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             IHandler[] handlers = Array.Empty<IHandler>();
             if (_owners.TryGetValue(owner, out var ownerHooks))
             {
-                lock (ownerHooks)
-                {
-                    handlers = new IHandler[ownerHooks.Count];
-                    ownerHooks.CopyTo(handlers);
-                }
+                handlers = new IHandler[ownerHooks.Count];
+                ownerHooks.CopyTo(handlers);
             }
             List<IHook<T>> hooks = new List<IHook<T>>();
             for (int i = 0; i < handlers.Length; i++)
@@ -94,44 +91,34 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             HashSet<IHandler> hooks;
             if (!_hooks.TryGetValue(typeof(T), out hooks))
             {
-                lock (_hooks) { 
-                    if (!_hooks.TryGetValue(typeof(T), out hooks))
-                    {
-                        hooks = new HashSet<IHandler>();
-                        _hooks.Add(typeof(T), hooks);
-                    }
+                if (!_hooks.TryGetValue(typeof(T), out hooks))
+                {
+                    hooks = new HashSet<IHandler>();
+                    _hooks.Add(typeof(T), hooks);
                 }
             }
 
-            lock (hooks)
+            if (IsVerboseEnabled) LogVerbose($"Registering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+            var owner = Guard.NotNull(hook.Owner, nameof(hook.Owner));
+            HashSet<IHandler> ownerHooks;
+            if (!_owners.TryGetValue(owner, out ownerHooks))
             {
-                if (IsVerboseEnabled) LogVerbose($"Registering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
-                var owner = Guard.NotNull(hook.Owner, nameof(hook.Owner));
-                HashSet<IHandler> ownerHooks;
                 if (!_owners.TryGetValue(owner, out ownerHooks))
                 {
-                    lock (_owners)
-                    {
-                        if (!_owners.TryGetValue(owner, out ownerHooks))
-                        {
-                            ownerHooks = new HashSet<IHandler>();
-                            _owners.Add(owner, ownerHooks);
-                        }
-                    }
+                    ownerHooks = new HashSet<IHandler>();
+                    _owners.Add(owner, ownerHooks);
                 }
-                lock(ownerHooks) {
-                    ownerHooks.Add(hook);
-                }                 
-                hooks.Add(hook);
-                var orderedHooks = hooks.OrderBy(h => h.Priority).ToArray();
-                if(!_orderedHooks.ContainsKey(typeof(T)))
-                {
-                    _orderedHooks.Add(typeof(T), orderedHooks);
-                }
-                else
-                {
-                    _orderedHooks[typeof(T)] = orderedHooks;
-                }                 
+            }
+            ownerHooks.Add(hook);
+            hooks.Add(hook);
+            var orderedHooks = hooks.OrderBy(h => h.Priority).ToArray();
+            if(!_orderedHooks.ContainsKey(typeof(T)))
+            {
+                _orderedHooks.Add(typeof(T), orderedHooks);
+            }
+            else
+            {
+                _orderedHooks[typeof(T)] = orderedHooks;
             }
         }
         /// <inheritdoc/>
@@ -256,11 +243,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             IHandler[] handlers = Array.Empty<IHandler>();
             if (_owners.TryGetValue(owner, out var ownerHooks))
             {
-                lock (ownerHooks)
-                {
-                    handlers = new IHandler[ownerHooks.Count];
-                    ownerHooks.CopyTo(handlers);
-                }
+                handlers = new IHandler[ownerHooks.Count];
+                ownerHooks.CopyTo(handlers);
             }
             List<IHook<T>> unregisteredHooks = new List<IHook<T>>();
             for (int i = 0; i < handlers.Length; i++)
@@ -284,19 +268,13 @@ namespace HomebrewDot.Net.Rimworld.Hooks
             HashSet<IHandler> hooks;
             if (_hooks.TryGetValue(typeof(T), out hooks))
             {
-                lock (hooks)
-                {
-                    if (IsVerboseEnabled) LogVerbose($"Unregistering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
-                    hooks.Remove(hook);
+                if (IsVerboseEnabled) LogVerbose($"Unregistering hook of type {typeof(T).FullName} owned by {hook.Owner} with priority {hook.Priority}");
+                hooks.Remove(hook);
 
-                    HashSet<IHandler> ownerHooks;
-                    if (_owners.TryGetValue(owner, out ownerHooks))
-                    {
-                        lock (ownerHooks)
-                        {
-                            ownerHooks.Remove(hook);
-                        }
-                    }
+                HashSet<IHandler> ownerHooks;
+                if (_owners.TryGetValue(owner, out ownerHooks))
+                {
+                    ownerHooks.Remove(hook);
                 }
                 var orderedHooks = hooks.OrderBy(h => h.Priority).ToArray();
                 if(!_orderedHooks.ContainsKey(typeof(T)))

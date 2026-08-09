@@ -37,6 +37,7 @@ using UnityEngine;
 using Verse;
 using Verse.AI.Group;
 using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
+using static HomebrewDot.Net.Rimworld.Toolkit;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using LinqExpression = System.Linq.Expressions.Expression;
 
@@ -48,7 +49,6 @@ namespace HomebrewDot.Net.Rimworld
     public class Toolkit : Mod
     {
         // Statics
-        private static object _lock = new object();
         private static Toolkit _instance;
         private static ToolkitSettings _settings;
         private static Lazy<Harmony> _harmony = new Lazy<Harmony>(() => new Harmony(ModId), true);
@@ -76,12 +76,9 @@ namespace HomebrewDot.Net.Rimworld
             get
             {
                 if (_settings != null) return _settings;
-                lock (_lock)
+                if (_settings == null)
                 {
-                    if (_settings == null)
-                    {
-                        _settings = Instance.GetSettings<ToolkitSettings>();
-                    }
+                    _settings = Instance.GetSettings<ToolkitSettings>();
                 }
                 return _settings;
             }
@@ -116,9 +113,15 @@ namespace HomebrewDot.Net.Rimworld
             Services.Register<IReferenceType>(ValueReferenceType.Instance, ValueReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(StatReferenceType.Instance, StatReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(CompReferenceType.Instance, CompReferenceType.DefaultTypeName);
+            Services.Register<IReferenceType>(DefReferenceType<ThingCategoryDef>.Instance, DefReferenceType<ThingCategoryDef>.DefaultTypeName);
+            Services.Register<IReferenceType>(DefReferenceType<StuffCategoryDef>.Instance, DefReferenceType<StuffCategoryDef>.DefaultTypeName);
+            Services.Register<IReferenceType>(SelfReferenceType.Instance, SelfReferenceType.DefaultTypeName);
 
             // Input helpers
             Toolkit.Services.Register<IReferenceTypeInputHelper>(StateReferenceTypeInputHelper.Instance, StatReferenceType.DefaultTypeName);
+            Toolkit.Services.Register<IReferenceTypeInputHelper>(DefReferenceTypeInputHelper<ThingCategoryDef>.Instance, DefReferenceType<ThingCategoryDef>.DefaultTypeName);
+            Toolkit.Services.Register<IReferenceTypeInputHelper>(DefReferenceTypeInputHelper<StuffCategoryDef>.Instance, DefReferenceType<StuffCategoryDef>.DefaultTypeName);
+            Toolkit.Services.Register<IReferenceTypeInputHelper>(CompReferenceTypeInputHelper.Instance, CompReferenceType.DefaultTypeName);
 
             // Operator types
             foreach (var alias in EqualsOperatorType.Aliases)
@@ -166,6 +169,8 @@ namespace HomebrewDot.Net.Rimworld
                 Services.Register<IOperatorType>(MatchOperatorType.Instance, alias);
             }
             Services.Register<IOperatorType>(InOperatorType.Instance, InOperatorType.DefaultTypeName);
+            Services.Register<IOperatorType>(ContainsOperatorType.Instance, ContainsOperatorType.DefaultTypeName);
+            Services.Register<IOperatorType>(InThingCategoryOperatorType.Instance, InThingCategoryOperatorType.DefaultTypeName);
         }
 
         /// <summary>
@@ -174,7 +179,6 @@ namespace HomebrewDot.Net.Rimworld
         public static class Hooks
         {
             // Fields
-            private static readonly object _lock = new object();
             private static IHookManager _manager;
 
             // Properties
@@ -183,29 +187,23 @@ namespace HomebrewDot.Net.Rimworld
                 get
                 {
                     if (_manager != null) return _manager;
-                    lock (_lock)
+                    if (_manager == null)
                     {
-                        if (_manager == null)
-                        {
-                            _manager = new HookManager();
-                        }
+                        _manager = new HookManager();
                     }
                     return _manager;
                 }
                 set
                 {
-                    lock (_lock)
+                    if (_manager != null && value is not null)
                     {
-                        if (_manager != null && value is not null)
-                        {
-                            Invoking.Safe(() => _manager.TransferTo(value));
-                        }
-                        if (_manager is IDisposable disposable)
-                        {
-                            Invoking.Safe(() => disposable.Dispose());
-                        }
-                        _manager = value;
+                        Invoking.Safe(() => _manager.TransferTo(value));
                     }
+                    if (_manager is IDisposable disposable)
+                    {
+                        Invoking.Safe(() => disposable.Dispose());
+                    }
+                    _manager = value;
                 }
             }
 
@@ -214,12 +212,9 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static void ReloadManager()
             {
-                lock (_lock)
+                if (_manager is HookManager manager)
                 {
-                    if (_manager is HookManager manager)
-                    {
-                        _manager = null;
-                    }
+                    _manager = null;
                 }
             }
         }
@@ -243,7 +238,6 @@ namespace HomebrewDot.Net.Rimworld
             }
 
             // Fields
-            private static readonly object _lock = new object();
             private static ISnapshotOrchestrator _orchestrator;
             private static ISnapshotManager _manager;
             private static event Action<ISnapshotOrchestratorBuilder> _orchestratorConfig;
@@ -258,17 +252,11 @@ namespace HomebrewDot.Net.Rimworld
             {
                 add
                 {
-                    lock (_lock)
-                    {
-                        _orchestratorConfig += value;
-                    }
+                    _orchestratorConfig += value;
                 }
                 remove
                 {
-                    lock (_lock)
-                    {
-                        _orchestratorConfig -= value;
-                    }
+                    _orchestratorConfig -= value;
                 }
             }
             /// <summary>
@@ -278,17 +266,11 @@ namespace HomebrewDot.Net.Rimworld
             {
                 add
                 {
-                    lock (_lock)
-                    {
-                        _managerConfig += value;
-                    }
+                    _managerConfig += value;
                 }
                 remove
                 {
-                    lock (_lock)
-                    {
-                        _managerConfig -= value;
-                    }
+                    _managerConfig -= value;
                 }
             }
             /// <summary>
@@ -298,17 +280,11 @@ namespace HomebrewDot.Net.Rimworld
             {
                 add
                 {
-                    lock (_lock)
-                    {
-                        _schemaConfig += value;
-                    }
+                    _schemaConfig += value;
                 }
                 remove
                 {
-                    lock (_lock)
-                    {
-                        _schemaConfig -= value;
-                    }
+                    _schemaConfig -= value;
                 }
             }
 
@@ -320,25 +296,19 @@ namespace HomebrewDot.Net.Rimworld
                 get
                 {
                     if (_orchestrator != null) return _orchestrator;
-                    lock (_lock)
+                    if (_orchestrator == null)
                     {
-                        if (_orchestrator == null)
-                        {
-                            _orchestrator = new SnapshotOrchestrator(Toolkit.Hooks.Manager, Invoking.Safe(() => Settings.SlowGatheringEnabled, false));
-                        }
+                        _orchestrator = new SnapshotOrchestrator(Toolkit.Hooks.Manager, Invoking.Safe(() => Settings.SlowGatheringEnabled, false));
                     }
                     return _orchestrator;
                 }
                 set
                 {
-                    lock (_lock)
+                    if (_orchestrator is IDisposable disposable)
                     {
-                        if (_orchestrator is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                        _orchestrator = value;
+                        disposable.Dispose();
                     }
+                    _orchestrator = value;
                 }
             }
 
@@ -350,25 +320,19 @@ namespace HomebrewDot.Net.Rimworld
                 get
                 {
                     if (_manager != null) return _manager;
-                    lock (_lock)
+                    if (_manager == null)
                     {
-                        if (_manager == null)
-                        {
-                            _manager = new SnapshotManager(new Database(), Hooks.Manager);
-                        }
+                        _manager = new SnapshotManager(new Database(), Hooks.Manager);
                     }
                     return _manager;
                 }
                 set
                 {
-                    lock (_lock)
+                    if (_manager is IDisposable disposable)
                     {
-                        if (_manager is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                        _manager = value;
+                        disposable.Dispose();
                     }
+                    _manager = value;
                 }
             }
 
@@ -378,13 +342,10 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static void ReloadOrchestration()
             {
-                lock (_lock)
+                if (_orchestrator is SnapshotOrchestrator disposable)
                 {
-                    if (_orchestrator is SnapshotOrchestrator disposable)
-                    {
-                        Invoking.Safe(() => disposable.Dispose());
-                        _orchestrator = null;
-                    }
+                    Invoking.Safe(() => disposable.Dispose());
+                    _orchestrator = null;
                 }
                 StartIndexing(Current.Game);
             }
@@ -393,12 +354,9 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static void ReloadManager()
             {
-                lock (_lock)
+                if (_manager is SnapshotManager manager)
                 {
-                    if (_manager is SnapshotManager manager)
-                    {
-                        _manager = null;
-                    }
+                    _manager = null;
                 }
                 StartIndexing(Current.Game);
             }
@@ -433,7 +391,8 @@ namespace HomebrewDot.Net.Rimworld
             public static class Indexers
             {
                 // Fields
-                private readonly static IDictionary<string, (object Indexer, Action<IDatabaseSchemaBuilder> Configure)> _indexers = new Dictionary<string, (object Indexer, Action<IDatabaseSchemaBuilder> Configure)>(StringComparer.OrdinalIgnoreCase);
+                private readonly static IDictionary<(string Name, Type IndexedType), (object Indexer, Action<IDatabaseSchemaBuilder> Configure)> _indexers = new Dictionary<(string Name, Type IndexedType), (object Indexer, Action<IDatabaseSchemaBuilder> Configure)>();
+                private readonly static IDictionary<Type, HashSet<string>> _changeTrackers = new Dictionary<Type, HashSet<string>>();
 
                 /// <summary>
                 /// Registers an indexer with the given name and configuration.
@@ -445,9 +404,9 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                     indexer = Helpers.Guard.NotNull(indexer, nameof(indexer));
-                    lock (_indexers)
                     {
-                        if (_indexers.TryGetValue(name, out var existing))
+                        var key = (name, typeof(T));
+                        if (_indexers.TryGetValue(key, out var existing))
                         {
                             if (!overwrite)
                             {
@@ -470,7 +429,7 @@ namespace HomebrewDot.Net.Rimworld
                             });
                             Toolkit.Indexing.ConfigureSchema += configure;
 
-                            _indexers[name] = (indexer, configure);
+                            _indexers[key] = (indexer, configure);
 
                             Indexing.StartIndexing(Current.Game);
                         });
@@ -502,11 +461,20 @@ namespace HomebrewDot.Net.Rimworld
                 public static void ByProperty<T, TProperty>(Expression<Func<T, TProperty>> propertyExpression) where T : class
                 {
                     propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
+                    if (!_changeTrackers.ContainsKey(typeof(T)))
+                    {
+                        _changeTrackers[typeof(T)] = new HashSet<string>();
+                    }
                     var memberInfo = Helpers.Expression.GetMember(propertyExpression);
                     var metadataKey = IndexMetadataKey<TProperty>.Get($"{typeof(T).FullName}.{memberInfo.Name}");
+                    if (_changeTrackers[typeof(T)].Contains(metadataKey.Name))
+                    {
+                        return;
+                    }
                     var lambda = propertyExpression.Compile();
                     var tracker = new PropertyChangeTracker<T, TProperty>(lambda, metadataKey);
                     Indexing.ConfigureManager += x => x.WithChangeTracker(tracker);
+                    _changeTrackers[typeof(T)].Add(metadataKey.Name);
                 }
                 /// <summary>
                 /// Helper method to create and register a new indexer for a specific nested property using the provided property expression.
@@ -518,16 +486,61 @@ namespace HomebrewDot.Net.Rimworld
                 public static void ByNestedProperty<T, TProperty>(Expression<Func<T, TProperty>> propertyExpression, string metadataKey = null) where T : class
                 {
                     propertyExpression = Helpers.Guard.NotNull(propertyExpression, nameof(propertyExpression));
+                    if (!_changeTrackers.ContainsKey(typeof(T)))
+                    {
+                        _changeTrackers[typeof(T)] = new HashSet<string>();
+                    }
                     var propertyInfos = Helpers.Expression.GetNestedMembers(propertyExpression);
                     var name = $"{typeof(T).FullName}.{string.Join(".", propertyInfos.Select(p => p.Name))}";
                     if (string.IsNullOrEmpty(metadataKey))
                     {
-                        metadataKey = propertyInfos.Last().Name;
+                        metadataKey = name;
+                    }
+                    if (_changeTrackers[typeof(T)].Contains(metadataKey))
+                    {
+                        return;
                     }
                     var typedKey = IndexMetadataKey<TProperty>.Get(metadataKey);
                     var lambda = propertyExpression.Compile();
                     var tracker = new PropertyChangeTracker<T, TProperty>(lambda, typedKey);
                     Indexing.ConfigureManager += x => x.WithChangeTracker(tracker);
+                    _changeTrackers[typeof(T)].Add(metadataKey);
+                }
+
+                /// <summary>
+                /// Helper method to create and register a new indexer for a specific property using the provided type and property path. 
+                /// The property path should be a dot-separated string representing the nested properties to access. 
+                /// </summary>
+                /// <param name="type">The type of the objects being indexed.</param>
+                /// <param name="path">The dot-separated path of the nested properties to index.</param>
+                public static void ByPath(Type type, string path)
+                {
+                    type = Helpers.Guard.NotNull(type, nameof(type));
+                    path = Helpers.Guard.NotNull(path, nameof(path));
+                    if (!_changeTrackers.ContainsKey(type))
+                    {
+                        _changeTrackers[type] = new HashSet<string>();
+                    }
+
+                    if (_changeTrackers[type].Contains(path))
+                    {
+                        return;
+                    }
+                    var returnType = Helpers.Traversing.TryWalkIndexedPath(type, path);
+                    var inputParameter = LinqExpression.Parameter(type, "x");
+                    var getter = Helpers.Traversing.GenerateFullGetter(inputParameter, type, path);
+                    var metadataMethod = Helpers.Expression.GetMember(() => IndexMetadataKey<object>.Get(path));
+                    var metadataGenericType = metadataMethod.DeclaringType.GetGenericTypeDefinition().MakeGenericType(returnType);
+                    var contructor = metadataGenericType.GetMethod(metadataMethod.Name, BindingFlags.Public | BindingFlags.Static);
+                    var metadataKey = contructor.Invoke(null, new object[] { $"{type.FullName}.{path}" });
+                    var lambdaType = typeof(Func<,>).MakeGenericType(type, returnType);
+                    var lambda = LinqExpression.Lambda(lambdaType, getter, inputParameter).Compile();
+                    var changeTrackerType = typeof(PropertyChangeTracker<,>).MakeGenericType(type, returnType);
+                    var changeTracker = Activator.CreateInstance(changeTrackerType, lambda, metadataKey, null);
+                    var withChangeTrackerMethod = typeof(ISnapshotManagerConfigurator).GetMethod(nameof(ISnapshotManagerConfigurator.WithChangeTracker));
+                    var genericWithChangeTrackerMethod = withChangeTrackerMethod.MakeGenericMethod(type);
+                    Indexing.ConfigureManager += x => genericWithChangeTrackerMethod.Invoke(x, new object[] { changeTracker });
+                    _changeTrackers[type].Add(path);
                 }
             }
 
@@ -637,7 +650,7 @@ namespace HomebrewDot.Net.Rimworld
                             .When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.TryGetValue(ResearchTrackerKey.Name, out var researchCounter) || (int)researchCounter != HarmonyThingGatherer.ResearchTracker))
                             .Set(ToolkitConstants.Def.Thing.IsConstructionMaterial, t =>
                             {
-                                if(t is ThingDef def)
+                                if (t is ThingDef def)
                                 {
                                     // Setup cache based on research count
                                     var buildableDefs = Cache<int, (IReadOnlyCollection<ThingDef> Costs, IReadOnlyCollection<StuffCategoryDef> Stuffs)>.GetOrSet(HarmonyThingGatherer.ResearchTracker, () =>
@@ -681,36 +694,50 @@ namespace HomebrewDot.Net.Rimworld
                     /// <summary>
                     /// Adds an indexer that marks meat and leather defs from non-standard creatures (humanlike, insectoid, entity, fleshbeast, etc.) as foul.
                     /// A def is considered foul if any source creature is humanlike or has a non-normal flesh type.
+                    /// Also indexes Things based on their def so Thing-level filters on IsFoul work.
                     /// </summary>
                     public static void TrackIsFoul()
                     {
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsFoul.Name)))
-                             .Set(ToolkitConstants.Def.Thing.IsFoul, t =>
-                             {
-                                 if (t is ThingDef def && (def.IsMeat || def.IsLeather))
-                                 {
-                                     foreach (var creature in DefDatabase<ThingDef>.AllDefs)
-                                     {
-                                         if (creature.race != null && !creature.IsCorpse)
-                                         {
-                                             bool isSourceForMeat = def.IsMeat && creature.race.meatDef == def;
-                                             bool isSourceForLeather = def.IsLeather && creature.race.leatherDef == def;
-
-                                             if (isSourceForMeat || isSourceForLeather)
-                                             {
-                                                 if (creature.race.Humanlike || creature.race.FleshType != FleshTypeDefOf.Normal || !creature.race.Animal)
-                                                 {
-                                                     return true;
-                                                 }
-                                             }
-                                         }
-                                     }
-                                 }
-                                 return false;
-                             });
+                             .Set(ToolkitConstants.Def.Thing.IsFoul, t => t is ThingDef def && IsFoulDef(def));
                         });
+                        Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
+                        {
+                            x.Set(ToolkitConstants.Def.Thing.IsFoul, t => t.def != null && IsFoulDef(t.def));
+                        });
+                    }
+
+                    /// <summary>
+                    /// Determines whether the given <see cref="ThingDef"/> is foul, i.e. meat or leather sourced from a
+                    /// non-standard creature (humanlike, non-normal flesh type, or non-animal).
+                    /// </summary>
+                    /// <param name="def">The def to evaluate. Can be null.</param>
+                    /// <returns>True if the def is foul meat or leather; otherwise, false.</returns>
+                    public static bool IsFoulDef(ThingDef def)
+                    {
+                        if (def == null || !(def.IsMeat || def.IsLeather))
+                        {
+                            return false;
+                        }
+                        foreach (var creature in DefDatabase<ThingDef>.AllDefs)
+                        {
+                            if (creature.race != null && !creature.IsCorpse)
+                            {
+                                bool isSourceForMeat = def.IsMeat && creature.race.meatDef == def;
+                                bool isSourceForLeather = def.IsLeather && creature.race.leatherDef == def;
+
+                                if (isSourceForMeat || isSourceForLeather)
+                                {
+                                    if (creature.race.Humanlike || creature.race.FleshType != FleshTypeDefOf.Normal || !creature.race.Animal)
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        return false;
                     }
 
                     /// <summary>
@@ -1062,6 +1089,20 @@ namespace HomebrewDot.Net.Rimworld
                 }
 
                 /// <summary>
+                /// Adds an indexer that tracks the map for each Thing in the game. The indexer will return the map that the Thing is currently on, or null if the Thing is not on a map.
+                /// </summary>
+                public static void TrackMap()
+                {
+                    Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.Map.Name, x =>
+                    {
+                        x.Set(ToolkitConstants.Thing.Map, t =>
+                        {
+                            return t.Map ?? t.MapHeld;
+                        }, true);
+                    });
+                }
+
+                /// <summary>
                 /// Adds an indexer that tracks the mod ID for each Thing and Def in the game.
                 /// </summary>
                 public static void TrackModId()
@@ -1112,6 +1153,26 @@ namespace HomebrewDot.Net.Rimworld
                             });
                         });
                     }
+                }
+
+                /// <summary>
+                /// Adds an indexer that tracks the hit point percentage for each Thing in the game. The indexer will return a float value between 0 and 1 representing the current hit points of the Thing divided by its maximum hit points. If the Thing does not use hit points, the indexer will return 1.
+                /// </summary>
+                public static void TrackHitPointPercentage()
+                {
+                    Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.HitPointPercentage.Name, x =>
+                    {
+                        x.When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v.def.useHitPoints)
+                        .Requires(IndexMetadataKey<int>.Get($"{typeof(Verse.Thing)}.{nameof(Verse.Thing.HitPoints)}"), x => x.HitPoints)
+                        .Set(ToolkitConstants.Thing.HitPointPercentage, t =>
+                        {
+                            if (t.def.useHitPoints)
+                            {
+                                return t.HitPoints / (float)t.MaxHitPoints * 100;
+                            }
+                            return 1f;
+                        });
+                    });
                 }
 
                 /// <summary>
@@ -1219,7 +1280,6 @@ namespace HomebrewDot.Net.Rimworld
             }
 
             // Fields
-            private static readonly object _lock = new object();
             private static readonly Dictionary<string, ICollectionDef> _collectionDefinitions = new Dictionary<string, ICollectionDef>(StringComparer.OrdinalIgnoreCase);
             private static readonly Dictionary<string, ICollector> _collectors = new Dictionary<string, ICollector>(StringComparer.OrdinalIgnoreCase);
             private static ICollectionComparator _comparator;
@@ -1233,15 +1293,12 @@ namespace HomebrewDot.Net.Rimworld
                 get
                 {
                     if (_comparator != null) return _comparator;
-                    lock (_lock)
+                    if (_comparator == null)
                     {
-                        if (_comparator == null)
-                        {
-                            var referenceTypes = Services.GetAllNamed<IReferenceType>();
-                            var referenceResolver = Services.Get<IReferenceResolver>() ?? new ReferenceResolver(referenceTypes);
-                            var operatorTypes = Services.GetAllNamed<IOperatorType>();
-                            _comparator = new CollectionComparator(new Comparator(referenceResolver, operatorTypes));
-                        }
+                        var referenceTypes = Services.GetAllNamed<IReferenceType>();
+                        var referenceResolver = Services.Get<IReferenceResolver>() ?? new ReferenceResolver(referenceTypes);
+                        var operatorTypes = Services.GetAllNamed<IOperatorType>();
+                        _comparator = new CollectionComparator(new Comparator(referenceResolver, operatorTypes));
                     }
                     return _comparator;
                 }
@@ -1249,14 +1306,11 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     value = Helpers.Guard.NotNull(value, nameof(value));
 
-                    lock (_lock)
+                    if (_comparator is IDisposable disposable)
                     {
-                        if (_comparator is IDisposable disposable)
-                        {
-                            Invoking.Safe(() => disposable.Dispose());
-                        }
-                        _comparator = value;
+                        Invoking.Safe(() => disposable.Dispose());
                     }
+                    _comparator = value;
                 }
             }
 
@@ -1265,12 +1319,9 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static void ReloadDefaultComparator()
             {
-                lock (_lock)
+                if (_comparator is CollectionComparator)
                 {
-                    if (_comparator is CollectionComparator)
-                    {
-                        _comparator = null;
-                    }
+                    _comparator = null;
                 }
             }
 
@@ -1279,22 +1330,19 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static void StartCollection()
             {
-                lock (_lock)
+                foreach (var collector in _collectors.Values)
                 {
-                    foreach (var collector in _collectors.Values)
+                    Invoking.Safe(() =>
                     {
-                        Invoking.Safe(() =>
-                        {
-                            collector.StopCollecting();
-                        });
-                    }
-                    foreach (var collector in _collectors.Values)
+                        collector.StopCollecting();
+                    });
+                }
+                foreach (var collector in _collectors.Values)
+                {
+                    Invoking.Safe(() =>
                     {
-                        Invoking.Safe(() =>
-                        {
-                            collector.StartCollecting(Comparator, _collectionDefinitions);
-                        });
-                    }
+                        collector.StartCollecting(Comparator, _collectionDefinitions);
+                    });
                 }
             }
 
@@ -1308,10 +1356,7 @@ namespace HomebrewDot.Net.Rimworld
             {
                 name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                 definition = Helpers.Guard.NotNull(definition, nameof(definition));
-                lock (_lock)
-                {
-                    _collectionDefinitions[name] = definition;
-                }
+                _collectionDefinitions[name] = definition;
                 Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, definition, null, true));
             }
             /// <summary>
@@ -1327,18 +1372,15 @@ namespace HomebrewDot.Net.Rimworld
                 collector = Helpers.Guard.NotNull(collector, nameof(collector));
                 var collection = Helpers.Guard.NotNull(collector.Definition, nameof(collector.Definition));
 
-                lock (_lock)
+                _collectors[name] = collector;
+                Set(name, collection);
+                if (startCollecting)
                 {
-                    _collectors[name] = collector;
-                    Set(name, collection);
-                    if (startCollecting)
+                    Invoking.Safe(() =>
                     {
-                        Invoking.Safe(() =>
-                        {
-                            collector.StopCollecting();
-                            collector.StartCollecting(Comparator, _collectionDefinitions);
-                        });
-                    }
+                        collector.StopCollecting();
+                        collector.StartCollecting(Comparator, _collectionDefinitions);
+                    });
                 }
 
                 Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, collection, collector, true));
@@ -1367,7 +1409,6 @@ namespace HomebrewDot.Net.Rimworld
                 ICollector collector;
                 ICollectionDef collection;
                 bool removed = false;
-                lock (_lock)
                 {
                     if (_collectors.TryGetValue(name, out collector))
                     {
@@ -1434,10 +1475,7 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>A read-only dictionary containing all collection definitions.</returns>
             public static IReadOnlyDictionary<string, ICollectionDef> GetAllDefinitions()
             {
-                lock (_lock)
-                {
-                    return new Dictionary<string, ICollectionDef>(_collectionDefinitions, StringComparer.OrdinalIgnoreCase);
-                }
+                return new Dictionary<string, ICollectionDef>(_collectionDefinitions, StringComparer.OrdinalIgnoreCase);
             }
 
             /// <summary>
@@ -1446,10 +1484,7 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>A read-only dictionary containing all collectors.</returns>
             public static IReadOnlyDictionary<string, ICollector> GetAllCollectors()
             {
-                lock (_lock)
-                {
-                    return new Dictionary<string, ICollector>(_collectors, StringComparer.OrdinalIgnoreCase);
-                }
+                return new Dictionary<string, ICollector>(_collectors, StringComparer.OrdinalIgnoreCase);
             }
         }
 
@@ -1459,7 +1494,6 @@ namespace HomebrewDot.Net.Rimworld
         public static class Services
         {
             // Fields
-            private static readonly object _lock = new object();
             private static readonly Dictionary<Type, object> _services = new Dictionary<Type, object>();
             private static readonly Dictionary<Type, object> _serviceCache = new Dictionary<Type, object>();
             private static readonly Dictionary<Type, object> _namedServices = new Dictionary<Type, object>();
@@ -1473,30 +1507,28 @@ namespace HomebrewDot.Net.Rimworld
             public static void Register<T>(T service, string name = null)
             {
                 service = Helpers.Guard.NotNull(service, nameof(service));
-                lock (_lock)
+
+                if (!_services.TryGetValue(typeof(T), out var serviceList))
                 {
-                    if (!_services.TryGetValue(typeof(T), out var serviceList))
+                    serviceList = new List<T>();
+                    _services[typeof(T)] = serviceList;
+                }
+                var typedServiceList = (List<T>)serviceList;
+                typedServiceList.Add(service);
+                if (_serviceCache.ContainsKey(typeof(T)))
+                {
+                    _serviceCache.Remove(typeof(T));
+                }
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    Dictionary<string, T> typedServiceDict;
+                    if (!_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                     {
-                        serviceList = new List<T>();
-                        _services[typeof(T)] = serviceList;
+                        namedServiceDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+                        _namedServices[typeof(T)] = namedServiceDict;
                     }
-                    var typedServiceList = (List<T>)serviceList;
-                    typedServiceList.Add(service);
-                    if (_serviceCache.ContainsKey(typeof(T)))
-                    {
-                        _serviceCache.Remove(typeof(T));
-                    }
-                    if (!string.IsNullOrWhiteSpace(name))
-                    {
-                        Dictionary<string, T> typedServiceDict;
-                        if (!_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
-                        {
-                            namedServiceDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
-                            _namedServices[typeof(T)] = namedServiceDict;
-                        }
-                        typedServiceDict = (Dictionary<string, T>)namedServiceDict;
-                        typedServiceDict[name] = service;
-                    }
+                    typedServiceDict = (Dictionary<string, T>)namedServiceDict;
+                    typedServiceDict[name] = service;
                 }
             }
             /// <summary>
@@ -1507,23 +1539,21 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>True if the service was successfully unregistered; otherwise, false.</returns>
             public static bool Unregister<T>(T service)
             {
-                lock (_lock)
+
+                bool wasRemoved = _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
+                if (wasRemoved)
                 {
-                    bool wasRemoved = _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
-                    if (wasRemoved)
+                    if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                     {
-                        if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
+                        var typedServiceDict = (Dictionary<string, T>)namedServiceDict;
+                        var namesToRemove = typedServiceDict.Where(kvp => kvp.Value.Equals(service)).Select(kvp => kvp.Key).ToList();
+                        foreach (var name in namesToRemove)
                         {
-                            var typedServiceDict = (Dictionary<string, T>)namedServiceDict;
-                            var namesToRemove = typedServiceDict.Where(kvp => kvp.Value.Equals(service)).Select(kvp => kvp.Key).ToList();
-                            foreach (var name in namesToRemove)
-                            {
-                                typedServiceDict.Remove(name);
-                            }
+                            typedServiceDict.Remove(name);
                         }
                     }
-                    return wasRemoved;
                 }
+                return wasRemoved;
             }
             /// <summary>
             /// Unregisters a previously registered service instance by its name. If no service is registered with the given name, this method does nothing.
@@ -1533,15 +1563,13 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>True if the service was successfully unregistered; otherwise, false.</returns>
             public static bool UnregisterByName<T>(string name)
             {
-                lock (_lock)
+
+                if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && ((Dictionary<string, T>)namedServiceDict).TryGetValue(name, out var service))
                 {
-                    if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict) && ((Dictionary<string, T>)namedServiceDict).TryGetValue(name, out var service))
-                    {
-                        ((Dictionary<string, T>)namedServiceDict).Remove(name);
-                        return _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
-                    }
-                    return false;
+                    ((Dictionary<string, T>)namedServiceDict).Remove(name);
+                    return _services.TryGetValue(typeof(T), out var serviceSet) && RemoveService((List<T>)serviceSet, service);
                 }
+                return false;
             }
 
             /// <summary>
@@ -1557,39 +1585,22 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         return (IEnumerable<T>)cachedServices;
                     }
-                    else
-                    {
-                        lock (_lock)
-                        {
-                            if (!_serviceCache.TryGetValue(typeof(T), out cachedServices))
-                            {
-                                var services = _services.TryGetValue(typeof(T), out var serviceList)
-                                    ? ((IEnumerable<T>)serviceList).ToArray()
-                                    : Array.Empty<T>();
-                                _serviceCache[typeof(T)] = services;
-                                return services;
-                            }
-                            else
-                            {
-                                return (IEnumerable<T>)cachedServices;
-                            }
-                        }
-                    }
-                }
-                lock (_lock)
-                {
+
                     var services = _services.TryGetValue(typeof(T), out var serviceList)
-                        ? ((IEnumerable<T>)serviceList).ToList()
-                        : new List<T>();
-                    if (includeNamed)
-                    {
-                        if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
-                        {
-                            services.AddRange(((Dictionary<string, T>)namedServiceDict).Values);
-                        }
-                    }
+                            ? ((IEnumerable<T>)serviceList).ToArray()
+                            : Array.Empty<T>();
+                    _serviceCache[typeof(T)] = services;
                     return services;
                 }
+
+                var allServices = _services.TryGetValue(typeof(T), out var svcList)
+                    ? ((IEnumerable<T>)svcList).ToList()
+                    : new List<T>();
+                if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
+                {
+                    allServices.AddRange(((Dictionary<string, T>)namedServiceDict).Values);
+                }
+                return allServices;
             }
 
             /// <summary>
@@ -1599,12 +1610,9 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>A read-only dictionary mapping service names to service instances of the specified type.</returns>
             public static IReadOnlyDictionary<string, T> GetAllNamed<T>()
             {
-                lock (_lock)
+                if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
                 {
-                    if (_namedServices.TryGetValue(typeof(T), out var namedServiceDict))
-                    {
-                        return (Dictionary<string, T>)namedServiceDict;
-                    }
+                    return (Dictionary<string, T>)namedServiceDict;
                 }
                 return NullDictionary<string, T>.Instance;
             }
@@ -1653,22 +1661,20 @@ namespace HomebrewDot.Net.Rimworld
 
             private static bool RemoveService<T>(List<T> serviceSet, T service)
             {
-                lock (_lock)
+
+                if (serviceSet.Remove(service))
                 {
-                    if (serviceSet.Remove(service))
+                    _serviceCache.Remove(typeof(T));
+                    if (service is IDisposable disposable)
                     {
-                        _serviceCache.Remove(typeof(T));
-                        if (service is IDisposable disposable)
+                        Helpers.Invoking.Safe(() =>
                         {
-                            Helpers.Invoking.Safe(() =>
-                            {
-                                disposable.Dispose();
-                            });
-                        }
-                        return true;
+                            disposable.Dispose();
+                        });
                     }
-                    return false;
+                    return true;
                 }
+                return false;
             }
         }
 
@@ -1743,9 +1749,9 @@ namespace HomebrewDot.Net.Rimworld
 
                         types = e.Types;
                     }
-                    if(types?.Length > 0)
+                    if (types?.Length > 0)
                     {
-                        foreach(var type in types)
+                        foreach (var type in types)
                         {
                             if (type == null) continue;
                             if (condition == null || condition(type))
@@ -1773,7 +1779,8 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     genericTypeDefinition = genericType.GetGenericTypeDefinition();
                 }
-                else if(genericType.IsGenericTypeDefinition){
+                else if (genericType.IsGenericTypeDefinition)
+                {
                     genericTypeDefinition = genericType;
                 }
                 else
@@ -1783,10 +1790,10 @@ namespace HomebrewDot.Net.Rimworld
                 var genericArguments = genericTypeDefinition.GetGenericArguments();
                 if (genericArguments.Length != 1) throw new NotSupportedException($"Type {genericTypeDefinition} contains {genericArguments.Length} generic type arguments. Supports only 1");
 
-                foreach(var interfaceType in objectType.GetInterfaces().Where(x => x.IsGenericType))
+                foreach (var interfaceType in objectType.GetInterfaces().Where(x => x.IsGenericType))
                 {
-                    if(interfaceType == null) continue;
-                    if(interfaceType.GetGenericTypeDefinition() == genericTypeDefinition)
+                    if (interfaceType == null) continue;
+                    if (interfaceType.GetGenericTypeDefinition() == genericTypeDefinition)
                     {
                         var arguments = interfaceType.GetGenericArguments();
                         yield return arguments[0];
@@ -2347,7 +2354,7 @@ namespace HomebrewDot.Net.Rimworld
                     else
                     {
                         // We have a typed collection so we can use that directly to avoid boxing/unboxing
-                        
+
                         var loopBreak = LinqExpression.Label("LoopBreak");
                         if (collectionType.IsArray || typeof(IReadOnlyList<object>).IsAssignableFrom(collectionType))
                         {
@@ -2395,7 +2402,7 @@ namespace HomebrewDot.Net.Rimworld
                                 loopBreak
                             );
 
-                            return LinqExpression.Block(new[] { rightInputVariable, collectionVariable, currentItemVariable, indexVariable, lengthVariable}, assignRightInput, LinqExpression.Assign(collectionVariable, input), assignLength, loop);
+                            return LinqExpression.Block(new[] { rightInputVariable, collectionVariable, currentItemVariable, indexVariable, lengthVariable }, assignRightInput, LinqExpression.Assign(collectionVariable, input), assignLength, loop);
                         }
                         else
                         {
@@ -2472,20 +2479,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// Returns all members (properties and fields) of type T that are indexed in the ObjectCache. This method retrieves the cached properties and fields for the specified type T and yields them as an enumerable collection of MemberInfo objects. It can be useful for scenarios where you need to inspect or manipulate the members of a type dynamically, such as in serialization, data binding, or reflection-based operations.
                 /// </summary>
                 /// <returns>An enumerable collection of MemberInfo objects representing the indexed members of type T.</returns>
-                public static IEnumerable<MemberInfo> GetMembers()
-                {
-                    foreach (var property in ToolkitConstants.ObjectCache<T>.IndexedProperties.Values)
-                    {
-                        yield return property;
-                    }
-                    foreach (var field in ToolkitConstants.ObjectCache<T>.IndexedFields.Values)
-                    {
-                        if (!ToolkitConstants.ObjectCache<T>.IndexedProperties.ContainsKey(field.Name))
-                        {
-                            yield return field;
-                        }
-                    }
-                }
+                public static IEnumerable<MemberInfo> GetMembers() => ToolkitConstants.ObjectCache<T>.IndexedMembers.Values;
             }
 
             /// <summary>
@@ -2688,7 +2682,7 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     indexedType = Guard.NotNull(indexedType, nameof(indexedType));
                     if (string.IsNullOrWhiteSpace(propertyPath)) return indexedType;
-                    if (!indexedType.IsGenericType) return TryWalkPath(indexedType, propertyPath);
+                    if (!indexedType.IsGenericType || !indexedType.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IIndexed<>))) return TryWalkPath(indexedType, propertyPath);
                     var indexedValueType = indexedType.GetGenericArguments().Single();
                     var returnType = typeof(object);
                     var segments = SplitPath(propertyPath);
@@ -3133,7 +3127,6 @@ namespace HomebrewDot.Net.Rimworld
         public static class Cache<TKey, TValue>
         {
             // Fields
-            private readonly static object _lock = new object();
             private readonly static ConcurrentDictionary<TKey, TValue> _cache = new ConcurrentDictionary<TKey, TValue>();
 
             /// <summary>
@@ -3149,15 +3142,12 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     if (expensive)
                     {
-                        lock (_lock)
+                        if (!_cache.TryGetValue(key, out var existing))
                         {
-                            if (!_cache.TryGetValue(key, out var existing))
-                            {
-                                existing = valueFactory();
-                                _cache[key] = existing;
-                            }
-                            return existing;
+                            existing = valueFactory();
+                            _cache[key] = existing;
                         }
+                        return existing;
                     }
                     else
                     {
@@ -3192,7 +3182,7 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>A instance of <typeparamref name="T"/> rented from the pool, or a new instance if the pool is empty</returns>
             public static T Rent()
             {
-                if(_pool.TryDequeue(out var rented))
+                if (_pool.TryDequeue(out var rented))
                 {
                     return rented;
                 }

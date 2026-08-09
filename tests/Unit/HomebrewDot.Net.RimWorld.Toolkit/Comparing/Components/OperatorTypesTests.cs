@@ -369,5 +369,65 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 
             Assert.True(result);
         }
+
+        [Fact]
+        public void InOperatorType_Compile_WithNullStringArray_ReturnsFalse()
+        {
+            var left = Expression.Constant("x");
+            var right = Expression.Constant(null, typeof(string[]));
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(string), right, typeof(string[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithNullStringList_ReturnsFalse()
+        {
+            var left = Expression.Constant("x");
+            var right = Expression.Constant(null, typeof(List<string>));
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(string), right, typeof(List<string>), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithNullElementAndNullSearchValue_ReturnsFalse()
+        {
+            var left = Expression.Constant(null, typeof(object));
+            var right = Expression.Constant(new object[] { "a", null, "c" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(object), right, typeof(object[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void InOperatorType_Compile_WithNullElementAndMatchingValue_ReturnsTrue()
+        {
+            var left = Expression.Constant("b", typeof(object));
+            var right = Expression.Constant(new object[] { "a", null, "b" });
+            var args = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "args");
+            var ctx = Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "ctx");
+
+            var expr = InOperatorType.Instance.Compile(left, typeof(object), right, typeof(object[]), args, ctx, null, null);
+            var func = Expression.Lambda<Func<IReadOnlyDictionary<string, object>, IReadOnlyDictionary<string, object>, bool>>(expr, args, ctx).Compile();
+            var result = func(null, null);
+
+            Assert.True(result);
+        }
     }
 }

@@ -44,7 +44,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// <inheritdoc/>
         byte IHandler.Priority => byte.MinValue;
         /// <inheritdoc/>
-        bool IHook<RaiseCooperativeWork>.OnTrigger(RaiseCooperativeWork arg)
+        public bool OnTrigger(RaiseCooperativeWork arg)
         {
             arg = Guard.NotNull(arg, nameof(arg));
             _nextCycle.Enqueue(arg);
@@ -75,7 +75,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             bool overbudget = false;
             while(_finalize.TryDequeue(out var completed))
             {
-                completed.Complete();
+                completed.Complete(this);
                 if(completed is IDisposable disposable) disposable.Dispose();
                 if (budget < stopwatch.Elapsed)
                 {
@@ -91,6 +91,11 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 
             while (_currentCycle.TryDequeue(out var pending))
             {
+                if(pending.IsFinished)
+                {
+                    if (IsPerformanceEnabled) LogPerformance($"Skipping finished work {pending}");
+                    continue;
+                }
                 bool returnToQueue = true;
                 bool started = false;
                 if (pending.startedWork is null)
@@ -113,7 +118,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 if (!returnToQueue)
                 {
                     if (IsPerformanceEnabled) LogPerformance($"Completed work {pending.startedWork} ({stopwatch.Elapsed.TotalMilliseconds}ms)");
-                    if(pending.onCompleted != null)
+                    if(pending.RequiresCompletion)
                     {
                         _finalize.Enqueue(pending);
                     }
@@ -248,6 +253,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             startedWork = null;
             startWork = null;
             onCompleted = null;
+            next = null;
         }
     }
     /// <summary>
@@ -258,12 +264,25 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         internal ISyncRunningWork<CooperativeWorkContext> startedWork;
         internal Func<TimeSpan, Stopwatch, ISyncRunningWork<CooperativeWorkContext>> startWork;
         internal Action onCompleted;
+        internal RaiseCooperativeWork next;
 
         // Properties
         /// <summary>
         /// The sync work if it has been started.
         /// </summary>
-        public ISyncRunningWork<CooperativeWorkContext> Started { get; }
+        public ISyncRunningWork<CooperativeWorkContext> Started => startedWork;
+        /// <summary>
+        /// If the current work has been canceled. (not started or finished)
+        /// </summary>
+        public bool IsCanceled { get; private set; }
+        /// <summary>
+        /// If the current work has been started and finished or canceled.
+        /// </summary>
+        public bool IsFinished => startedWork?.IsFinished ?? IsCanceled;
+        /// <summary>
+        /// If the current work requires completion.
+        /// </summary>
+        public bool RequiresCompletion => !IsCanceled && (onCompleted != null || next != null);
 
         protected RaiseCooperativeWork()
         {
@@ -285,7 +304,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 startedWork.Continue();
             }
 
-            Complete();
+            Complete(null);
         }
 
         /// <summary>
@@ -304,6 +323,31 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             {
                 this.onCompleted += onCompleted;
             }
+        }
+
+        /// <summary>
+        /// Chains another <see cref="RaiseCooperativeWork"/> to be executed after the current work is finished.
+        /// </summary>
+        /// <param name="next">The next work to be executed</param>
+        public void Chain(RaiseCooperativeWork next)
+        {
+            next = Guard.NotNull(next, nameof(next));
+            if(this.next == null)
+            {
+                this.next = next;
+            }
+            else
+            {
+                this.next.Chain(next);
+            }
+        }
+
+        /// <summary>
+        /// Cancels the current work. Will not call <see cref="onCompleted"/> when canceled.
+        /// </summary>
+        public void Cancel()
+        {
+            IsCanceled = true;
         }
 
         /// <summary>
@@ -357,11 +401,25 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             return work;
         }
 
-        internal void Complete()
+        internal void Complete(CooperativeWorkManager manager)
         {
-            if(onCompleted != null)
+            if(onCompleted != null && !IsCanceled)
             {
                 Invoking.Safe(() => onCompleted());
+            }
+            if(next != null)
+            {
+                Invoking.Safe(() =>
+                {
+                    if(manager != null)
+                    {
+                        manager.OnTrigger(next);
+                    }
+                    else
+                    {
+                        next.RunManually();
+                    }
+                });
             }
         }
     }

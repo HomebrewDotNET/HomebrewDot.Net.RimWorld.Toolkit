@@ -26,31 +26,18 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
             IDictionary<Type, Delegate> typeAccessors;
             if (!_propertyAccessors.TryGetValue(propertyName, out typeAccessors))
             {
-                lock (_propertyAccessors)
+                if (!_propertyAccessors.TryGetValue(propertyName, out typeAccessors))
                 {
-                    if (!_propertyAccessors.TryGetValue(propertyName, out typeAccessors))
-                    {
-                        typeAccessors = new Dictionary<Type, Delegate>();
-                        _propertyAccessors[propertyName] = typeAccessors;
-                    }
+                    typeAccessors = new Dictionary<Type, Delegate>();
+                    _propertyAccessors[propertyName] = typeAccessors;
                 }
             }
 
             Func<T, IReadOnlyDictionary<string, object>, TValue> accessor;
             if (!typeAccessors.TryGetValue(typeof(TValue), out var accessorDelegate))
             {
-                lock (typeAccessors)
-                {
-                    if (!typeAccessors.TryGetValue(typeof(TValue), out accessorDelegate))
-                    {
-                        accessor = GetAccessor<TValue>(propertyName);
-                        typeAccessors[typeof(TValue)] = accessor;
-                    }
-                    else
-                    {
-                        accessor = (Func<T, IReadOnlyDictionary<string, object>, TValue>)accessorDelegate;
-                    }
-                }
+                accessor = GetAccessor<TValue>(propertyName);
+                typeAccessors[typeof(TValue)] = accessor;
             }
             else
             {

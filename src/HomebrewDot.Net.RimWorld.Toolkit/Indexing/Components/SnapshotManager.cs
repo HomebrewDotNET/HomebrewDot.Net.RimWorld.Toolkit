@@ -28,7 +28,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private const int MaxPendingWork = 1024;
 
         // Fields
-        private readonly object _lock = new object();
         private readonly IDatabase _database;
         private readonly IHookManager _hookManager;
         private IReadOnlyDatabase _databaseSnapshot;
@@ -55,36 +54,29 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             get
             {
-                lock (_lock)
-                {
-                    return _databaseSnapshot;
-                }
+                return _databaseSnapshot;
             }
             protected set
             {
-                lock (_lock)
-                {
-                    _databaseSnapshot = Guard.NotNull(value, nameof(DatabaseSnapshot));
-                }
+                _databaseSnapshot = Guard.NotNull(value, nameof(DatabaseSnapshot));
             }
         }
         /// <inheritdoc/>
         public IReadOnlyDatabase Database => _database;
 
         /// <inheritdoc/>
-        public bool Destroyed<T>(T data, ref IndexMetadata metadata) where T : class
-            => AsTyped<T>().Destroyed(data, ref metadata);
+        public bool Destroyed<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class
+            => AsTyped<T>().Destroyed(data, ref metadata, allowBuffering);
 
         /// <inheritdoc/>
-        public bool Push<T>(T data, ref IndexMetadata metadata) where T : class
-            => AsTyped<T>().Push(data, ref metadata);
+        public bool Push<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class
+            => AsTyped<T>().Push(data, ref metadata, allowBuffering);
 
         /// <inheritdoc/>
         public void Reset(Action<ISnapshotManagerConfigurator> configurator, Action<IDatabaseSchemaBuilder> schemaBuilder)
         {
             schemaBuilder = Guard.NotNull(schemaBuilder, nameof(schemaBuilder));
             Logger.Log("Snapshot manager resetting and redeploying database");
-            lock (_lock)
             {
                 var config = new ConfigureSnapshotManager();
                 configurator?.Invoke(config);
@@ -97,6 +89,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _typedManagers.Clear();
                 _database.Deploy(schemaBuilder);
                 _queueEnabled = false;
+                _snapshotBuilder = null;
                 DatabaseSnapshot = _database.StartSnapshot().Build();
             }
         }
@@ -119,7 +112,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <inheritdoc/>
         public ISnapshotBuilder Snapshot(bool isForce = false)
         {
-
             foreach (var typedManager in _typedManagers.Values)
             {
                 if (isForce)
@@ -213,6 +205,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             private readonly SnapshotManager _manager;
             private readonly IDatabase<T> _typedDb;
             private readonly IChangeTracker<T>[] _changeTrackers;
+            private readonly Dictionary<T, PendingUpsert> _pending = new Dictionary<T, PendingUpsert>();
             private readonly Queue<PendingUpsert> _work = new Queue<PendingUpsert>();
             private readonly Changed _hasChanged;
 
@@ -227,12 +220,15 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             }
 
             /// <inheritdoc/>
-            public bool Push(T data, ref IndexMetadata metadata)
+            public bool Push(T data, ref IndexMetadata metadata, bool allowBuffering = true)
             {
                 data = Guard.NotNull(data, nameof(data));
-                var existing = _typedDb.Find(data);
 
-                if(!_manager._queueEnabled) return Push(data, existing, ref metadata);
+                if(!_manager._queueEnabled || !allowBuffering)
+                {
+                    var existing = _typedDb.Find(data);
+                    return Push(data, existing, ref metadata);
+                }
 
                 bool accepted = false;
                 if(_work.Count == 0)
@@ -248,15 +244,24 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if (!accepted)
                 {
+                    var existing = _typedDb.Find(data);
                     return Push(data, existing, ref metadata);
+                }
+
+                if(_pending.TryGetValue(data, out var pending))
+                {
+                    metadata.MergeInto(ref pending.Metadata);
+                    metadata.Dispose();
+                    pending.IsDelete = false;
+                    return true;
                 }
 
                 var pendingWork = Toolkit.Pool<PendingUpsert>.Rent();
                 pendingWork.Data = data;
-                pendingWork.Existing = existing;
                 pendingWork.Metadata = metadata;
                 pendingWork.IsDelete = false;
                 _work.Enqueue(pendingWork);
+                _pending[data] = pendingWork;
                 return true;
             }
 
@@ -272,10 +277,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             }
 
             /// <inheritdoc/>
-            public bool Destroyed(T data, ref IndexMetadata metadata)
+            public bool Destroyed(T data, ref IndexMetadata metadata, bool allowBuffering = true)
             {
                 data = Guard.NotNull(data, nameof(data));
-                if (!_manager._queueEnabled) return ActualDestroyed(data, ref metadata);
+                if (!_manager._queueEnabled || !allowBuffering) return ActualDestroyed(data, ref metadata);
 
                 bool accepted = false;
                 if (_work.Count == 0)
@@ -294,12 +299,20 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     return ActualDestroyed(data, ref metadata);
                 }
 
+                if (_pending.TryGetValue(data, out var pending))
+                {
+                    metadata.MergeInto(ref pending.Metadata);
+                    metadata.Dispose();
+                    pending.IsDelete = true;
+                    return true;
+                }
+
                 var pendingWork = Toolkit.Pool<PendingUpsert>.Rent();
                 pendingWork.Data = data;
-                pendingWork.Existing = null;
                 pendingWork.Metadata = metadata;
                 pendingWork.IsDelete = true;
                 _work.Enqueue(pendingWork);
+                _pending[data] = pendingWork;
                 return true;
             }
 
@@ -321,17 +334,30 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 context.CheckInterval = 4;
                 while (_work.TryDequeue(out var work)) 
                 {
-                    using (work)
+                    var data = work.Data;
+                    try
                     {
-                        context.LogWork();
-                        if (work.IsDelete)
+                        using (work)
                         {
-                            ActualDestroyed(work.Data, ref work.Metadata);
+                            context.LogWork();
+                            if (work.IsDelete)
+                            {
+                                ActualDestroyed(work.Data, ref work.Metadata);
+                            }
+                            else
+                            {
+                                var existing = _typedDb.Find(work.Data);
+                                Push(work.Data, existing, ref work.Metadata);
+                            }
                         }
-                        else
-                        {
-                            Push(work.Data, work.Existing, ref work.Metadata);
-                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Snapshot manager failed to process pending work for {typeof(T).Name}: {ex}");
+                    }
+                    finally
+                    {
+                        _pending.Remove(data);
                     }
                     if (context.WaitForNextTick)
                     {
@@ -388,7 +414,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             private class PendingUpsert : IPoolable, IDisposable
             {
                 public T Data;
-                public IIndexed<T> Existing;
                 public IndexMetadata Metadata;
                 public bool IsDelete;
 
@@ -400,7 +425,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 public void Reset()
                 {
                     Data = null;
-                    Existing = null;
+                    Metadata = default;
                     IsDelete = false;
                 }
             }

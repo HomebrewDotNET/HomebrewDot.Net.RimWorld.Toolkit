@@ -77,6 +77,61 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
         }
 
         [Fact]
+        public void Compare_WithInvertedCondition_ReturnsNegatedResult()
+        {
+            var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
+            var sut = new Comparator(
+                referenceResolver: null,
+                operatorTypes: new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["eq"] = equals,
+                },
+                compareStringToReference: null,
+                toStringToReference: null);
+
+            // Underlying comparison matches (5 == 5), but Inverted flips the result to false.
+            var result = sut.Compare(null, new ConditionDef
+            {
+                Compare = 5,
+                With = "eq",
+                To = 5,
+                Inverted = true,
+            }, null);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void Compile_WithInvertedCondition_ReturnsNegatedResult()
+        {
+            var equals = new DelegateOperatorType((left, right, _, __) => Equals(left, right));
+            var sut = new Comparator(
+                referenceResolver: null,
+                operatorTypes: new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["eq"] = equals,
+                },
+                compareStringToReference: null,
+                toStringToReference: null);
+
+            var inputParameter = System.Linq.Expressions.Expression.Parameter(typeof(object), "input");
+            var contextParameter = System.Linq.Expressions.Expression.Parameter(typeof(IReadOnlyDictionary<string, object>), "context");
+            var condition = new ConditionDef
+            {
+                Compare = 5,
+                With = "eq",
+                To = 5,
+                Inverted = true,
+            };
+
+            var expr = ((IComparatorCompiler)sut).Compile(inputParameter, null, condition, contextParameter, new Dictionary<string, object>());
+            var lambda = System.Linq.Expressions.Expression.Lambda<Func<object, IReadOnlyDictionary<string, object>, bool>>(expr, inputParameter, contextParameter);
+            var func = lambda.Compile();
+
+            Assert.False(func(null, null));
+        }
+
+        [Fact]
         public void Compare_WithOperatorDef_PassesArgumentsToOperator()
         {
             IReadOnlyDictionary<string, object> captured = null;

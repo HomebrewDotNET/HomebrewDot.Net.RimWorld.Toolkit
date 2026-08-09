@@ -30,7 +30,8 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             // Assert
             typedThingManager.Verify(m => m.Destroyed(
                 It.Is<Thing>(x => ReferenceEquals(x, pawn)),
-                ref It.Ref<IndexMetadata>.IsAny),
+                ref It.Ref<IndexMetadata>.IsAny,
+                It.IsAny<bool>()),
                 Times.Once);
         }
 
@@ -50,7 +51,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             HarmonyThingGatherer.Patches.Destroy_Postfix(pawn, DestroyMode.KillFinalize);
 
             // Assert
-            typedThingManager.Verify(m => m.Destroyed(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
+            typedThingManager.Verify(m => m.Destroyed(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny, It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
@@ -69,7 +70,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             HarmonyThingGatherer.Patches.SpawnSetup_Postfix(pawn, map: null, respawningAfterLoad: true);
 
             // Assert
-            typedThingManager.Verify(m => m.Push(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny), Times.Never);
+            typedThingManager.Verify(m => m.Push(It.IsAny<Thing>(), ref It.Ref<IndexMetadata>.IsAny, It.IsAny<bool>()), Times.Never);
         }
 
         private static void ClearSnapshotManager()

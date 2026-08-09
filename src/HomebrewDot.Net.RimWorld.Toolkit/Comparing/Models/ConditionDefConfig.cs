@@ -68,6 +68,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         /// Maps to <see cref="ConditionDef.IsOr"/>. Indicates whether the condition should be evaluated with an "OR" logic instead of "AND" when combined with other conditions.
         /// </summary>
         public bool IsOr;
+        /// <summary>
+        /// Maps to <see cref="ConditionDef.Inverted"/>. Indicates whether the condition should be inverted, matching when the underlying comparison would not match and vice versa.
+        /// </summary>
+        public bool Inverted;
 
         // Derived
         /// <summary>
@@ -92,6 +96,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             ToReferenceValue = string.Empty;
             Operator = string.Empty;
             IsOr = false;
+            Inverted = false;
         }
 
         /// <summary>
@@ -133,6 +138,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 With = Operator ?? string.Empty,
                 To = toRef,
                 IsOr = IsOr,
+                Inverted = Inverted,
             };
         }
 
@@ -194,6 +200,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             }
 
             config.IsOr = def.IsOr;
+            config.Inverted = def.Inverted;
             return config;
         }
 
@@ -210,6 +217,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             Scribe_Values.Look(ref ToReferenceValue, "ToReferenceValue");
             Scribe_Values.Look(ref Operator, "Operator");
             Scribe_Values.Look(ref IsOr, "IsOr");
+            Scribe_Values.Look(ref Inverted, "Inverted");
             Scribe_Values.Look(ref IsCompareReferenceMode, "IsCompareReferenceMode");
             Scribe_Values.Look(ref IsToReferenceMode, "IsToReferenceMode");
         }

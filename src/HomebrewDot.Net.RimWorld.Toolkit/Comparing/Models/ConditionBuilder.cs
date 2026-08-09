@@ -39,6 +39,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         private object _rightOperand;
         private object _operator;
         private bool _isOr;
+        private bool _isInverted;
         private IReadOnlyList<ConditionDef> _groupConditions;
 
         // Properties
@@ -146,7 +147,13 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             if (_state != 0)
                 throw new InvalidOperationException("Cannot set left operand for condition: left operand already set or operator already set.");
 
-            _conditions.Add(new ConditionDef(condition));
+            var copied = new ConditionDef(condition);
+            if (_isInverted)
+            {
+                copied.Inverted = true;
+            }
+            _conditions.Add(copied);
+            _isInverted = false;
             return this;
         }
         /// <inheritdoc />
@@ -236,6 +243,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 With = _operator,
                 To = _rightOperand,
                 IsOr = _isOr,
+                Inverted = _isInverted,
                 Conditions = _groupConditions?.ToArray() ?? Array.Empty<ConditionDef>(),
                 ConditionGroupIsOr = _state == 10 ? _isOr : false
             });
@@ -244,7 +252,44 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             _operator = null;
             _rightOperand = null;
             _isOr = false;
+            _isInverted = false;
             _groupConditions = null;
+        }
+
+        private void MarkCurrentInverted()
+        {
+            _isInverted = true;
+        }
+
+        /// <inheritdoc/>
+        TReturn IInvertedBuilder<TReturn>.Not()
+        {
+            MarkCurrentInverted();
+            return Return;
+        }
+        /// <inheritdoc/>
+        IConditionCompareBuilder<TReturn> IInvertedBuilder<IConditionCompareBuilder<TReturn>>.Not()
+        {
+            MarkCurrentInverted();
+            return this;
+        }
+        /// <inheritdoc/>
+        IConditionToOperatorBuilder<TReturn> IInvertedBuilder<IConditionToOperatorBuilder<TReturn>>.Not()
+        {
+            MarkCurrentInverted();
+            return this;
+        }
+        /// <inheritdoc/>
+        IConditionWithBuilder<TReturn> IInvertedBuilder<IConditionWithBuilder<TReturn>>.Not()
+        {
+            MarkCurrentInverted();
+            return this;
+        }
+        /// <inheritdoc/>
+        IConditionToBuilder<TReturn> IInvertedBuilder<IConditionToBuilder<TReturn>>.Not()
+        {
+            MarkCurrentInverted();
+            return this;
         }
 
         IConditionBuilder<TReturn> IConditionChainBuilder<TReturn>.AndOr(bool and)

@@ -38,5 +38,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing
         /// How the current condition should be compared to the next condition in the group when applicable. Used to define 'AND' / 'OR' statements.
         /// </summary>
         bool IsOr { get; }
+
+        /// <summary>
+        /// Inverts the condition, so it matches when the underlying comparison would not match and vice versa. Allows defining "Not" conditions for any operator (e.g. "not in thing category") without needing dedicated inverted operator types.
+        /// </summary>
+        bool Inverted { get; }
     }
 }

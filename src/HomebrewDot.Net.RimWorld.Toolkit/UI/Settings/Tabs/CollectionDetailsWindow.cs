@@ -5,6 +5,7 @@ using System.Reflection;
 using HomebrewDot.Net.Rimworld.Collecting;
 using HomebrewDot.Net.Rimworld.Collecting.Models;
 using HomebrewDot.Net.Rimworld.UI.Components;
+using RimWorld;
 using UnityEngine;
 using Verse;
 
@@ -93,6 +94,14 @@ namespace HomebrewDot.Net.Rimworld
                 DebugExportUtility.ExportCollection(_collectionName, _definition, _collector);
             }
             Widgets.Label(exportRect.ContractedBy(4f), "Export Collection");
+
+            var copyRect = new Rect(exportRect.xMax + 8f, buttonRowRect.y, 140f, buttonRowRect.height);
+            Widgets.DrawMenuSection(copyRect);
+            if (Widgets.ButtonInvisible(copyRect))
+            {
+                CopyRulesToClipboard();
+            }
+            Widgets.Label(copyRect.ContractedBy(4f), "Copy Rules");
 
             cursorY = buttonRowRect.yMax + 8f;
 
@@ -346,6 +355,18 @@ namespace HomebrewDot.Net.Rimworld
             _itemScroll = Vector2.zero;
         }
 
+        private void CopyRulesToClipboard()
+        {
+            var text = string.Join(Environment.NewLine, _ruleLines);
+            if (string.IsNullOrEmpty(text))
+            {
+                text = "(no rules)";
+            }
+
+            GUIUtility.systemCopyBuffer = text;
+            Messages.Message("Copied collection rules to clipboard.", MessageTypeDefOf.TaskCompletion, historical: false);
+        }
+
         private static List<string> BuildRuleLines(ICollectionDef definition)
         {
             var lines = new List<string>();
@@ -354,9 +375,13 @@ namespace HomebrewDot.Net.Rimworld
                 lines.Add("Collection definition not found.");
                 return lines;
             }
-            if(definition is CollectionDef concreteDef)
+            if (definition is CollectionDef concreteDef)
             {
                 return concreteDef.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.None).ToList();
+            }
+            if (definition is StaticCollectionDef staticDef)
+            {
+                return staticDef.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.None).ToList();
             }
 
             if (definition.Conditions != null && definition.Conditions.Count > 0)
@@ -378,7 +403,7 @@ namespace HomebrewDot.Net.Rimworld
                 for (var i = 0; i < definition.Inclusions.Count; i++)
                 {
                     var inclusion = definition.Inclusions[i];
-                    lines.Add($"+ {inclusion?.Name ?? "<null>"}");
+                    lines.Add($"+ {inclusion?.ToString() ?? "<null>"}");
                 }
             }
             else
@@ -392,7 +417,7 @@ namespace HomebrewDot.Net.Rimworld
                 for (var i = 0; i < definition.Exclusions.Count; i++)
                 {
                     var exclusion = definition.Exclusions[i];
-                    lines.Add($"- {exclusion?.Name ?? "<null>"}");
+                    lines.Add($"- {exclusion?.ToString() ?? "<null>"}");
                 }
             }
             else

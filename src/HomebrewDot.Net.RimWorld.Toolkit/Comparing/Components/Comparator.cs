@@ -135,6 +135,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             var toValue = ResolveValue(input, condition, condition.To, _toStringToReference, ToStringToReferenceKey, context);
 
             var conditionResult = withValue.Compare(compareValue, toValue, operatorArguments, context);
+            if (condition.Inverted)
+            {
+                conditionResult = !conditionResult;
+            }
 
             return isGroupCondition ? (condition.ConditionGroupIsOr ? groupResult || conditionResult : groupResult && conditionResult) : conditionResult;
         }
@@ -303,6 +307,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                 LinqExpression getCompareValue = CompileGetter(inputParameter, contextParameter, input, compareValue ?? condition.Compare, condition, _compareStringToReference, CompareStringToReferenceKey, context, out var compareType);
                 LinqExpression getToValue = CompileGetter(inputParameter, contextParameter, input, toValue ?? condition.To, condition, _toStringToReference, ToStringToReferenceKey, context, out var toType);
                 compareLeftToRight = CompileComparison(inputParameter, contextParameter, getCompareValue, getToValue, compareType, toType, condition, context);
+                if (condition.Inverted)
+                {
+                    compareLeftToRight = LinqExpression.Not(compareLeftToRight);
+                }
             }
             LinqExpression groupExpression = null;
             if (isGroupCondition)

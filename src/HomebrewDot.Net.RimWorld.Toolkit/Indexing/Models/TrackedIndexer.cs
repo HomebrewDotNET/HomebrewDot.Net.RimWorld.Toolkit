@@ -280,6 +280,39 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
             metadataKey = Guard.NotNull(metadataKey, nameof(metadataKey));
 
             _includes.Add(metadataKey);
+
+            if (watchForChanges)
+            {
+                // The value is supplied through the insert metadata (e.g. by a gatherer). TValue is
+                // the metadata value type, so read it back typed to detect changes.
+                _watchers[metadataKey] = (T v, IIndexed<T> i, ref IndexMetadata m) =>
+                {
+                    if (i is null)
+                    {
+                        // Insert: persist the incoming value.
+                        m.PersistKey(metadataKey);
+                        return true;
+                    }
+                    if (m.TryGetValue<TValue>(metadataKey, out var currentValue))
+                    {
+                        if (i.Metadata.TryGetValue(metadataKey.Name, out var previousValue))
+                        {
+                            if (!Equals(currentValue, previousValue))
+                            {
+                                m.PersistKey(metadataKey);
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            // Key absent from the previous index but present in the incoming metadata.
+                            m.PersistKey(metadataKey);
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+            }
             return this;
         }
     }

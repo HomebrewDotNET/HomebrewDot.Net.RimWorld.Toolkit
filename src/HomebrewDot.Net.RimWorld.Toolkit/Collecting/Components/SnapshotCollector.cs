@@ -25,7 +25,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
     /// Collector that listens for new snapshots being taken by the <see cref="ISnapshotManager"/> and pushes all items of type <typeparamref name="T"/> from the snapshot to the underlying collector, using the provided function to determine which items to push.
     /// </summary>
     /// <typeparam name="T">The type of items to collect from the snapshot.</typeparam>
-    public class SnapshotCollector<T> : Collector<T>, ICollector<IIndexed<T>>, IHook<OnSnapshotTakenTrigger> where T : class
+    public class SnapshotCollector<T> : Collector<T>, IHook<OnSnapshotTakenTrigger> where T : class
     {
         // Fields
         private readonly ISnapshotManager _snapshotManager;
@@ -35,10 +35,8 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         private bool _static;
 
         // State
-        private event Action<IIndexed<T>> _onCollected;
-        private event Action<IIndexed<T>> _onRemoved;
-        private event Action<IReadOnlyCollection<IIndexed<T>>> _onClear;
         private int _lastVersion = -1;
+        private RaiseCooperativeWork _lastWork;
 
         // Properties
         /// <summary>
@@ -77,42 +75,6 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             _getDataInfo = getVersion ?? (db => db);
             _static = isStatic;
         }
-        /// <inheritdoc/>
-        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnCollected
-        {
-            add
-            {
-                _onCollected += value;
-            }
-            remove
-            {
-                _onCollected -= value;
-            }
-        }
-        /// <inheritdoc/>
-        event Action<IIndexed<T>> ICollector<IIndexed<T>>.OnRemoved
-        {
-            add
-            {
-                _onRemoved += value;
-            }
-            remove
-            {
-                _onRemoved -= value;
-            }
-        }
-        /// <inheritdoc/>
-        event Action<IReadOnlyCollection<IIndexed<T>>> ICollector<IIndexed<T>>.OnClear
-        {
-            add
-            {
-                _onClear += value;
-            }
-            remove
-            {
-                _onClear -= value;
-            }
-        }
 
         /// <inheritdoc/>
         public object Owner => this;
@@ -138,8 +100,17 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             }
 
             var context = new WorkContext();
+
+            if (_lastWork != null && !_lastWork.IsFinished)
+            {
+                if(!arg.IsForced) Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work is still running, can't keep up, cancelling");
+                _lastWork.Cancel();
+                _lastVersion = -1;
+            }
+            _lastWork = null;
             if (Once || arg.IsForced)
             {
+                _lastVersion = -1;
                 context.NoInterval();
                 context.snapshot = snapshot;
                 context.data = newData;
@@ -150,11 +121,16 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 context.snapshot = snapshot;
                 context.data = newData;
                 var work = RaiseCooperativeWork.From<WorkContext>(() => LoadFrom(context).GetEnumerator(), context);
+
                 bool accepted = _hookmanager.Trigger(work);
                 if (!accepted)
                 {
                     context.NoInterval();
                     LoadFrom(context).ExecuteEnumerable();
+                }
+                else
+                {
+                    _lastWork = work;
                 }
             }
 
@@ -174,12 +150,11 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var total = 0;
             var fromChanges = data.TrackingChanges && data.Version - 1 == _lastVersion && data.Version > 0;
             if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loading {_lastVersion} => {data.Version} (fromChanges={fromChanges})");
-            _lastVersion = data.Version;
             var context = CompareContext;
             if (fromChanges)
             {
-                var changedItems = data.Changed?.OfType<IIndexed<T>>() ?? Array.Empty<IIndexed<T>>();
-                var deletedItems = data.Deleted?.OfType<IIndexed<T>>() ?? Array.Empty<IIndexed<T>>();
+                IEnumerable<IIndexed<T>> changedItems = data.Changed?.OfType<IIndexed<T>>().ToArray() ?? Array.Empty<IIndexed<T>>();
+                var deletedItems = data.Deleted?.OfType<IIndexed<T>>().ToArray() ?? Array.Empty<IIndexed<T>>();
                 var deleted = 0;
                 foreach (var (thing, collected) in _comparer.Matches(Definition, changedItems, _collections, context))
                 {
@@ -195,12 +170,13 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                     }
                 }
 
-                foreach (var removed in deletedItems)
+                for(int i = 0; i < deletedItems.Length; i++)
                 {
+                    var removed = deletedItems[i];
+                    total++;
                     workContext.LogWork();
                     if (Remove(removed.Value))
                     {
-                        _onRemoved?.Invoke(removed);
                         deleted++;
                     }
                     if (workContext.WaitForNextTick)
@@ -216,6 +192,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 var thingsToPush = _getThingsToPush(snapshot);
                 if (thingsToPush is null)
                 {
+                    _lastVersion = data.Version;
                     yield break;
                 }
                 foreach (var (thing, collected) in _comparer.Matches(Definition, thingsToPush, _collections, context))
@@ -233,6 +210,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 }
                 if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} items from snapshot {_lastVersion}");
             }
+            _lastVersion = data.Version;
         }
 
         /// <inheritdoc/>
@@ -240,6 +218,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             base.StartCollecting(comparer, collections);
             _hookmanager.RegisterHook(this);
+            Autodex();
             var currentSnapshot = _snapshotManager.Database;
             if (currentSnapshot != null)
             {
@@ -252,6 +231,67 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             base.StopCollecting();
 
             _hookmanager.UnregisterHook(this);
+            _lastWork?.Cancel();
+            _lastWork = null;
+        }
+
+        private void Autodex()
+        {
+            foreach (var property in FindProperties(Definition))
+            {
+                Toolkit.Indexing.Indexers.ByPath(typeof(T), property);
+            }
+        }
+
+        private IEnumerable<string> FindProperties(ICollectionDef collectionDef)
+        {
+            collectionDef = Guard.NotNull(collectionDef, nameof(collectionDef));
+
+            if (collectionDef.Conditions is not null)
+            {
+                foreach (var condition in collectionDef.Conditions)
+                {
+                    if(condition.Compare is string propertyName)
+                    {
+                        yield return propertyName;
+                    }
+                    else if (condition.Compare is IReference reference)
+                    {
+                        if(IndexedReferenceType.DefaultTypeName == reference.Type && reference.Value is string indexedPropertyName)
+                        {
+                            yield return indexedPropertyName;
+                        }
+                    }
+                }
+            }
+
+            if(collectionDef.Inclusions is not null)
+            {
+                foreach (var inclusion in collectionDef.Inclusions)
+                {
+                    if (_collections.TryGetValue(inclusion.Name, out var includedCollection))
+                    {
+                        foreach (var property in FindProperties(includedCollection))
+                        {
+                            yield return property;
+                        }
+                    }
+                }
+            }
+
+            if(collectionDef.Exclusions is not null)
+            {
+                foreach (var exclusion in collectionDef.Exclusions)
+                {
+                    if (_collections.TryGetValue(exclusion.Name, out var excludedCollection))
+                    {
+                        foreach (var property in FindProperties(excludedCollection))
+                        {
+                            yield return property;
+                        }
+                    }
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -260,47 +300,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var tables = snapshot.GetTables<T>();
             foreach (var table in tables)
             {
-                foreach (var item in table.Enumerate<IIndexed<T>>())
+                foreach (var item in table.GetSnapshot())
                 {
                     yield return item;
                 }
             }
         }
-        /// <inheritdoc/>
-        bool ICollector<IIndexed<T>>.Collect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
-        {
-            return Collect(obj.Value, context);
-        }
-        /// <inheritdoc/>
-        IEnumerable<(IIndexed<T> Obj, bool Collected)> ICollector<IIndexed<T>>.Collect(IEnumerable<IIndexed<T>> objects, IReadOnlyDictionary<string, object> context)
-        {
-            foreach (var obj in objects)
-            {
-                yield return (obj, Collect(obj.Value, context));
-            }
-        }
-        /// <inheritdoc/>
-        bool ICollector<IIndexed<T>>.Remove(IIndexed<T> obj)
-        {
-            return Remove(obj.Value);
-        }
-        /// <inheritdoc/>
-        IReadOnlyCollection<IIndexed<T>> ICollector<IIndexed<T>>.GetAll()
-        {
-            var all = GetAll();
-            return _snapshotManager.DatabaseSnapshot.Find((IEnumerable<T>)_collected).ToArray();
-        }
-        /// <inheritdoc/>
-        bool ICollector<IIndexed<T>>.Contains(IIndexed<T> obj)
-        {
-            return Contains(obj.Value);
-        }
-        /// <inheritdoc/>
-        bool ICollector<IIndexed<T>>.CanCollect(IIndexed<T> obj, IReadOnlyDictionary<string, object> context)
-        {
-            return CanCollect(obj.Value, context);
-        }
-
         private class WorkContext : CooperativeWorkContext
         {
             internal IReadOnlyDatabase snapshot;
@@ -349,7 +354,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 {
                     return Array.Empty<IIndexed<T>>();
                 }
-                return table.Enumerate<IIndexed<T>>();
+                return table.GetSnapshot();
             }, isStatic));
         }
     }

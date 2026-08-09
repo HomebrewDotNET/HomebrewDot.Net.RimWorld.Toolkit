@@ -4,20 +4,34 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing.Components;
+using HomebrewDot.Net.Rimworld.Comparing.Models;
 using HomebrewDot.Net.Rimworld.Comparing.Template;
 using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
 using RimWorld;
+using Verse;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 
 namespace HomebrewDot.Net.Rimworld.Comparing
 {
     /// <summary>
+    /// Fluent builder interface for inverting the condition currently being built. Allows defining "Not" conditions for any operator (e.g. "not in thing category") without dedicated inverted operator types. Each builder stage interface implements this with a <typeparamref name="TReturn"/> that keeps the fluent chain on that stage, so <see cref="Not"/> is available at any point in the chain.
+    /// </summary>
+    /// <typeparam name="TReturn">The builder type the fluent chain continues with after inverting.</typeparam>
+    public interface IInvertedBuilder<TReturn>
+    {
+        /// <summary>
+        /// Inverts the current condition, so it matches when the underlying comparison would not match and vice versa. The inversion is applied when the condition is finalized, which happens when chaining with <see cref="IConditionChainBuilder{TReturn}.And"/>/<see cref="IConditionChainBuilder{TReturn}.Or"/> or when the built condition is accessed.
+        /// </summary>
+        TReturn Not();
+    }
+
+    /// <summary>
     /// Fluent builder interface for creating <see cref="IConditionDef"/>(s).
     /// </summary>
     /// <typeparam name="TReturn">The fluent return type</typeparam>
-    public interface IConditionBuilder<TReturn> where TReturn : IConditionToRightBuilder<TReturn>,IConditionChainBuilder<TReturn>
+    public interface IConditionBuilder<TReturn> : IInvertedBuilder<TReturn> where TReturn : IConditionToRightBuilder<TReturn>,IConditionChainBuilder<TReturn>
     {
         /// <summary>
         /// Returns a builder for selecting the comparison operator and operands for the condition.
@@ -48,16 +62,15 @@ namespace HomebrewDot.Net.Rimworld.Comparing
     /// Fluent builder interface for creating <see cref="IConditionDef"/>(s) that selects the comparison operand on the left side.
     /// </summary>
     /// <typeparam name="TReturn">The fluent return type</typeparam>
-    public interface IConditionCompareBuilder<TReturn> : IConditionOperandBuilder<IConditionToOperatorBuilder<TReturn>> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+    public interface IConditionCompareBuilder<TReturn> : IConditionOperandBuilder<IConditionToOperatorBuilder<TReturn>>, IInvertedBuilder<IConditionCompareBuilder<TReturn>> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
     {
-
     }
 
     /// <summary>
     /// Builder for selecting the comparison operator for a condition. This is used after selecting the left operand and before selecting the right operand.
     /// </summary>
     /// <typeparam name="TReturn">The fluent return type</typeparam>
-    public interface IConditionToOperatorBuilder<TReturn> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+    public interface IConditionToOperatorBuilder<TReturn> : IInvertedBuilder<IConditionToOperatorBuilder<TReturn>> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
     {
         /// <summary>
         /// Returns a builder for selecting the comparison operator for the condition. The operator defines how the left and right operands will be compared.
@@ -69,7 +82,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing
     /// Fluent builder interface for creating <see cref="IConditionDef"/>(s) that selects the comparison operator.
     /// </summary>
     /// <typeparam name="TReturn">The fluent return type</typeparam>
-    public interface IConditionWithBuilder<TReturn> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+    public interface IConditionWithBuilder<TReturn> : IInvertedBuilder<IConditionWithBuilder<TReturn>> where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
     {
         /// <summary>
         /// Selects the comparison operator for the condition. The operator defines how the left and right operands will be compared.
@@ -100,9 +113,8 @@ namespace HomebrewDot.Net.Rimworld.Comparing
     /// Fluent builder interface for creating <see cref="IConditionDef"/>(s) that selects the comparison operand on the right side.
     /// </summary>
     /// <typeparam name="TReturn">The fluent return type</typeparam>
-    public interface IConditionToBuilder<TReturn> : IConditionOperandBuilder<TReturn>
+    public interface IConditionToBuilder<TReturn> : IConditionOperandBuilder<TReturn>, IInvertedBuilder<IConditionToBuilder<TReturn>>
     {
-
     }
 
     /// <summary>
@@ -336,6 +348,73 @@ namespace HomebrewDot.Net.Rimworld.Comparing
         /// <param name="nativeOperator">The native operator type to compare against.</param>
         /// <returns>The fluent return type.</returns>
         public static TReturn InBy<TReturn>(this IConditionWithBuilder<TReturn> builder, NativeOperatorType nativeOperator) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
-            => builder.Operator(InOperatorType.DefaultTypeName).To.Value(new Dictionary<string, object>() { { InOperatorType.NativeOperatorTypeKey, nativeOperator } });
+            => builder.Operator(new OperatorDef()
+            {
+                Type = InOperatorType.DefaultTypeName,
+                Arguments = new Dictionary<string, object>() { { InOperatorType.NativeOperatorTypeKey, nativeOperator } }
+            });
+
+        /// <summary>
+        /// Selects the contains operator for the condition. This is a convenience method for selecting the contains operator without needing to create a custom operator definition. The contains operator evaluates to true if the left operand is a collection that contains an element matching the right operand and false otherwise. If the left operand is not a collection, it evaluates to true when the left operand equals the right operand.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Contains<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(ContainsOperatorType.DefaultTypeName);
+        /// <summary>
+        /// Selects the contains operator for the condition and the value to compare against. This is a convenience method for selecting the contains operator and value without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The contains operator evaluates to true if the left operand is a collection that contains an element matching the specified value and false otherwise. If the left operand is not a collection, it evaluates to true when the left operand equals the specified value.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="value">The value to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn Contains<TReturn>(this IConditionWithBuilder<TReturn> builder, object value) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Contains().To.Value(value);
+        /// <summary>
+        /// Selects the contains operator for the condition and the native operator type to compare against. This is a convenience method for selecting the contains operator and native operator type without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The contains operator evaluates to true if the left operand is a collection that contains an element matching the right operand and false otherwise, based on the specified native operator type.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="nativeOperator">The native operator type to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn ContainsBy<TReturn>(this IConditionWithBuilder<TReturn> builder, NativeOperatorType nativeOperator) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(new OperatorDef()
+            {
+                Type = ContainsOperatorType.DefaultTypeName,
+                Arguments = new Dictionary<string, object>() { { ContainsOperatorType.NativeOperatorTypeKey, nativeOperator } }
+            });
+
+        /// <summary>
+        /// Selects the in operator for the condition and the thing category to compare against. This is a convenience method for selecting the in operator and thing category without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The in operator evaluates to true if the left operand is contained within the right operand and false otherwise, based on the specified thing category.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="category">The thing category to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn InThingCategory<TReturn>(this IConditionWithBuilder<TReturn> builder) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.Operator(InThingCategoryOperatorType.DefaultTypeName);
+
+
+        /// <summary>
+        /// Selects the in operator for the condition and the thing category to compare against. This is a convenience method for selecting the in operator and thing category without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The in operator evaluates to true if the left operand is contained within the right operand and false otherwise, based on the specified thing category.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="category">The thing category to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn InThingCategory<TReturn>(this IConditionWithBuilder<TReturn> builder, string category) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.InThingCategory().To.ThingCategory(category);
+
+        /// <summary>
+        /// Selects the in operator for the condition and the thing category to compare against. This is a convenience method for selecting the in operator and thing category without needing to create a custom operator definition or manually selecting the right operand after selecting the operator. The in operator evaluates to true if the left operand is contained within the right operand and false otherwise, based on the specified thing category.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="category">The thing category to compare against.</param>
+        /// <returns>The fluent return type.</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public static TReturn InThingCategory<TReturn>(this IConditionWithBuilder<TReturn> builder, ThingCategoryDef category) where TReturn : IConditionToRightBuilder<TReturn>, IConditionChainBuilder<TReturn>
+            => builder.InThingCategory().To.Value(category);
     }
 }

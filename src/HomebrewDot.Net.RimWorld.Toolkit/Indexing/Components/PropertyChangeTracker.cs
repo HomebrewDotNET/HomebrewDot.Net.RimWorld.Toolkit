@@ -34,16 +34,26 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public bool HasChanged(T current, IIndexed<T> previous, ref IndexMetadata metadata)
         {
             current = Guard.NotNull(current, nameof(current));
-            previous = Guard.NotNull(previous, nameof(previous));
 
             metadata.PersistKey(_metadataKey);
-            if(!previous.Metadata.TryGetValue(_metadataKey.Name, out var previousValue))
+            bool changed = false;
+            object previousValue = null;
+            if (previous is null)
             {
-                return true;
+                changed = true;
+            }
+            else if (!previous.Metadata.TryGetValue(_metadataKey.Name, out previousValue))
+            {
+                changed = true;
             }
 
             var newValue = _getProperty(current);
-            if(previousValue is null && newValue is null)
+            metadata.Set(_metadataKey, newValue);
+            if(changed)
+            {
+                return true;
+            }
+            if (previousValue is null && newValue is null)
             {
                 return false;
             }

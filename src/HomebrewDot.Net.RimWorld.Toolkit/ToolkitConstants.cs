@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Extensions;
 using HomebrewDot.Net.Rimworld.Indexing.Models;
 using Verse;
 
@@ -41,6 +42,10 @@ namespace HomebrewDot.Net.Rimworld
             /// The name of the comp that is added to unique weapons by the Rimworld Odyssey expansion, which can be used to check if a weapon is unique in code or definitions.
             /// </summary>
             public const string UniqueWeaponCompName = "CompUniqueWeapon";
+            /// <summary>
+            /// The defName of the ThingCategoryDef added by the Odyssey expansion for drone corpses. Mods that add drones (e.g. Vanilla Quests Expanded - Drone Factory) re-target their drone corpse flesh types to this category when Odyssey is active.
+            /// </summary>
+            public const string DroneCorpseCategoryDefName = "CorpsesDrone";
         }
 
         /// <summary>
@@ -96,6 +101,118 @@ namespace HomebrewDot.Net.Rimworld
                     public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
                 }
             }
+
+            /// <summary>
+            /// Contains constants related to the "Bad Meat Category" mod by "Mlie".
+            /// </summary>
+            public static class BadMeatCategory
+            {
+                /// <summary>
+                /// Id of the "Bad Meat Category" mod, which can be used to check if the mod is installed and active.
+                /// </summary>
+                public const string PackageId = "Mlie.BadMeatCategory";
+                /// <summary>
+                /// The defName of the ThingCategoryDef added by Bad Meat Category.
+                /// </summary>
+                public const string MeatBadCategoryDefName = "MeatBad";
+                /// <summary>
+                /// Checks if the "Bad Meat Category" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            }
+
+            /// <summary>
+            /// Contains constants related to the "Bad Leather Category" mod by "Mlie".
+            /// </summary>
+            public static class BadLeatherCategory
+            {
+                /// <summary>
+                /// Id of the "Bad Leather Category" mod, which can be used to check if the mod is installed and active.
+                /// </summary>
+                public const string PackageId = "Mlie.BadLeatherCategory";
+                /// <summary>
+                /// The defName of the ThingCategoryDef added by Bad Leather Category.
+                /// </summary>
+                public const string LeatherBadCategoryDefName = "LeatherBad";
+                /// <summary>
+                /// Checks if the "Bad Leather Category" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            }
+
+            /// <summary>
+            /// Contains constants related to the "Vanilla Quests Expanded - Drone Factory" mod.
+            /// </summary>
+            public static class VqeDroneFactory
+            {
+                /// <summary>
+                /// Id of the "Vanilla Quests Expanded - Drone Factory" mod, which can be used to check if the mod is installed and active.
+                /// </summary>
+                public const string PackageId = "vanillaquestsexpanded.dronefactory";
+                /// <summary>
+                /// The defName of the ThingCategoryDef added by Vanilla Quests Expanded - Drone Factory for drone corpses.
+                /// </summary>
+                public const string DroneCorpseCategoryDefName = "VQE_CorpsesDrone";
+                /// <summary>
+                /// Checks if the "Vanilla Quests Expanded - Drone Factory" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            }
+
+            /// <summary>
+            /// Contains constants related to the "Big and Small - Framework" mod by "RedMattis".
+            /// </summary>
+            public static class BigAndSmall
+            {
+                /// <summary>
+                /// Id of the "Big and Small - Framework" mod, which can be used to check if the mod is installed and active. This is the packageId declared in the mod's About.xml.
+                /// </summary>
+                public const string PackageId = "RedMattis.BetterPrerequisites";
+                /// <summary>
+                /// The defName of the ThingCategoryDef added by Big and Small - Framework for robot corpses.
+                /// </summary>
+                public const string RobotCorpseCategoryDefName = "BS_RobotCorpses";
+                /// <summary>
+                /// Checks if the "Big and Small - Framework" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            }
+
+            /// <summary>
+            /// Contains constants related to the "Better Workbench Management" mod by "Falconne".
+            /// </summary>
+            public static class BetterWorkbenchManagement
+            {
+                /// <summary>
+                /// Id of the "Better Workbench Management" mod, which can be used to check if the mod is installed and active. This is the packageId declared in the mod's About.xml.
+                /// </summary>
+                public const string PackageId = "falconne.BWM";
+                /// <summary>
+                /// Checks if the "Better Workbench Management" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+
+                /// <summary>
+                /// The full name of the <c>Main</c> type declared by the Better Workbench Management mod, used to resolve the type through reflection.
+                /// </summary>
+                public const string MainTypeName = "ImprovedWorkbenches.Main";
+                /// <summary>
+                /// The full name of the <c>ExtendedBillDataStorage</c> type declared by the Better Workbench Management mod, used to resolve the type through reflection.
+                /// </summary>
+                public const string ExtendedBillDataStorageTypeName = "ImprovedWorkbenches.ExtendedBillDataStorage";
+                /// <summary>
+                /// The full name of the <c>ExtendedBillData</c> type declared by the Better Workbench Management mod, used to resolve the type through reflection.
+                /// </summary>
+                public const string ExtendedBillDataTypeName = "ImprovedWorkbenches.ExtendedBillData";
+                /// <summary>
+                /// The full name of the <c>Dialog_ThingFilter</c> type declared by the Better Workbench Management mod, used to resolve the type through reflection.
+                /// </summary>
+                public const string DialogThingFilterTypeName = "ImprovedWorkbenches.Dialog_ThingFilter";
+                /// <summary>
+                /// The full name of the <c>RecipeWorkerCounter_CountProducts_Detour</c> type declared by the Better Workbench Management mod, used to resolve the type through reflection.
+                /// </summary>
+                public const string CountProductsDetourTypeName = "ImprovedWorkbenches.RecipeWorkerCounter_CountProducts_Detour";
+            }
         }
 
         /// <summary>
@@ -106,16 +223,39 @@ namespace HomebrewDot.Net.Rimworld
             /// <summary>
             /// Cache of property info for the indexed type, keyed by property name.
             /// </summary>
-            public static IReadOnlyDictionary<string, PropertyInfo> IndexedProperties { get; } = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(p => p.Name);
+            public static IReadOnlyDictionary<string, PropertyInfo> IndexedProperties { get; } = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionarySafe(p => p.Name, p => p);
 			/// <summary>
 			/// Cache of field info for the indexed type, keyed by field name.
 			/// </summary>
-			public static IReadOnlyDictionary<string, FieldInfo> IndexedFields { get; } = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance).ToDictionary(f => f.Name);
+			public static IReadOnlyDictionary<string, FieldInfo> IndexedFields { get; } = typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance).ToDictionarySafe(f => f.Name, f => f);
+            /// <summary>
+            /// Cache of member info (properties and fields) for the indexed type, keyed by member name. This is a combination of the IndexedProperties and IndexedFields caches, and can be used to access both properties and fields by name.
+            /// </summary>
+            public static IReadOnlyDictionary<string, MemberInfo> IndexedMembers { get; } = BuildIndexedMembers();
+            private static IReadOnlyDictionary<string, MemberInfo> BuildIndexedMembers()
+            {
+                var members = new Dictionary<string, MemberInfo>(StringComparer.OrdinalIgnoreCase);
+                foreach(var property in IndexedProperties)
+                {
+                    if(!members.ContainsKey(property.Key))
+                    {
+                        members.Add(property.Key, property.Value);
+                    }
+                }
 
-			/// <summary>
-			/// MethodInfo for object.GetType().
-			/// </summary>
-			public static readonly MethodInfo GetTypeMethod = Toolkit.Helpers.Expression.GetMethod(() => default(T)!.GetType());
+                foreach(var field in IndexedFields)
+                {
+                    if(!members.ContainsKey(field.Key))
+                    {
+                        members.Add(field.Key, field.Value);
+                    }
+                } 
+                return members;
+            }
+            /// <summary>
+            /// MethodInfo for object.GetType().
+            /// </summary>
+            public static readonly MethodInfo GetTypeMethod = Toolkit.Helpers.Expression.GetMethod(() => default(T)!.GetType());
             /// <summary>
             /// MethodInfo for object.ToString().
             /// </summary>
@@ -204,6 +344,10 @@ namespace HomebrewDot.Net.Rimworld
             /// Key of the metadata that contains the mod ID of a def, which can be used to check which mod a def belongs to in code or definitions.
             /// </summary>
             public static readonly IndexMetadataKey<string> ModId = IndexMetadataKey<string>.Get("ModId");
+            /// <summary>
+            /// Key of the metadata that contains the hit point percentage of a thing, which can be used to check the condition of a thing in code or definitions.
+            /// </summary>
+            public static readonly IndexMetadataKey<float> HitPointPercentage = IndexMetadataKey<float>.Get("HitPointPercentage");
         }
 
         /// <summary>

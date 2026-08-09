@@ -672,6 +672,120 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             Assert.Empty(results);
         }
 
+        // ── WithIndex – incremental snapshot index keys ──────────────────────
+
+        [Fact]
+        public void WithIndex_AfterSnapshot_IncrementalInsert_QueriesByActualIndexKey()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
+                tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
+
+            db.StartSnapshot().Build(); // cached snapshot exists so later changes are intent-logged
+
+            var _md = default(IndexMetadata);
+            db.Upsert(new SampleEntity { Name = "Alice" }, ref _md);
+
+            var snapshot = db.StartSnapshot().Build();
+
+            // The incremental snapshot index must be keyed by the property value, not the entity
+            var results = snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice");
+            Assert.Single(results);
+            Assert.Equal("Alice", results.First().Name);
+        }
+
+        [Fact]
+        public void WithIndex_AfterSnapshot_IncrementalDelete_RemovesFromActualIndexKey()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
+                tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name)));
+
+            db.StartSnapshot().Build();
+
+            var alice = new SampleEntity { Name = "Alice" };
+            var bob = new SampleEntity { Name = "Bob" };
+            var _md = default(IndexMetadata);
+            db.Upsert(alice, ref _md);
+            db.Upsert(bob, ref _md);
+            db.StartSnapshot().Build(); // incremental insert into the snapshot index
+
+            db.Delete(bob, ref _md);
+            var snapshot = db.StartSnapshot().Build();
+
+            // Bob's index entry is removed from the snapshot index...
+            Assert.Empty(snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Bob"));
+            // ...and Alice's keyed bucket is still intact
+            Assert.Single(snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice"));
+        }
+
+        [Fact]
+        public void WithIndex_ValueChange_MovesItemBetweenLiveBuckets()
+        {
+            var db = new Database();
+            var tagKey = IndexMetadataKey.Get("IndexValueChangeTag");
+            db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
+            {
+                tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name);
+                tb.OnInserting((i, m, t) =>
+                {
+                    if (m.TryGetValue<string>(tagKey, out var tag))
+                    {
+                        i.Set("tag", tag);
+                    }
+                });
+            }));
+
+            var item = new SampleEntity { Name = "Alice" };
+            var md1 = new IndexMetadata();
+            md1.Set(tagKey, "a");
+            db.Upsert(item, ref md1);
+
+            item.Name = "Alicia"; // mutate and re-upsert (value change)
+            var md2 = new IndexMetadata();
+            md2.Set(tagKey, "b");
+            db.Upsert(item, ref md2);
+
+            // The item moved buckets: it no longer matches the old key, only the new one
+            Assert.Empty(db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice"));
+            Assert.Single(db.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alicia"));
+        }
+
+        [Fact]
+        public void WithIndex_AfterSnapshot_ValueChange_MovesItemBetweenSnapshotBuckets()
+        {
+            var db = new Database();
+            var tagKey = IndexMetadataKey.Get("IndexSnapshotValueChangeTag");
+            db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
+            {
+                tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name);
+                tb.OnInserting((i, m, t) =>
+                {
+                    if (m.TryGetValue<string>(tagKey, out var tag))
+                    {
+                        i.Set("tag", tag);
+                    }
+                });
+            }));
+
+            var item = new SampleEntity { Name = "Alice" };
+            var md1 = new IndexMetadata();
+            md1.Set(tagKey, "a");
+            db.Upsert(item, ref md1);
+            db.StartSnapshot().Build(); // snapshot has Alice under "Alice"
+
+            item.Name = "Alicia"; // mutate and re-upsert (value change)
+            var md2 = new IndexMetadata();
+            md2.Set(tagKey, "b");
+            db.Upsert(item, ref md2);
+
+            var snapshot = db.StartSnapshot().Build();
+
+            // The incremental snapshot dropped the old keyed bucket and added the new one
+            Assert.Empty(snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alice"));
+            Assert.Single(snapshot.Query<SampleEntity, string>(nameof(SampleEntity.Name), "Alicia"));
+        }
+
         // ── Query – by table name ─────────────────────────────────────────────
 
         [Fact]
@@ -1216,6 +1330,64 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Delete("hello", ref _md);
             var snap2 = db.StartSnapshot().Build();
             Assert.Contains(snap2.Deleted, d => "hello".Equals(d.Value));
+        }
+
+        // ── Pending intent log dedup ──────────────────────────────────────────
+
+        [Fact]
+        public void Upsert_ThenDelete_SameItemAfterSnapshot_UpdatesPendingActionToDeleteInPlace()
+        {
+            var db = new Database();
+            db.Deploy(schema => schema
+                .WithTable<string>("Items", _ => { })
+                .TrackChanges());
+
+            db.StartSnapshot().Build(); // cached snapshot exists so later changes are intent-logged
+
+            var _md = default(IndexMetadata);
+            db.Upsert("hello", ref _md); // registers a pending Upsert action
+            db.Delete("hello", ref _md); // pending action is updated in place to Delete
+
+            var snapshot = db.StartSnapshot().Build();
+
+            // The intent log held a single Delete action, so the item is only deleted
+            Assert.Empty(snapshot.Changed);
+            Assert.Contains(snapshot.Deleted, d => "hello".Equals(d.Value));
+        }
+
+        [Fact]
+        public void Upsert_SameItemTwiceAfterSnapshot_KeepsSinglePendingAction()
+        {
+            var db = new Database();
+            var tagKey = IndexMetadataKey.Get("PendingDedupTag");
+            db.Deploy(schema => schema
+                .WithTable<string>("Items", tb => tb.OnInserting((i, m, t) =>
+                {
+                    if (m.TryGetValue<string>(tagKey, out var tag))
+                    {
+                        i.Set("tag", tag);
+                    }
+                }))
+                .TrackChanges());
+
+            var md1 = new IndexMetadata();
+            md1.Set(tagKey, "a");
+            db.Upsert("hello", ref md1);
+            db.StartSnapshot().Build(); // commit and cache the snapshot
+
+            var md2 = new IndexMetadata();
+            md2.Set(tagKey, "b");
+            db.Upsert("hello", ref md2); // registers a pending Upsert action
+
+            var md3 = new IndexMetadata();
+            md3.Set(tagKey, "c");
+            db.Upsert("hello", ref md3); // pending action is updated in place (still one action)
+
+            var snapshot = db.StartSnapshot().Build();
+
+            Assert.Single(snapshot.Changed);
+            Assert.Contains(snapshot.Changed, c => "hello".Equals(c.Value));
+            Assert.Empty(snapshot.Deleted);
         }
 
         private static IEnumerable<IIndexed<T>> AsIndexed<T>(IReadOnlyTable<T> table) where T : class

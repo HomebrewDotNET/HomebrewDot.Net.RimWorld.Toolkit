@@ -108,13 +108,35 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             _monitored.OnRemoved -= OnMonitoredRemoved;
             _monitored = null;
         }
+
+        /// <inheritdoc/>
+        public override void StartCollecting(ICollectionComparator comparer, IReadOnlyDictionary<string, ICollectionDef> collections)
+        {
+            base.StartCollecting(comparer, collections);
+            if (_monitored is null)
+            {
+                return;
+            }
+            // Pull in any items the monitored collection already contains so this monitor is
+            // not empty until the next snapshot makes the monitored collection re-add them.
+            foreach (var item in _monitored.GetAll())
+            {
+                OnMonitoredCollected(item);
+            }
+        }
+
         private void OnMonitoredCollected(T obj)
         {
             if (obj is null)
             {
                 return;
             }
-            if(_comparer.Matches(Definition, _collectionDef, _collections, NullDictionary<string, object>.Instance))
+            if (_comparer == null || _collections == null)
+            {
+                // Not started yet (or stopped); ignore until StartCollecting wires up the comparator.
+                return;
+            }
+            if(_comparer.Matches(_collectionDef, obj, _collections, NullDictionary<string, object>.Instance))
             {
                 _ = _collected.Add(obj);
             }

@@ -29,9 +29,18 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// The comparator used to determine if objects match the collection definition.
         /// </summary>
         protected ICollectionComparator _comparer = null;
-        private event Action<T> _onCollected;
-        private event Action<T> _onRemoved;
-        private event Action<IReadOnlyCollection<T>> _onClear;
+        /// <summary>
+        /// Raised when an object is collected. The event handler receives the collected object as a parameter.
+        /// </summary>
+        protected event Action<T> _onCollected;
+        /// <summary>
+        /// Raised when an object is removed from the collection. The event handler receives the removed object as a parameter.
+        /// </summary>
+        protected event Action<T> _onRemoved;
+        /// <summary>
+        /// Raised when the collection is cleared. The event handler receives a read-only collection of the objects that were cleared as a parameter.
+        /// </summary>
+        protected event Action<IReadOnlyCollection<T>> _onClear;
 
         // Properties
         /// <inheritdoc/>

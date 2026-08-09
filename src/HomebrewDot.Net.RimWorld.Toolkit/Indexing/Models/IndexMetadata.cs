@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using HomebrewDot.Net.Rimworld.Generic.Models;
 using RimWorld;
 using UnityEngine.Pool;
 using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
@@ -18,7 +19,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
     public struct IndexMetadata
     {
         // State
-        private HashSet<IndexMetadataKey> _persistentKeys;
+        private PooledHashSet<IndexMetadataKey> _persistentKeys;
         private Dictionary<IndexMetadataKey, object> _objMetadata;
         private Dictionary<IndexMetadataKey, int> _intMetadata;
         private Dictionary<IndexMetadataKey, float> _floatMetadata;
@@ -136,8 +137,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
 
             if (persistent)
             {
-                _persistentKeys ??= new HashSet<IndexMetadataKey>();
-                _ = _persistentKeys.Add(key);
+                var persistentKeys = GetPooledHashset().Collection;
+                _ = persistentKeys.Add(key);
             }
 
             if (dict is Dictionary<IndexMetadataKey, T> typedDict)
@@ -170,7 +171,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
 
             if (_persistentKeys is not null)
             {
-                _ = _persistentKeys.Remove(key);
+                _ = _persistentKeys.Collection.Remove(key);
             }
 
             if (dict is Dictionary<IndexMetadataKey, T> typedDict)
@@ -185,6 +186,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
                 return;
             }
         }
+        /// <inheritdoc cref="Unset{T}(IndexMetadataKey)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Unset<T>(IndexMetadataKey<T> key)
+            => Unset<T>((IndexMetadataKey)key);
 
         /// <summary>
         /// Marks a metadata key as persistent and will be transfered during upserting.
@@ -194,9 +199,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         public void PersistKey(IndexMetadataKey key)
         {
             key = Guard.NotNull(key, nameof(key));
-            _persistentKeys ??= new HashSet<IndexMetadataKey>();
-            _ = _persistentKeys.Add(key);
+            var persistentKeys = GetPooledHashset().Collection;
+            _ = persistentKeys.Add(key);
         }
+        /// <summary>
+        /// Marks a typed metadata key as persistent and will be transfered during upserting.
+        /// </summary>
+        /// <typeparam name="T">The type of the metadata</typeparam>
+        /// <param name="key">The key of the metadata</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PersistKey<T>(IndexMetadataKey<T> key)
+            => PersistKey((IndexMetadataKey)key);
 
         /// <summary>
         /// Sets all persistent metadata on <paramref name="indexed"/>.
@@ -208,14 +221,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         {
             indexed = Guard.NotNull(indexed, nameof(indexed));
 
-            if (_persistentKeys?.Count > 0)
+            if (_persistentKeys?.Collection?.Count > 0)
             {
                 var intDictionery = GetMetadata<int>(false);
                 var floatDictionery = GetMetadata<float>(false);
                 var boolDictionery = GetMetadata<bool>(false);
                 var objDictionery = GetMetadata<object>(false);
 
-                foreach (var key in _persistentKeys)
+                foreach (var key in _persistentKeys.Collection)
                 {
                     if(TryPersist<T, int>(intDictionery, key, indexed))
                     {
@@ -236,6 +249,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
                 }
             }
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryPersist<T, TValue>(object dict, IndexMetadataKey key, IWriteableIndexed<T> indexed) where T : class
         {
@@ -248,12 +262,71 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         }
 
         /// <summary>
+        /// Merges/transfers all metadata from this instance into <paramref name="target"/>. This will also transfer persistent keys.
+        /// </summary>
+        /// <param name="target">The target <see cref="IndexMetadata"/> instance to merge into.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void MergeInto(ref IndexMetadata target)
+        {
+            TryMerge<int>(ref _intMetadata, ref target._intMetadata);
+            TryMerge<bool>(ref _boolMetadata, ref target._boolMetadata);
+            TryMerge<float>(ref _floatMetadata, ref target._floatMetadata);
+            TryMerge<object>(ref _objMetadata, ref target._objMetadata);
+            if (_persistentKeys is not null)
+            {
+                if(target._persistentKeys is null)
+                {
+                    target._persistentKeys = _persistentKeys;
+                    _persistentKeys = null;
+                }
+                else
+                {
+                    foreach (var key in _persistentKeys.Collection)
+                    {
+                        _ = target._persistentKeys.Collection.Add(key);
+                    }
+                }
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void TryMerge<T>(ref Dictionary<IndexMetadataKey, T> dict, ref Dictionary<IndexMetadataKey, T> targetDict)
+        {
+            if(dict is not null)
+            {
+                if (targetDict is null)
+                {
+                    targetDict = dict;
+                    dict = null;
+                    return;
+                }
+                foreach (var kvp in dict)
+                {
+                    targetDict[kvp.Key] = kvp.Value;
+                }
+                return;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private PooledHashSet<IndexMetadataKey> GetPooledHashset()
+        {
+            if (_persistentKeys is not null) return _persistentKeys;
+            _persistentKeys = Toolkit.Pool<PooledHashSet<IndexMetadataKey>>.Rent();
+            return _persistentKeys;
+        }
+
+        /// <summary>
         /// Release all internal metadata back to the pool.
         /// </summary>
         public void Dispose()
         {
             try
             {
+                if (_persistentKeys is not null)
+                {
+                    Toolkit.Pool<PooledHashSet<IndexMetadataKey>>.Return(_persistentKeys);
+                    _persistentKeys = null;
+                }
                 if (_intMetadata is not null)
                 {
                     DictionaryPool<IndexMetadataKey, int>.Release(_intMetadata);

@@ -22,6 +22,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Models
         private static readonly IndexMetadataKey<string> NameKey = IndexMetadataKey<string>.Get("Name");
         private static readonly IndexMetadataKey<int> AgeKey = IndexMetadataKey<int>.Get("Age");
         private static readonly IndexMetadataKey<float> ScoreKey = IndexMetadataKey<float>.Get("Score");
+        private static readonly IndexMetadataKey<string> IncludeKey = IndexMetadataKey<string>.Get("IncludeValue");
 
         private static Mock<IIndexed<T>> MockIndexed<T>(T value, IReadOnlyDictionary<string, object> metadata = null) where T : class
         {
@@ -227,6 +228,100 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Models
             var item = new TestItem { Age = 30 };
             var indexed = MockIndexed(item);
             ((IIndexerBuilder<TestItem>)sut).Set(AgeKey, (TestItem x) => x.Age, watchForChanges: false);
+
+            var md = new IndexMetadata();
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.False(result);
+        }
+
+        // ── Include (watcher registration) ─────────────────────────────────
+
+        [Fact]
+        public void WatchesChanges_AfterIncludeWithWatch_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
+            Assert.True(sut.WatchesChanges);
+        }
+
+        [Fact]
+        public void WatchesChanges_AfterIncludeWithoutWatch_ReturnsFalse()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, false);
+            Assert.False(sut.WatchesChanges);
+        }
+
+        [Fact]
+        public void Include_WithWatch_OnInsert_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
+
+            var md = new IndexMetadata();
+            md.Set(IncludeKey, "value");
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, null, ref md);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void Include_WithWatch_WhenValueChanged_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["IncludeValue"] = "old" });
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
+
+            var md = new IndexMetadata();
+            md.Set(IncludeKey, "new");
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void Include_WithWatch_WhenValueUnchanged_ReturnsFalse()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["IncludeValue"] = "same" });
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
+
+            var md = new IndexMetadata();
+            md.Set(IncludeKey, "same");
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void Include_WithWatch_WhenKeyNotInPrevious_ReturnsTrue()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item);
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
+
+            var md = new IndexMetadata();
+            md.Set(IncludeKey, "value");
+            var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);
+
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void Include_WithWatch_WhenNoIncomingValue_ReturnsFalse()
+        {
+            var sut = new TrackedIndexer<TestItem>();
+            var item = new TestItem { Name = "Alice" };
+            var indexed = MockIndexed(item,
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["IncludeValue"] = "value" });
+            ((IIndexerBuilder<TestItem>)sut).Include<string>(IncludeKey, true);
 
             var md = new IndexMetadata();
             var result = ((IChangeTracker<TestItem>)sut).HasChanged(item, indexed.Object, ref md);

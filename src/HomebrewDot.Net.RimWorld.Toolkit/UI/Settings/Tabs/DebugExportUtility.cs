@@ -152,8 +152,8 @@ namespace HomebrewDot.Net.Rimworld
                 ["hasCollector"] = collector != null,
                 ["collectorCount"] = collector?.Count ?? 0,
                 ["conditions"] = definition?.Conditions?.Select(x => x?.ToString() ?? "<null>").ToArray() ?? Array.Empty<string>(),
-                ["inclusions"] = definition?.Inclusions?.Select(x => x?.Name ?? "<null>").ToArray() ?? Array.Empty<string>(),
-                ["exclusions"] = definition?.Exclusions?.Select(x => x?.Name ?? "<null>").ToArray() ?? Array.Empty<string>(),
+                ["inclusions"] = definition?.Inclusions?.Select(x => x?.ToString() ?? "<null>").ToArray() ?? Array.Empty<string>(),
+                ["exclusions"] = definition?.Exclusions?.Select(x => x?.ToString() ?? "<null>").ToArray() ?? Array.Empty<string>(),
                 ["itemsExported"] = items.Count,
                 ["items"] = items,
             };

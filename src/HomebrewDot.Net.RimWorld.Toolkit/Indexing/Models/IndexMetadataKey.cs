@@ -41,13 +41,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         {
             if (!_cache.TryGetValue(name, out IndexMetadataKey key))
             {
-                lock (_cache)
+                if (!_cache.TryGetValue(name, out key))
                 {
-                    if (!_cache.TryGetValue(name, out key))
-                    {
-                        key = new IndexMetadataKey(name);
-                        _cache.Add(name, key);
-                    }
+                    key = new IndexMetadataKey(name);
+                    _cache.Add(name, key);
                 }
             }
             return key;
@@ -74,13 +71,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         {
             if (!_cache.TryGetValue(name, out IndexMetadataKey key))
             {
-                lock (_cache)
+                if (!_cache.TryGetValue(name, out key))
                 {
-                    if (!_cache.TryGetValue(name, out key))
-                    {
-                        key = new IndexMetadataKey<T>(name);
-                        _cache.Add(name, key);
-                    }
+                    key = new IndexMetadataKey<T>(name);
+                    _cache.Add(name, key);
                 }
             }
             if (key is not IndexMetadataKey<T> typedKey) throw new InvalidOperationException($"Metadata key {name} is defined but not of expected type {typeof(T)}. The same key might be used accross multiple types"); 
