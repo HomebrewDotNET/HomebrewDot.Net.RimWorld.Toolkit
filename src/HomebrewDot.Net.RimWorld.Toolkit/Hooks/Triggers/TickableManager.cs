@@ -77,10 +77,10 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 var tickList = buckets;
                 var ticked = TickList(tickList);
 
-                if(isLogTick && ticked > 0)
+                stopwatch?.Stop();
+                if (isLogTick && ticked > 0)
                 {
                     _lastLogTick = _currentTick;
-                    stopwatch.Stop();
                     Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables with interval {interval} in {stopwatch.ElapsedMilliseconds}ms.");
                 }
             }
@@ -162,14 +162,15 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         bool IHook<RequestTickManagement>.OnTrigger(RequestTickManagement arg)
         {
             arg = Guard.NotNull(arg, nameof(arg));
-            var bucket = BucketOf(arg.Tickable);
             if (arg.Add)
             {
                 arg.Tickable.Bucket = -1;
+                var bucket = BucketOf(arg.Tickable);
                 _tickablesToAdd.Add((arg.Tickable, bucket));
             }
             else
             {
+                var bucket = BucketOf(arg.Tickable);
                 _tickablesToRemove.Add((arg.Tickable, bucket));
             }
             return true;

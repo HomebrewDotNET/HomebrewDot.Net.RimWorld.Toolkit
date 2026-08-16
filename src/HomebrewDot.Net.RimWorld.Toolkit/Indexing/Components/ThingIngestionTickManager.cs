@@ -27,10 +27,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             { TickerType.Rare, ToolkitConstants.TickLongInterval },
             { TickerType.Long, ToolkitConstants.TickLongInterval * 2 }
         };
+        public static readonly IReadOnlyDictionary<TickerType, int> TickerTypeToSlowInterval = new Dictionary<TickerType, int>
+        {
+            { TickerType.Normal, ToolkitConstants.TickLongInterval },
+            { TickerType.Rare, ToolkitConstants.TickLongInterval * 2 },
+            { TickerType.Long, ToolkitConstants.TickLongInterval * 4 }
+        };
 
         // Fields
         private readonly IHookManager _hookManager;
         private readonly ISnapshotManager _snapshotManager;
+        private readonly IReadOnlyDictionary<TickerType, int> _tickerTypeToInterval;
 
         // State
         private ISnapshotManager<Thing> _snapshotThingManager;
@@ -43,6 +50,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             _hookManager = Guard.NotNull(hookManager, nameof(hookManager));
             _snapshotManager = Guard.NotNull(snapshotManager, nameof(snapshotManager));
+            var isSlowGathering = Toolkit.Helpers.Invoking.Safe(() => Toolkit.Settings.SlowGatheringEnabled, false);
+            _tickerTypeToInterval = isSlowGathering ? TickerTypeToSlowInterval : TickerTypeToInterval;
         }
 
         /// <inheritdoc/>
@@ -58,7 +67,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             if (!indexed.IsInsert) return;
             var tickerType = indexed.Value.def.tickerType;
             if (tickerType == TickerType.Never) return;
-            if(!TickerTypeToInterval.TryGetValue(tickerType, out var interval)) return;
+            if(!_tickerTypeToInterval.TryGetValue(tickerType, out var interval)) return;
 
             var managed = Toolkit.Pool<ManagedTickingIndexedThing>.Rent();
             _snapshotThingManager ??= _snapshotManager.AsTyped<Thing>();
@@ -129,6 +138,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _snapshotManager = null;
                 _interval = 0;
                 _hash = 0;
+                Bucket = -1;
             }
         }
     }
