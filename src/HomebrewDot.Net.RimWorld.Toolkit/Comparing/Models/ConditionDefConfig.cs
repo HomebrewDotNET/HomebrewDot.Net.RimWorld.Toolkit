@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using HomebrewDot.Net.Rimworld.Referencing;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
@@ -83,6 +85,23 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         /// </summary>
         public bool IsToReferenceMode;
 
+        // Group state
+        /// <summary>
+        /// The nested conditions that make this config a group condition. When non-empty, <see cref="ToConditionDef"/>
+        /// builds a condition whose <see cref="ConditionDef.Conditions"/> are the built sub-conditions.
+        /// </summary>
+        public List<ConditionDefConfig> Conditions;
+        /// <summary>
+        /// Maps to <see cref="ConditionDef.ConditionGroupIsOr"/>. Indicates whether a group combined with a leaf
+        /// comparison uses OR instead of AND when both are present.
+        /// </summary>
+        public bool ConditionGroupIsOr;
+
+        /// <summary>
+        /// Indicates whether this config represents a group condition, i.e. it contains nested conditions.
+        /// </summary>
+        public bool IsGroup => Conditions != null && Conditions.Count > 0;
+
         public ConditionDefConfig()
         {
             CompareDefault = string.Empty;
@@ -97,6 +116,39 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             Operator = string.Empty;
             IsOr = false;
             Inverted = false;
+            Conditions = new List<ConditionDefConfig>();
+            ConditionGroupIsOr = false;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ConditionDefConfig"/> class by copying all fields from the specified config.
+        /// </summary>
+        /// <param name="other">The config to copy.</param>
+        public ConditionDefConfig(ConditionDefConfig other)
+        {
+            if (other == null)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
+
+            CompareDefault = other.CompareDefault;
+            CompareType = other.CompareType;
+            CompareValue = other.CompareValue;
+            ToDefault = other.ToDefault;
+            ToNumber = other.ToNumber;
+            ToDecimal = other.ToDecimal;
+            ToType = other.ToType;
+            ToReferenceType = other.ToReferenceType;
+            ToReferenceValue = other.ToReferenceValue;
+            Operator = other.Operator;
+            IsOr = other.IsOr;
+            Inverted = other.Inverted;
+            IsCompareReferenceMode = other.IsCompareReferenceMode;
+            IsToReferenceMode = other.IsToReferenceMode;
+            Conditions = other.Conditions == null
+                ? null
+                : other.Conditions.Where(c => c != null).Select(c => new ConditionDefConfig(c)).ToList();
+            ConditionGroupIsOr = other.ConditionGroupIsOr;
         }
 
         /// <summary>
@@ -104,6 +156,27 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         /// </summary>
         public ConditionDef ToConditionDef()
         {
+            var def = new ConditionDef
+            {
+                IsOr = IsOr,
+                Inverted = Inverted,
+                ConditionGroupIsOr = ConditionGroupIsOr,
+            };
+
+            if (IsGroup)
+            {
+                def.Conditions = Conditions
+                    .Where(c => c != null)
+                    .Select(c => c.ToConditionDef())
+                    .ToArray();
+
+                // A group without an operator is a pure group: the condition has no leaf comparison of its own.
+                if (string.IsNullOrWhiteSpace(Operator))
+                {
+                    return def;
+                }
+            }
+
             object compareRef = IsCompareReferenceMode
                 ? (object)new ReferenceDef { Type = CompareType ?? string.Empty, Value = CompareValue ?? string.Empty }
                 : (object)new ReferenceDef { Type = IndexedReferenceType.DefaultTypeName, Value = CompareDefault ?? string.Empty };
@@ -132,14 +205,10 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 toRef = new ReferenceDef { Type = ValueReferenceType.DefaultTypeName, Value = rawValue };
             }
 
-            return new ConditionDef
-            {
-                Compare = compareRef,
-                With = Operator ?? string.Empty,
-                To = toRef,
-                IsOr = IsOr,
-                Inverted = Inverted,
-            };
+            def.Compare = compareRef;
+            def.With = Operator ?? string.Empty;
+            def.To = toRef;
+            return def;
         }
 
         /// <summary>
@@ -154,22 +223,36 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 return config;
             }
 
-            if(def.Conditions?.Length > 0)
+            if (def.Conditions is { Length: > 0 })
             {
-                throw new InvalidOperationException("Nested conditions are not supported in ConditionDefConfig.");
+                config.Conditions = def.Conditions
+                    .Where(c => c != null)
+                    .Select(FromConditionDef)
+                    .ToList();
+                config.ConditionGroupIsOr = def.ConditionGroupIsOr;
             }
 
             if (def.Compare is IReference compareRef)
             {
-                config.CompareType = compareRef.Type;
-                config.CompareValue = compareRef.Value?.ToString();
+                if (string.Equals(compareRef.Type, IndexedReferenceType.DefaultTypeName, StringComparison.Ordinal))
+                {
+                    config.CompareDefault = compareRef.Value?.ToString() ?? string.Empty;
+                }
+                else
+                {
+                    config.CompareType = compareRef.Type;
+                    config.CompareValue = compareRef.Value?.ToString();
+                    config.IsCompareReferenceMode = true;
+                }
             }
             else if (def.Compare != null)
             {
                 config.CompareDefault = def.Compare.ToString();
             }
 
-            config.Operator = def.With?.ToString() ?? string.Empty;
+            config.Operator = def.With is OperatorDef operatorDef
+                ? operatorDef.Type ?? string.Empty
+                : def.With?.ToString() ?? string.Empty;
 
             if (def.To is IReference toRef)
             {
@@ -192,6 +275,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
                 {
                     config.ToReferenceType = toRef.Type ?? string.Empty;
                     config.ToReferenceValue = toRef.Value?.ToString() ?? string.Empty;
+                    config.IsToReferenceMode = true;
                 }
             }
             else if (def.To != null)
@@ -203,6 +287,13 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             config.Inverted = def.Inverted;
             return config;
         }
+
+        /// <summary>
+        /// Builds a single-line, human-readable representation of this config by converting it to a
+        /// <see cref="ConditionDef"/> and rendering it compactly. See <see cref="ConditionDef.ToCompactString"/>.
+        /// </summary>
+        /// <returns>A single-line compact string representation of the condition.</returns>
+        public string ToCompactString() => ToConditionDef().ToCompactString();
 
         public void ExposeData()
         {
@@ -220,6 +311,12 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             Scribe_Values.Look(ref Inverted, "Inverted");
             Scribe_Values.Look(ref IsCompareReferenceMode, "IsCompareReferenceMode");
             Scribe_Values.Look(ref IsToReferenceMode, "IsToReferenceMode");
+            Scribe_Collections.Look(ref Conditions, "Conditions", LookMode.Deep);
+            Scribe_Values.Look(ref ConditionGroupIsOr, "ConditionGroupIsOr");
+            if (Conditions == null)
+            {
+                Conditions = new List<ConditionDefConfig>();
+            }
         }
     }
 }

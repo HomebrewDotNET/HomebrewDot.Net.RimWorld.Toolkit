@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static HomebrewDot.Net.Rimworld.Indexing.Models.Delegates;
 
 namespace HomebrewDot.Net.Rimworld.Indexing.Components
 {
@@ -13,30 +14,30 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
     public class DelegateTableListener<T> : ITableListener<T> where T : class
     {
         // State
-        public Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onDeleting;
-        public Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onDeleted;
-        public Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onUpserted;
-        public Action<IWriteableIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onUpserting;
+        public OnTableDeleting<T> onDeleting;
+        public OnTableDeleted<T> onDeleted;
+        public OnTableInserted<T> onUpserted;
+        public OnTableInserting<T> onUpserting;
 
         /// <inheritdoc/>
         public void OnDeleting(IIndexed<T> indexed, ref IndexMetadata metadata, IReadOnlyTable<T> table)
         {
-            onDeleting?.Invoke(indexed, metadata, table);
+            onDeleting?.Invoke(indexed, ref metadata, table);
         }
         /// <inheritdoc/>
         public void OnDeleted(IIndexed<T> indexed, ref IndexMetadata metadata, IReadOnlyTable<T> table)
         {
-            onDeleted?.Invoke(indexed, metadata, table);
+            onDeleted?.Invoke(indexed, ref metadata, table);
         }
         /// <inheritdoc/>
         public void OnUpserted(IIndexed<T> indexed, ref IndexMetadata metadata, IReadOnlyTable<T> table)
         {
-            onUpserted?.Invoke(indexed, metadata, table);
+            onUpserted?.Invoke(indexed, ref metadata, table);
         }
         /// <inheritdoc/>
         public void OnUpserting(IWriteableIndexed<T> indexed, ref IndexMetadata metadata, IReadOnlyTable<T> table)
         {
-            onUpserting?.Invoke(indexed, metadata, table);
+            onUpserting?.Invoke(indexed, ref metadata, table);
         }
     }
 }

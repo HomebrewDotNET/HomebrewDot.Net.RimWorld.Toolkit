@@ -39,7 +39,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             foreach (var def in defs)
             {
                 var metadata = new IndexMetadata();
-                if(snapshotManager.Push(def, ref metadata))
+                if(snapshotManager.Push(def, ref metadata, false))
                 {
                     accepted++;
                 }

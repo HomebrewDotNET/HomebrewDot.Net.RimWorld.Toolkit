@@ -46,6 +46,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         IReadOnlyDictionary<string, object> Metadata { get; }
 
         /// <summary>
+        /// If the current instance has pending changes waiting to be synced to the snapshot, this will be true. Otherwise, it will be false.
+        /// </summary>
+        bool HasPendingChanges { get; }
+        /// <summary>
         /// True if the current instance was snapshotted.
         /// </summary>
         bool HasSnapshot { get; }
@@ -57,6 +61,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// The current snapshot of the current item if it was taken already.
         /// </summary>
         IIndexed<T> Snapshot { get; }
+        /// <summary>
+        /// If the current instance was removed from the database. When true all references to the current instance should be considered invalid and should be removed.
+        /// </summary>
+        public bool IsRemoved { get; }
+        /// <summary>
+        /// If the current item was/is inserted, otherwise updated.
+        /// </summary>
+        bool IsInsert { get; }
 
         /// <summary>
         /// Retrieves the value of the specified property from the indexed object or its metadata. If the property exists in both, the metadata value takes precedence.

@@ -82,6 +82,30 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         /// <inheritdoc cref="CollectionConditionDef.By"/>
         public string By;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CollectionConditionDefConfig"/> class.
+        /// </summary>
+        public CollectionConditionDefConfig()
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CollectionConditionDefConfig"/> class by copying all fields from the specified config.
+        /// </summary>
+        /// <param name="other">The config to copy.</param>
+        public CollectionConditionDefConfig(CollectionConditionDefConfig other)
+        {
+            if (other == null)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
+
+            Name = other.Name;
+            IsOr = other.IsOr;
+            Inverted = other.Inverted;
+            By = other.By;
+        }
+
         /// <inheritdoc/>
         public void ExposeData()
         {

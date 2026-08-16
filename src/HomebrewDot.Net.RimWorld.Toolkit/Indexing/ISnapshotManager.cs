@@ -33,6 +33,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
         bool Push<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
         /// <summary>
+        /// Pushes <paramref name="indexed"/> to be updated in the current pending snapshot. 
+        /// This is used for updating existing indexed data.
+        /// Faster than calling <see cref="Push{T}(T, ref IndexMetadata, bool)"/> if you already have an <see cref="IIndexed{T}"/> instance.
+        /// </summary>
+        /// <typeparam name="T">The type of the data to be updated.</typeparam>
+        /// <param name="indexed">The indexed data to be updated.</param>
+        /// <param name="metadata">Optional metadata associated with the data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
+        /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
+        bool Update<T>(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
+        /// <summary>
         /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
         /// </summary>
         /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
@@ -41,6 +52,16 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
         bool Destroyed<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
+        /// <summary>
+        /// Notifies the snapshot manager that <paramref name="indexed"/> has been destroyed and should be removed from the pending snapshot if it is present.
+        /// Faster than calling <see cref="Destroyed{T}(T, ref IndexMetadata, bool)"/> if you already have an <see cref="IIndexed{T}"/> instance.
+        /// </summary>
+        /// <typeparam name="T">The type of the data that was destroyed.</typeparam>
+        /// <param name="indexed">The indexed data that was destroyed.</param>
+        /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
+        /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
+        bool Delete<T>(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true) where T : class;
 
         /// <summary>
         /// Gets or creates a typed snapshot manager for <typeparamref name="T"/>.
@@ -77,6 +98,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
         bool Push(T data, ref IndexMetadata metadata, bool allowBuffering = true);
         /// <summary>
+        /// Pushes <paramref name="indexed"/> to be updated in the current pending snapshot.
+        /// </summary>
+        /// <param name="indexed">The indexed data to be updated.</param>
+        /// <param name="metadata">Optional metadata associated with the data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
+        /// <returns><c>true</c> if the data was accepted, <c>false</c> otherwise.</returns>
+        bool Update(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true);
+        /// <summary>
         /// Notifies the snapshot manager that <paramref name="data"/> has been destroyed and should be removed from the pending snapshot if it is present.
         /// </summary>
         /// <param name="data">The data that was destroyed.</param>
@@ -84,6 +113,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing
         /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
         /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
         bool Destroyed(T data, ref IndexMetadata metadata, bool allowBuffering = true);
+        /// <summary>
+        /// Notifies the snapshot manager that <paramref name="indexed"/> has been destroyed and should be removed from the pending snapshot if it is present.
+        /// </summary>
+        /// <param name="indexed">The indexed data that was destroyed.</param>
+        /// <param name="metadata">Optional metadata associated with the destroyed data.</param>
+        /// <param name="allowBuffering">If set to <c>true</c>, the data can be buffered for later processing to smooth out tps.</param>
+        /// <returns><c>true</c> if the data was found and marked as destroyed, <c>false</c> otherwise.</returns>
+        bool Delete(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true);
     }
 
     /// <summary>

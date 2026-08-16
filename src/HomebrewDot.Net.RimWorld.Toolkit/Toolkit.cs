@@ -115,12 +115,14 @@ namespace HomebrewDot.Net.Rimworld
             Services.Register<IReferenceType>(CompReferenceType.Instance, CompReferenceType.DefaultTypeName);
             Services.Register<IReferenceType>(DefReferenceType<ThingCategoryDef>.Instance, DefReferenceType<ThingCategoryDef>.DefaultTypeName);
             Services.Register<IReferenceType>(DefReferenceType<StuffCategoryDef>.Instance, DefReferenceType<StuffCategoryDef>.DefaultTypeName);
+            Services.Register<IReferenceType>(DefReferenceType<SpecialThingFilterDef>.Instance, DefReferenceType<SpecialThingFilterDef>.DefaultTypeName);
             Services.Register<IReferenceType>(SelfReferenceType.Instance, SelfReferenceType.DefaultTypeName);
 
             // Input helpers
             Toolkit.Services.Register<IReferenceTypeInputHelper>(StateReferenceTypeInputHelper.Instance, StatReferenceType.DefaultTypeName);
             Toolkit.Services.Register<IReferenceTypeInputHelper>(DefReferenceTypeInputHelper<ThingCategoryDef>.Instance, DefReferenceType<ThingCategoryDef>.DefaultTypeName);
             Toolkit.Services.Register<IReferenceTypeInputHelper>(DefReferenceTypeInputHelper<StuffCategoryDef>.Instance, DefReferenceType<StuffCategoryDef>.DefaultTypeName);
+            Toolkit.Services.Register<IReferenceTypeInputHelper>(DefReferenceTypeInputHelper<SpecialThingFilterDef>.Instance, DefReferenceType<SpecialThingFilterDef>.DefaultTypeName);
             Toolkit.Services.Register<IReferenceTypeInputHelper>(CompReferenceTypeInputHelper.Instance, CompReferenceType.DefaultTypeName);
 
             // Operator types
@@ -171,6 +173,7 @@ namespace HomebrewDot.Net.Rimworld
             Services.Register<IOperatorType>(InOperatorType.Instance, InOperatorType.DefaultTypeName);
             Services.Register<IOperatorType>(ContainsOperatorType.Instance, ContainsOperatorType.DefaultTypeName);
             Services.Register<IOperatorType>(InThingCategoryOperatorType.Instance, InThingCategoryOperatorType.DefaultTypeName);
+            Services.Register<IOperatorType>(MatchesThingFilterOperatorType.Instance, MatchesThingFilterOperatorType.DefaultTypeName);
         }
 
         /// <summary>
@@ -701,17 +704,20 @@ namespace HomebrewDot.Net.Rimworld
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsFoul.Name)))
-                             .Set(ToolkitConstants.Def.Thing.IsFoul, t => t is ThingDef def && IsFoulDef(def));
+                             .Set(ToolkitConstants.Def.Thing.IsFoul, t => t is ThingDef def && IsFoulDef(def))
+                             .Once();
                         });
                         Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
                         {
-                            x.Set(ToolkitConstants.Def.Thing.IsFoul, t => t.def != null && IsFoulDef(t.def));
+                            x.Set(ToolkitConstants.Def.Thing.IsFoul, t => t.def != null && IsFoulDef(t.def))
+                             .Once();
                         });
                     }
 
                     /// <summary>
                     /// Determines whether the given <see cref="ThingDef"/> is foul, i.e. meat or leather sourced from a
-                    /// non-standard creature (humanlike, non-normal flesh type, or non-animal).
+                    /// non-standard creature (humanlike, non-normal flesh type, or non-animal), or meat of a
+                    /// pollution-adapted animal (toxalope, waste rat, bog hound, etc.).
                     /// </summary>
                     /// <param name="def">The def to evaluate. Can be null.</param>
                     /// <returns>True if the def is foul meat or leather; otherwise, false.</returns>
@@ -734,11 +740,29 @@ namespace HomebrewDot.Net.Rimworld
                                     {
                                         return true;
                                     }
+                                    // Meat of pollution-adapted animals (toxalope, waste rat, bog hound, etc.)
+                                    // is foul even though they are ordinary normal-flesh animals: only such
+                                    // animals reach full toxic environment resistance. Leather is shared between
+                                    // many animals, so the check only applies to per-race meat.
+                                    if (isSourceForMeat && IsPollutionAdaptedAnimal(creature))
+                                    {
+                                        return true;
+                                    }
                                 }
                             }
                         }
                         return false;
                     }
+
+                    /// <summary>
+                    /// Determines whether the given creature is adapted to pollution, i.e. has full toxic
+                    /// environment resistance. Used to flag the meat of such animals (toxalope, waste rat,
+                    /// bog hound, etc.) as foul even though they are ordinary normal-flesh animals.
+                    /// </summary>
+                    /// <param name="creature">The creature def to evaluate. Can be null.</param>
+                    /// <returns>True if the creature is fully resistant to environmental toxins; otherwise, false.</returns>
+                    private static bool IsPollutionAdaptedAnimal(ThingDef creature) =>
+                        creature != null && creature.GetStatValueAbstract(StatDefOf.ToxicEnvironmentResistance, null) >= 1f;
 
                     /// <summary>
                     /// Adds an indexer that marks ThingDefs as drinks (fluid ingestibles like beer, tea, juices, etc.).
@@ -762,7 +786,7 @@ namespace HomebrewDot.Net.Rimworld
                                      }
                                  }
                                  return false;
-                             });
+                             }).Once();
                         });
                     }
                     /// <summary>
@@ -789,7 +813,7 @@ namespace HomebrewDot.Net.Rimworld
                                      }
                                  }
                                  return false;
-                             });
+                             }).Once();
                         });
                     }
 
@@ -816,7 +840,7 @@ namespace HomebrewDot.Net.Rimworld
                                      }
                                  }
                                  return false;
-                             });
+                             }).Once();
                         });
                     }
 
@@ -836,7 +860,7 @@ namespace HomebrewDot.Net.Rimworld
                                      return def.IsWithinCategory(ThingCategoryDefOf.BodyParts);
                                  }
                                  return false;
-                             });
+                             }).Once();
                         });
                     }
 
@@ -1058,6 +1082,7 @@ namespace HomebrewDot.Net.Rimworld
                 public static void EnsureGatherer()
                 {
                     ConfigureOrchestrator += ConfigureGathering;
+                    ConfigureSchema += ConfigureGatheringSchema;
                 }
                 /// <summary>
                 /// Adds addition configuration for the table.
@@ -1087,6 +1112,10 @@ namespace HomebrewDot.Net.Rimworld
                     builder.With(HarmonyThingGatherer.Instance)
                            .With(MapThingGatherer.Instance);
                 }
+                private static void ConfigureGatheringSchema(IDatabaseSchemaBuilder builder)
+                {
+                    builder.WithListener(new ThingIngestionTickManager(Hooks.Manager, Manager));
+                }
 
                 /// <summary>
                 /// Adds an indexer that tracks the map for each Thing in the game. The indexer will return the map that the Thing is currently on, or null if the Thing is not on a map.
@@ -1114,7 +1143,8 @@ namespace HomebrewDot.Net.Rimworld
                         .Set(ToolkitConstants.Thing.ModId, t =>
                         {
                             return t.def?.modContentPack?.PackageId?.ToLower() ?? "unknown";
-                        });
+                        })
+                        .Once();
                     });
                     Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Thing.ModId.Name, x =>
                     {
@@ -1153,6 +1183,125 @@ namespace HomebrewDot.Net.Rimworld
                             });
                         });
                     }
+                }
+
+                /// <summary>
+                /// Adds an indexer that marks Things as ghoul corpses when the Anomaly expansion is loaded. A thing is a ghoul corpse when it is a <see cref="Corpse"/> whose <see cref="Corpse.InnerPawn"/> still carries the Anomaly "Ghoul" hediff. Ghouls are transformed humans, so their corpses share the Human corpse def and can only be identified per-instance.
+                /// </summary>
+                public static void TrackIsGhoulCorpse()
+                {
+                    if (!ToolkitConstants.Anomaly.IsLoaded)
+                    {
+                        return;
+                    }
+                    var ghoulHediff = DefDatabase<HediffDef>.GetNamedSilentFail(ToolkitConstants.Anomaly.GhoulHediffDefName);
+                    if (ghoulHediff == null)
+                    {
+                        return;
+                    }
+                    Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.IsGhoulCorpse.Name, x =>
+                    {
+                        x.When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v is Corpse)
+                         .Set(ToolkitConstants.Thing.IsGhoulCorpse, t =>
+                         {
+                             if (t is Corpse corpse && corpse.InnerPawn != null)
+                             {
+                                 return corpse.InnerPawn.health?.hediffSet?.HasHediff(ghoulHediff) == true;
+                             }
+                             return false;
+                         }).Once();
+                    });
+                }
+
+                /// <summary>
+                /// Adds an indexer that classifies Things as colonist, stranger, slave or unnatural corpses, mirroring the
+                /// vanilla "Allow Colonist/Stranger/Slave/Unnatural corpses" special thing filters. A corpse is a colonist
+                /// corpse when its inner pawn was a free colonist, a stranger corpse when it belonged to another faction, a
+                /// slave corpse when it was a player-faction slave (Ideology), and an unnatural corpse when it is an
+                /// <see cref="UnnaturalCorpse"/> (Anomaly). These categories can only be determined per-instance, so the
+                /// metadata is only set for <see cref="Corpse"/>s.
+                /// </summary>
+                public static void TrackCorpseKind()
+                {
+                    Indexers.BuildIndexer<Verse.Thing>("CorpseKind", x =>
+                    {
+                        x.When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v is Corpse)
+                         .Set(ToolkitConstants.Thing.IsColonistCorpse, t => IsColonistCorpse(t))
+                         .Set(ToolkitConstants.Thing.IsStrangerCorpse, t => IsStrangerCorpse(t))
+                         .Set(ToolkitConstants.Thing.IsSlaveCorpse, t => IsSlaveCorpse(t))
+                         .Set(ToolkitConstants.Thing.IsUnnaturalCorpse, t => t is UnnaturalCorpse)
+                         .Set(ToolkitConstants.Thing.IsPetCorpse, t => IsPetCorpse(t))
+                         .Once();
+                    });
+                }
+
+                /// <summary>
+                /// Determines whether the given thing is a corpse holding a humanlike pawn, mirroring the guard used by the
+                /// vanilla corpse special thing filter workers.
+                /// </summary>
+                /// <param name="t">The thing to evaluate. Can be null.</param>
+                /// <returns>True if the thing is a corpse whose inner pawn is humanlike; otherwise, false.</returns>
+                private static bool IsHumanlikeCorpse(Verse.Thing t)
+                {
+                    return t is Corpse corpse && corpse.InnerPawn != null
+                        && corpse.InnerPawn.def?.race?.Humanlike == true;
+                }
+
+                /// <summary>
+                /// Determines whether the given thing is a colonist corpse, mirroring the vanilla colonist-corpse special
+                /// thing filter worker. Slaves (Ideology) and unnatural corpses (Anomaly) are excluded, and the inner pawn
+                /// must have belonged to the player faction.
+                /// </summary>
+                /// <param name="t">The thing to evaluate. Can be null.</param>
+                /// <returns>True if the thing is a colonist corpse; otherwise, false.</returns>
+                private static bool IsColonistCorpse(Verse.Thing t)
+                {
+                    if (!IsHumanlikeCorpse(t)) return false;
+                    var corpse = (Corpse)t;
+                    if (ModsConfig.IdeologyActive && corpse.InnerPawn.IsSlave) return false;
+                    if (ModsConfig.AnomalyActive && t is UnnaturalCorpse) return false;
+                    return corpse.InnerPawn.Faction == Faction.OfPlayer;
+                }
+
+                /// <summary>
+                /// Determines whether the given thing is a stranger corpse, mirroring the vanilla stranger-corpse special
+                /// thing filter worker. Unnatural corpses (Anomaly) are excluded, and the inner pawn must not have belonged
+                /// to the player faction.
+                /// </summary>
+                /// <param name="t">The thing to evaluate. Can be null.</param>
+                /// <returns>True if the thing is a stranger corpse; otherwise, false.</returns>
+                private static bool IsStrangerCorpse(Verse.Thing t)
+                {
+                    if (!IsHumanlikeCorpse(t)) return false;
+                    var corpse = (Corpse)t;
+                    if (ModsConfig.AnomalyActive && t is UnnaturalCorpse) return false;
+                    return corpse.InnerPawn.Faction != Faction.OfPlayer;
+                }
+
+                /// <summary>
+                /// Determines whether the given thing is a slave corpse, mirroring the vanilla slave-corpse special thing
+                /// filter worker. The inner pawn must have been a slave belonging to the player faction (Ideology).
+                /// </summary>
+                /// <param name="t">The thing to evaluate. Can be null.</param>
+                /// <returns>True if the thing is a slave corpse; otherwise, false.</returns>
+                private static bool IsSlaveCorpse(Verse.Thing t)
+                {
+                    if (!IsHumanlikeCorpse(t)) return false;
+                    var corpse = (Corpse)t;
+                    if (corpse.InnerPawn.Faction != Faction.OfPlayer) return false;
+                    return corpse.InnerPawn.IsSlave;
+                }
+
+                /// <summary>
+                /// Determines whether the given thing is the corpse of a tame colony animal (a pet), i.e. an animal that
+                /// belonged to the player faction. Based on the vanilla <see cref="Pawn.IsColonyAnimal"/> concept, which is
+                /// <see cref="Pawn.IsAnimal"/> (animal race, not subhuman) combined with the player faction.
+                /// </summary>
+                /// <param name="t">The thing to evaluate. Can be null.</param>
+                /// <returns>True if the thing is a pet corpse; otherwise, false.</returns>
+                private static bool IsPetCorpse(Verse.Thing t)
+                {
+                    return t is Corpse corpse && corpse.InnerPawn != null && corpse.InnerPawn.IsColonyAnimal;
                 }
 
                 /// <summary>
@@ -1435,8 +1584,9 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             /// <param name="name">The name of the collection.</param>
             /// <param name="buildAction">A function that takes a collection builder and returns the built collection.</param>
-            /// <param name="startCollecting"></param>
-            public static void Build(string name, Func<ICollectionBuilder, ICollectionBuilder> buildAction, bool startCollecting = true)
+            /// <param name="startCollecting">Indicates whether the collector should start collecting immediately.</param>
+            /// <returns>The built collection definition.</returns>
+            public static ICollectionDef Build(string name, Func<ICollectionBuilder, ICollectionBuilder> buildAction, bool startCollecting = true)
             {
                 name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
                 buildAction = Helpers.Guard.NotNull(buildAction, nameof(buildAction));
@@ -1447,9 +1597,96 @@ namespace HomebrewDot.Net.Rimworld
                 if (builder.TryBuildCollector(collection, out var collector))
                 {
                     Set(name, collector, startCollecting);
-                    return;
+                    return collection;
                 }
                 Set(name, collection);
+                return collection;
+            }
+            /// <summary>
+            /// Adds or rebuilds a collection (and optionally a collector) using the specified build action. When a
+            /// collector is already registered under <paramref name="name"/> and is compatible (same collected
+            /// item type and same static/once behavior), the existing collector instance is reused: it is stopped,
+            /// its collection definition is replaced and it is restarted in place. This avoids constructing a new
+            /// collector, re-registering hooks and re-running collection setup, and also stops the stale hook of a
+            /// replaced collector. When no compatible collector exists, any existing one is stopped and replaced
+            /// and this behaves like <see cref="Build"/>. Callers that rebuild the same name must keep the
+            /// collection source equivalent, since the reused collector keeps its original item-push function.
+            /// </summary>
+            /// <param name="name">The name of the collection.</param>
+            /// <param name="buildAction">A function that takes a collection builder and returns the built collection.</param>
+            /// <param name="startCollecting">Indicates whether the collector should start collecting immediately.</param>
+            /// <returns>The built collection definition.</returns>
+            public static ICollectionDef Rebuild(string name, Func<ICollectionBuilder, ICollectionBuilder> buildAction, bool startCollecting = true)
+            {
+                name = Helpers.Guard.NotNullOrWhitespace(name, nameof(name));
+                buildAction = Helpers.Guard.NotNull(buildAction, nameof(buildAction));
+
+                var builder = new CollectionBuilder();
+                _ = buildAction(builder);
+                var collection = new StaticCollectionDef(Guard.NotNull(builder.Collection, nameof(builder.Collection)));
+                if (!builder.TryBuildCollector(collection, out var newCollector))
+                {
+                    Set(name, collection);
+                    return collection;
+                }
+
+                if (_collectors.TryGetValue(name, out var existing) && existing is IReusableCollector reusable && CanReuseCollector(existing, newCollector))
+                {
+                    // Reuse the existing collector in place: stop it, swap its definition and restart it. This
+                    // keeps the same instance registered, unregisters any stale hook, and re-runs the initial
+                    // load against the new definition. Autodex is idempotent through the indexer cache, so no
+                    // separate skip is required.
+                    Invoking.Safe(() => existing.StopCollecting());
+                    reusable.UpdateDefinition(collection);
+                    _collectors[name] = existing;
+                    _collectionDefinitions[name] = collection;
+                    if (startCollecting)
+                    {
+                        Invoking.Safe(() => existing.StartCollecting(Comparator, _collectionDefinitions));
+                    }
+                    Toolkit.Hooks.Manager?.Trigger(new OnCollectionsChanged(name, collection, existing, true));
+                    return collection;
+                }
+
+                // No compatible collector to reuse: clean up any existing one before registering the new one so a
+                // replaced collector is not left running (and its hook registered) indefinitely.
+                if (existing != null)
+                {
+                    Invoking.Safe(() => existing.StopCollecting());
+                    if (existing is IDisposable disposable)
+                    {
+                        Invoking.Safe(() => disposable.Dispose());
+                    }
+                }
+                Set(name, newCollector, startCollecting);
+                return collection;
+            }
+            private static bool CanReuseCollector(ICollector existing, ICollector newCollector)
+            {
+                var existingType = existing.GetType();
+                var newType = newCollector.GetType();
+                if (!existingType.IsGenericType || !newType.IsGenericType)
+                {
+                    return false;
+                }
+                var existingDefinition = existingType.GetGenericTypeDefinition();
+                if (existingDefinition != typeof(SnapshotCollector<>))
+                {
+                    return false;
+                }
+                if (existingDefinition != newType.GetGenericTypeDefinition())
+                {
+                    return false;
+                }
+                if (existingType.GetGenericArguments()[0] != newType.GetGenericArguments()[0])
+                {
+                    return false;
+                }
+                if (existing is IHook<OnSnapshotTakenTrigger> existingHook && newCollector is IHook<OnSnapshotTakenTrigger> newHook)
+                {
+                    return existingHook.Once == newHook.Once;
+                }
+                return true;
             }
             /// <summary>
             /// Creates (but doesn't add) a new collection (and optionally a collector) using the specified build action. This can be useful if you want to build a collection and collector but need to perform additional configuration or setup before adding it to the toolkit. The returned collection and collector will not be registered in the toolkit, so you will need to call the appropriate methods to add them if you want to use them within the toolkit's collection management system.
@@ -1798,6 +2035,29 @@ namespace HomebrewDot.Net.Rimworld
                         var arguments = interfaceType.GetGenericArguments();
                         yield return arguments[0];
                     }
+                }
+            }
+
+            /// <summary>
+            /// Determines the type of ticker based on the provided tick value. The method checks if the tick is a multiple of the long interval or the rare interval, returning the corresponding <see cref="TickerType"/>. If the tick is not a multiple of either interval, it returns <see cref="TickerType.Normal"/>.
+            /// </summary>
+            /// <param name="tick">The current tick value.</param>
+            /// <returns>The type of ticker based on the tick value.</returns>
+            public static TickerType GetTickerType(long tick)
+            {
+                var rareInterval = ToolkitConstants.TickRareInterval;
+                var longInterval = ToolkitConstants.TickLongInterval;
+                if(tick % longInterval == 0)
+                {
+                    return TickerType.Long;
+                }
+                else if(tick % rareInterval == 0)
+                {
+                    return TickerType.Rare;
+                }
+                else
+                {
+                    return TickerType.Normal;
                 }
             }
 
@@ -3174,7 +3434,7 @@ namespace HomebrewDot.Net.Rimworld
         public static class Pool<T> where T : IPoolable, new()
         {
             // Fields
-            private readonly static Queue<T> _pool = new Queue<T>(1024);
+            private readonly static Stack<T> _pool = new Stack<T>(1024);
 
             /// <summary>
             /// Rent a new object from the pool.
@@ -3182,7 +3442,7 @@ namespace HomebrewDot.Net.Rimworld
             /// <returns>A instance of <typeparamref name="T"/> rented from the pool, or a new instance if the pool is empty</returns>
             public static T Rent()
             {
-                if (_pool.TryDequeue(out var rented))
+                if (_pool.TryPop(out var rented))
                 {
                     return rented;
                 }
@@ -3198,7 +3458,7 @@ namespace HomebrewDot.Net.Rimworld
             {
                 value = Guard.NotNull(value, nameof(value));
                 value.Reset();
-                _pool.Enqueue(value);
+                _pool.Push(value);
             }
         }
     }

@@ -20,6 +20,15 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
     /// </summary>
     public class CooperativeWorkManager : GameComponent, IHook<RaiseCooperativeWork>
     {
+        // Static
+        private static readonly TimeSpan DefaultBudget = new TimeSpan(1000L);
+        private static readonly TimeSpan IncrementInterval = new TimeSpan(500L);
+        private static readonly TimeSpan DecrementInterval = new TimeSpan(200L);
+        private static readonly TimeSpan MaxTickSpike = TimeSpan.FromMilliseconds(1);
+        private static readonly int SuccessCyclesNeededToDecrease = 50;
+        private static readonly int FailureCyclesNeededToIncrease = 3;
+        private static readonly int MinCancelledWorkToIncrease = 5;
+
         // Fields
         private readonly Game _game;
 
@@ -27,6 +36,13 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         private Queue<RaiseCooperativeWork> _finalize = new Queue<RaiseCooperativeWork>();
         private Queue<RaiseCooperativeWork> _currentCycle = new Queue<RaiseCooperativeWork>();
         private Queue<RaiseCooperativeWork> _nextCycle = new Queue<RaiseCooperativeWork>();
+        private int _acceptedThisTick;
+        private TimeSpan _currentBudget = DefaultBudget;
+        private bool _lastCycleOverBudget;
+        private int _currentCycleStreak = 0;
+        private int? _lastPendingWork;
+        private TimeSpan _highestTimeCurrentCycle;
+        private long _lastLogTick = 0;
 
         /// <summary>
         /// Creates the work manager component for the current game instance.
@@ -44,10 +60,16 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// <inheritdoc/>
         byte IHandler.Priority => byte.MinValue;
         /// <inheritdoc/>
+        bool IHook<RaiseCooperativeWork>.GameScoped => true;
+
+        /// <inheritdoc/>
         public bool OnTrigger(RaiseCooperativeWork arg)
         {
             arg = Guard.NotNull(arg, nameof(arg));
             _nextCycle.Enqueue(arg);
+            CooperativeWorkContext.Stats.AcceptedWork++;
+            _acceptedThisTick++;
+            CooperativeWorkContext.Stats.AcceptedThisBudgetCycle++;
             if (IsVerboseEnabled) LogVerbose($"Accepted new work to run next cycle");
             return true;
         }
@@ -60,21 +82,49 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// <inheritdoc/>
         public override void GameComponentTick()
         {
+            var timer = Stopwatch.StartNew();
             base.GameComponentTick();
-            var budget = new TimeSpan(1000L);
+            CooperativeWorkContext.Stats.PendingCurrentCycle = _currentCycle.Count;
+            CooperativeWorkContext.Stats.PendingNextCycle = _nextCycle.Count;
+            CooperativeWorkContext.Stats.PendingFinalize = _finalize.Count;
+            var ticks = ++CooperativeWorkContext.Stats.Ticks;
+            var calculateBudget = Toolkit.Helpers.GetTickerType(ticks) == TickerType.Long;
+            if(calculateBudget)
+            {
+                AdjustBudget();
+            }
+            var budget = _currentBudget;
             ExecuteWork(budget);
+
             if (_currentCycle.Count == 0)
             {
                 (_currentCycle, _nextCycle) = (_nextCycle, _currentCycle);
             }
+            _acceptedThisTick = 0;
+            timer.Stop();
+            if(IsPerformanceEnabled)
+            {
+                bool isLogTick = (ticks - _lastLogTick) % ToolkitConstants.TickRareInterval == 0;
+                if(isLogTick)
+                {
+                    _lastLogTick = ticks;
+                    LogPerformance($"Tick {ticks} completed in {timer.Elapsed.TotalMilliseconds}ms (budget={budget.TotalMilliseconds}ms, highest={_highestTimeCurrentCycle.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats})");
+                }
+            }
+            if(timer.Elapsed > MaxTickSpike)
+            {
+                _highestTimeCurrentCycle = timer.Elapsed;
+            }
         }
 
-        private void ExecuteWork(TimeSpan budget)
+        private bool ExecuteWork(TimeSpan budget)
         {
             var stopwatch = Stopwatch.StartNew();
             bool overbudget = false;
-            while(_finalize.TryDequeue(out var completed))
+            bool workPerformed = false;
+            while (_finalize.TryDequeue(out var completed))
             {
+                completed?.startedWork?.Context?.LogCycle();
                 completed.Complete(this);
                 if(completed is IDisposable disposable) disposable.Dispose();
                 if (budget < stopwatch.Elapsed)
@@ -86,7 +136,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 
             if (overbudget)
             {
-                return;
+                return false;
             }
 
             while (_currentCycle.TryDequeue(out var pending))
@@ -96,6 +146,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     if (IsPerformanceEnabled) LogPerformance($"Skipping finished work {pending}");
                     continue;
                 }
+                workPerformed = true;
                 bool returnToQueue = true;
                 bool started = false;
                 if (pending.startedWork is null)
@@ -115,14 +166,24 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                         return !pending.startedWork.Continue();
                     });
                 }
+                pending.startedWork?.Context?.LogCycle();
                 if (!returnToQueue)
                 {
                     if (IsPerformanceEnabled) LogPerformance($"Completed work {pending.startedWork} ({stopwatch.Elapsed.TotalMilliseconds}ms)");
+                    pending.MarkCompleted();
                     if(pending.RequiresCompletion)
                     {
                         _finalize.Enqueue(pending);
                     }
-                    else if (pending is IDisposable disposable) disposable.Dispose();
+                    else
+                    {
+                        if (!pending.IsCanceled)
+                        {
+                            CooperativeWorkContext.Stats.CompletedWork++;
+                            CooperativeWorkContext.Stats.CompletedThisBudgetCycle++;
+                        }
+                        if (pending is IDisposable disposable) disposable.Dispose();
+                    }
                 }
                 else
                 {
@@ -144,6 +205,56 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     break;
                 }
             }
+            return workPerformed;
+        }
+
+        private void AdjustBudget()
+        {
+            var acceptedThisCycle = CooperativeWorkContext.Stats.AcceptedThisBudgetCycle-_acceptedThisTick;
+            var completedThisCycle = CooperativeWorkContext.Stats.CompletedThisBudgetCycle;
+            var canceledThisCycle = CooperativeWorkContext.Stats.CanceledThisBudgetCycle;
+            var change = acceptedThisCycle - completedThisCycle - canceledThisCycle;
+            var highestTime = _highestTimeCurrentCycle;
+            var pendingWork = _currentCycle.Count + _nextCycle.Count + _finalize.Count;
+            var overbudget = ShouldIncreaseBudget(_lastPendingWork, pendingWork, canceledThisCycle);
+            var canDecrease = !overbudget && highestTime <= MaxTickSpike;
+
+            if (overbudget && _lastCycleOverBudget)
+            {
+                _currentCycleStreak++;
+                if(_currentCycleStreak >= FailureCyclesNeededToIncrease)
+                {
+                    _currentBudget += IncrementInterval;
+                    _currentCycleStreak = 0;
+                    Logging.Log($"Could not keep up with growing workload (change={change}, pending={pendingWork}, canceled={canceledThisCycle}, highestTime={highestTime.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats}) in {FailureCyclesNeededToIncrease} cycles, increasing budget. Current tick budget is {_currentBudget.TotalMilliseconds}ms");
+                }
+            }
+            else if (canDecrease && !_lastCycleOverBudget)
+            {
+                _currentCycleStreak++;
+                if (_currentCycleStreak >= SuccessCyclesNeededToDecrease && _currentBudget - DecrementInterval >= DefaultBudget)
+                {
+                    _currentBudget -= DecrementInterval;
+                    _currentCycleStreak = 0;
+                    Logging.Log($"Successfully kept up with current workload (change={change}, pending={pendingWork}, canceled={canceledThisCycle}, highestTime={highestTime.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats}) in {SuccessCyclesNeededToDecrease} cycles, decreasing budget. Current tick budget is {_currentBudget.TotalMilliseconds}ms");
+                }
+            }
+            else
+            {
+                _currentCycleStreak = 0;
+            }
+            _lastCycleOverBudget = overbudget;
+            _lastPendingWork = pendingWork;
+
+            CooperativeWorkContext.Stats.AcceptedThisBudgetCycle = 0;
+            CooperativeWorkContext.Stats.CanceledThisBudgetCycle = 0;
+            CooperativeWorkContext.Stats.CompletedThisBudgetCycle = 0;
+            _highestTimeCurrentCycle = TimeSpan.Zero;
+        }
+
+        internal static bool ShouldIncreaseBudget(int? previousPendingWork, int pendingWork, int canceledWork)
+        {
+            return previousPendingWork.HasValue && pendingWork > previousPendingWork.Value || canceledWork >= MinCancelledWorkToIncrease;
         }
     }
 
@@ -152,9 +263,17 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
     /// </summary>
     public class CooperativeWorkContext
     {
+        // Statics
+        /// <summary>
+        /// Singleton instance of the <see cref="CooperativeWorkManagerStats"/> that can be used to see how many work items are pending and how many ticks have passed since the last reset.
+        /// </summary>
+        public static CooperativeWorkManagerStats Stats { get; } = new CooperativeWorkManagerStats();
+
+        // Fields
         private int CurrentInterval;
         private bool IsCheckInterval;
         private bool _noInterval;
+        private int _cycles;
 
         /// <summary>
         /// How any actions were executed this tick.
@@ -179,6 +298,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// </summary>
         public TimeSpan MaxRuntime;
 
+        // Properties
         /// <summary>
         /// If the current method call should yield the control back to the caller using. (yield return null)
         /// Should be called inside tight loops together with <see cref="LogWork"/> to keep track of actions.
@@ -189,6 +309,10 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// Should be called outside loops after large amount of work was performed. (cpu heavy stuff)
         /// </summary>
         public bool IsOverRunTime => !_noInterval && Stopwatch?.Elapsed >= MaxRuntime;
+        /// <summary>
+        /// How many times the work was invoked by the manager.
+        /// </summary>
+        public int CyclesPerformed => _cycles;
 
         /// <summary>
         /// Logs arbitrary work done in loops.
@@ -228,6 +352,60 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             CurrentInterval = 0;
             MaxRuntime = budget;
         }
+
+        internal void LogCycle()
+        {
+            _cycles++;
+        }
+    }
+
+    /// <summary>
+    /// Stats that can be used to see how many work items are pending and how many ticks have passed since the last reset.
+    /// </summary>
+    public class CooperativeWorkManagerStats
+    {
+        internal int AcceptedThisBudgetCycle;
+        internal int CanceledThisBudgetCycle;
+        internal int CompletedThisBudgetCycle;
+
+        /// <summary>
+        /// How many pending work is in the current cycle. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how much work is pending.
+        /// </summary>
+        public int PendingCurrentCycle { get; internal set; }
+        /// <summary>
+        /// How many pending work is in the next cycle. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how much work is pending.
+        /// </summary>
+        public int PendingNextCycle { get; internal set; }
+        /// <summary>
+        /// How many pending work is in the finalize queue. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how much work is pending.
+        /// </summary>
+        public int PendingFinalize { get; internal set; }
+
+        /// <summary>
+        /// How many times the <see cref="CooperativeWorkManager"/> has ticked since the last reset. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how many ticks have passed.
+        /// </summary>
+        public long Ticks { get; internal set; }
+        /// <summary>
+        /// How many work items have been accepted since the last reset. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how many work items have been accepted.
+        /// </summary>
+        public long AcceptedWork { get; internal set; }
+        /// <summary>
+        /// How many work items have been completed since the last reset. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how many work items have been completed.
+        /// </summary>
+        public long CompletedWork { get; internal set; }
+        /// <summary>
+        /// How many work items have been canceled since the last reset. This is updated each tick by the <see cref="CooperativeWorkManager"/> and can be used to see how many work items have been canceled.
+        /// </summary>
+        public long CanceledWork { get; internal set; }
+
+        /// <summary>
+        /// Returns a string representation of the current stats, including pending work, ticks, completed work, and canceled work.
+        /// </summary>
+        /// <returns>A string representation of the current stats.</returns>
+        public override string ToString()
+        {
+            return $"PendingCurrentCycle={PendingCurrentCycle}, PendingNextCycle={PendingNextCycle}, PendingFinalize={PendingFinalize}, AcceptedThisBudgetCycle={AcceptedThisBudgetCycle}, CompletedThisBudgetCycle={CompletedThisBudgetCycle}, CanceledThisBudgetCycle={CanceledThisBudgetCycle}, Ticks={Ticks}, AcceptedWork={AcceptedWork}, CompletedWork={CompletedWork}, CanceledWork={CanceledWork}";
+        }
     }
 
     /// <summary>
@@ -250,6 +428,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// <inheritdoc/>
         public void Reset()
         {
+            ResetState();
             startedWork = null;
             startWork = null;
             onCompleted = null;
@@ -276,9 +455,13 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// </summary>
         public bool IsCanceled { get; private set; }
         /// <summary>
+        /// If the current work has been completed. Stays set after the work is disposed and returned to the pool so completed work stays distinguishable from work that was never started.
+        /// </summary>
+        internal bool IsCompleted { get; private set; }
+        /// <summary>
         /// If the current work has been started and finished or canceled.
         /// </summary>
-        public bool IsFinished => startedWork?.IsFinished ?? IsCanceled;
+        public bool IsFinished => IsCanceled || IsCompleted || (startedWork?.IsFinished ?? false);
         /// <summary>
         /// If the current work requires completion.
         /// </summary>
@@ -305,6 +488,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             }
 
             Complete(null);
+            if(this is IDisposable disposable) disposable.Dispose();
         }
 
         /// <summary>
@@ -347,7 +531,30 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// </summary>
         public void Cancel()
         {
+            if (IsCanceled || IsFinished)
+            {
+                return;
+            }
             IsCanceled = true;
+            CooperativeWorkContext.Stats.CanceledWork++;
+            CooperativeWorkContext.Stats.CanceledThisBudgetCycle++;
+        }
+
+        /// <summary>
+        /// Marks the work as completed so it stays finished after it is disposed and returned to the pool.
+        /// </summary>
+        internal void MarkCompleted()
+        {
+            IsCompleted = true;
+        }
+
+        /// <summary>
+        /// Resets the mutable completion state when the work is returned to the pool.
+        /// </summary>
+        internal void ResetState()
+        {
+            IsCanceled = false;
+            IsCompleted = false;
         }
 
         /// <summary>
@@ -403,23 +610,30 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 
         internal void Complete(CooperativeWorkManager manager)
         {
-            if(onCompleted != null && !IsCanceled)
+            if(startedWork?.IsFinished == true)
             {
-                Invoking.Safe(() => onCompleted());
-            }
-            if(next != null)
-            {
-                Invoking.Safe(() =>
+                MarkCompleted();
+                if (onCompleted != null && !IsCanceled)
                 {
-                    if(manager != null)
+                    Invoking.Safe(() => onCompleted());
+                }
+                if (next != null)
+                {
+                    Invoking.Safe(() =>
                     {
-                        manager.OnTrigger(next);
-                    }
-                    else
-                    {
-                        next.RunManually();
-                    }
-                });
+                        if (manager != null)
+                        {
+                            manager.OnTrigger(next);
+                        }
+                        else
+                        {
+                            next.RunManually();
+                        }
+                    });
+                }
+
+                CooperativeWorkContext.Stats.CompletedWork++;
+                CooperativeWorkContext.Stats.CompletedThisBudgetCycle++;
             }
         }
     }

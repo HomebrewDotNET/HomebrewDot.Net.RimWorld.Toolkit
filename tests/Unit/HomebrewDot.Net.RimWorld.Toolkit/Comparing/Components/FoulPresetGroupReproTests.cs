@@ -224,6 +224,81 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
             Assert.False(sut.Matches(collection, new TestIndexed(normalEntity), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>()));
         }
 
+        [Fact]
+        public void TopLevelOr_WithMovedItemInDavaiNastyMeat_MatchesViaCategoryBranch()
+        {
+            // Simulates Davai's Sorted Categories: the item was moved out of MeatRaw into the
+            // DavaiNastyMeat category (so IsMeat is false), but it IS in that category. The
+            // top-level OR must match it via the category branch.
+            Toolkit.ConfigureServices();
+            var referenceTypes = Services.GetAllNamed<IReferenceType>();
+            var referenceResolver = Services.Get<IReferenceResolver>() ?? new ReferenceResolver(referenceTypes);
+
+            var inCat = new DelegateOperatorType((left, right, _, __) =>
+            {
+                object instance = left;
+                if (left is IIndexed<object> indexed)
+                {
+                    instance = indexed.Value;
+                }
+                return instance is TestEntity entity && right is string category && entity.Category == category;
+            });
+            var isTrue = new DelegateOperatorType((left, right, _, __) =>
+            {
+                object instance = left;
+                if (left is IIndexed<object> indexed)
+                {
+                    instance = indexed.Value;
+                }
+                if (instance is not TestEntity entity || right is not string property)
+                {
+                    return false;
+                }
+                return property == nameof(TestEntity.IsMeat) ? entity.IsMeat : entity.IsFoul;
+            });
+
+            var operatorTypes = new Dictionary<string, IOperatorType>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["InCat"] = inCat,
+                ["IsTrue"] = isTrue,
+            };
+            var conditionComparator = new Comparator(referenceResolver, operatorTypes);
+
+            // (IsFoul AND IsMeat) OR (in MeatBad) OR (in DavaiNastyMeat) — the structure when
+            // both Bad Meat Category and Davai's Sorted Categories are loaded.
+            var built = ConditionBuilder.Build(builder =>
+            {
+                var foulAndMeat = builder.Compare.Self().With.Operator("IsTrue").To.Value(nameof(TestEntity.IsFoul))
+                                         .And
+                                         .Compare.Self().With.Operator("IsTrue").To.Value(nameof(TestEntity.IsMeat));
+                _ = foulAndMeat.Or
+                               .Compare.Self().With.Operator("InCat").To.Value("MeatBad").Or
+                               .Compare.Self().With.Operator("InCat").To.Value("DavaiNastyMeat");
+            });
+
+            var split = built.Conditions.Select(x => SimpleFilterPolicyConditionStub.FromDef(x)).ToArray();
+            var collectionBuilder = new CollectionBuilder();
+            ICollectionBuilder cBuilder = collectionBuilder;
+            foreach (var stub in split)
+            {
+                _ = cBuilder.CompareFrom(stub.Condition);
+            }
+            var collection = collectionBuilder.Collection;
+            var sut = new CollectionComparator(conditionComparator);
+
+            // Moved item: IsMeat = false, IsFoul = false, but in DavaiNastyMeat -> must match via OR branch.
+            var nastyEntity = new TestEntity { IsMeat = false, IsFoul = false, Category = "DavaiNastyMeat" };
+            Assert.True(sut.Matches(collection, new TestIndexed(nastyEntity), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>()));
+
+            // Item in MeatBad must still match via its OR branch.
+            var badEntity = new TestEntity { IsMeat = false, IsFoul = false, Category = "MeatBad" };
+            Assert.True(sut.Matches(collection, new TestIndexed(badEntity), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>()));
+
+            // Regular non-foul meat: IsMeat = true, IsFoul = false, not in either bad category -> must NOT match.
+            var normalEntity = new TestEntity { IsMeat = true, IsFoul = false, Category = "MeatRaw" };
+            Assert.False(sut.Matches(collection, new TestIndexed(normalEntity), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>()));
+        }
+
         /// <summary>
         /// Minimal stand-in replicating SimpleFilterPolicyCondition.FromDef round-trip so the
         /// repro doesn't depend on the DynamicFilters project.
@@ -250,6 +325,13 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
             public bool HasSnapshot => false;
             public bool IsSnapshot => false;
             public IIndexed<TestEntity> Snapshot => null;
+
+            public bool HasPendingChanges => throw new NotImplementedException();
+
+            public bool IsRemoved => throw new NotImplementedException();
+
+            public bool IsInsert => throw new NotImplementedException();
+
             public TestIndexed(TestEntity value) => Value = value;
             public TValue GetValue<TValue>(string propertyName)
             {

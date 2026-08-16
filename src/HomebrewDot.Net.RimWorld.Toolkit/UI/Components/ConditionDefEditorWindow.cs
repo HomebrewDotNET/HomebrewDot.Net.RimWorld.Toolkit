@@ -21,6 +21,11 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
         private const float ModeButtonGap = 4f;
         private const float RowHeight = 32f;
         private const float LabelWidth = 90f;
+        private const float WindowWidth = 850f;
+        private const float GroupWindowHeight = 720f;
+        private const float LeafWindowHeight = 440f;
+        private const float GroupListMinHeight = 140f;
+        private const float ReservedBelowGroupList = 215f;
 
         private readonly ConditionDefConfig _config;
         private readonly Action<ConditionDefConfig> _onSave;
@@ -28,10 +33,21 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
         private readonly IReadOnlyDictionary<string, IReferenceTypeInputHelper> _referenceTypeInputHelpers;
         private readonly IReadOnlyDictionary<string, IOperatorType> _operatorTypes;
         private readonly ConstantInputField _toInputField;
+        private bool _showGroupTab;
+        private Vector2 _groupScroll = Vector2.zero;
         private string _error = string.Empty;
 
         /// <inheritdoc cref="Window"/>
-        public override Vector2 InitialSize => new Vector2(800f, 360f);
+        /// <remarks>The window uses a single height for both tabs, so switching between Condition and Group never
+        /// resizes the window. The height is clamped so the window never extends beyond the visible screen area.</remarks>
+        public override Vector2 InitialSize
+        {
+            get
+            {
+                var targetHeight = Mathf.Min(GroupWindowHeight, Verse.UI.screenHeight - 45f);
+                return new Vector2(WindowWidth, Mathf.Max(LeafWindowHeight, targetHeight));
+            }
+        }
 
         public ConditionDefEditorWindow(ConditionDefConfig config, Action<ConditionDefConfig> onSave)
         {
@@ -41,38 +57,76 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
             _referenceTypeInputHelpers = Toolkit.Services.GetAllNamed<IReferenceTypeInputHelper>();
             _operatorTypes = Toolkit.Services.GetAllNamed<IOperatorType>();
             _toInputField = new ConstantInputField(_config.ToNumber, _config.ToDecimal);
+            _showGroupTab = _config.IsGroup;
 
             closeOnClickedOutside = true;
             doCloseX = true;
             absorbInputAroundWindow = true;
             forcePause = true;
             doCloseButton = false;
+            // WindowStack.Add removes existing windows of the same type when they allow only one instance.
+            // Group conditions open nested ConditionDefEditorWindows, so multiple instances must be allowed.
+            onlyOneOfTypeAllowed = false;
         }
 
         public override void DoWindowContents(Rect inRect)
         {
             var content = inRect.ContractedBy(12f);
-            var line = content.y;
 
-            // Compare row
-            DrawCompareRow(line, content);
+            // Condition / Group tabs. TabDrawer renders the tabs above the rect it is given
+            // (baseRect.y - TabDrawer.TabHeight .. baseRect.y), so the base rect starts one tab
+            // height below the top of the content.
+            var tabsRect = new Rect(content.x, content.y + TabDrawer.TabHeight, content.width, 0f);
+            var tabs = new List<TabRecord>
+            {
+                new TabRecord("Condition", () => SwitchTab(false), () => !_showGroupTab),
+                new TabRecord("Group", () => SwitchTab(true), () => _showGroupTab),
+            };
+            TabDrawer.DrawTabs(tabsRect, tabs, 200f);
+
+            var line = tabsRect.yMax + 6f;
+
+            if (_showGroupTab)
+            {
+                // Group conditions list
+                line = DrawGroupSection(line, content);
+            }
+            else
+            {
+                // Compare row
+                DrawCompareRow(line, content);
+                line += RowHeight + 8f;
+
+                // With row
+                DrawWithRow(line, content);
+                line += RowHeight + 8f;
+
+                // To row
+                DrawToRow(line, content);
+                line += RowHeight + 8f;
+            }
+
+            // Chaining checkbox: combines this rule with the rule that follows it in the parent list.
+            var isOrRect = new Rect(content.x, line + 6f, content.width, 28f);
+            Widgets.CheckboxLabeled(isOrRect, "Combine with next rule using OR", ref _config.IsOr);
+            TooltipHandler.TipRegion(isOrRect, "Combines this rule with the rule that follows it in the parent list using OR instead of AND.");
             line += RowHeight + 8f;
 
-            // With row
-            DrawWithRow(line, content);
-            line += RowHeight + 8f;
+            // Group + comparison combination: only matters when this rule has both a group and a comparison.
+            if (_showGroupTab)
+            {
+                var groupCombineRect = new Rect(content.x, line + 6f, content.width, 28f);
+                Widgets.CheckboxLabeled(groupCombineRect, "Combine comparison with group using OR", ref _config.ConditionGroupIsOr);
+                TooltipHandler.TipRegion(groupCombineRect, "Only applies when this rule has both a comparison and a group defined. When both are present, the rule matches when either the comparison or the group matches, instead of requiring both.");
+                line += RowHeight + 8f;
+            }
 
-            // To row
-            DrawToRow(line, content);
-            line += RowHeight + 8f;
-
-            // IsOr checkbox
-            Widgets.CheckboxLabeled(new Rect(content.x, line + 6f, content.width, 28f), "Combine with next using OR", ref _config.IsOr);
-            line += RowHeight + 8f;
-
-            // Inverted checkbox
-            Widgets.CheckboxLabeled(new Rect(content.x, line + 6f, content.width, 28f), "Inverted (Not)", ref _config.Inverted);
-            line += RowHeight + 8f;
+            // Inverted checkbox (only meaningful for the leaf comparison)
+            if (!_showGroupTab)
+            {
+                Widgets.CheckboxLabeled(new Rect(content.x, line + 6f, content.width, 28f), "Inverted (Not)", ref _config.Inverted);
+                line += RowHeight + 8f;
+            }
 
             // Error label
             if (!string.IsNullOrEmpty(_error))
@@ -95,9 +149,96 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
                     return;
                 }
 
+                if (!_showGroupTab)
+                {
+                    _config.Conditions = null;
+                }
+
                 _onSave(_config);
                 Close();
             });
+        }
+
+        private void SwitchTab(bool groupTab)
+        {
+            _showGroupTab = groupTab;
+            if (_showGroupTab)
+            {
+                _config.Conditions ??= new List<ConditionDefConfig>();
+                EnsureGroupWindowSize();
+            }
+        }
+
+        private float DrawGroupSection(float cursorY, Rect content)
+        {
+            var listHeight = Mathf.Max(GroupListMinHeight, content.yMax - cursorY - ReservedBelowGroupList);
+            var listOutRect = new Rect(content.x, cursorY, content.width, listHeight);
+            Widgets.DrawMenuSection(listOutRect);
+            DrawGroupConditionsList(listOutRect.ContractedBy(6f));
+            cursorY = listOutRect.yMax + 6f;
+
+            var addRect = new Rect(content.x, cursorY, 160f, RowHeight);
+            DrawActionButton(addRect, "Add Condition", () =>
+            {
+                _config.Conditions ??= new List<ConditionDefConfig>();
+                var subConfig = new ConditionDefConfig();
+                EditorWindowStack.OpenNested(new ConditionDefEditorWindow(subConfig, built =>
+                {
+                    if (!_config.Conditions.Contains(built))
+                    {
+                        _config.Conditions.Add(built);
+                    }
+                }));
+            });
+
+            return addRect.yMax;
+        }
+
+        private void DrawGroupConditionsList(Rect outRect)
+        {
+            var conditions = _config.Conditions ?? (_config.Conditions = new List<ConditionDefConfig>());
+
+            RuleListUi.Draw(
+                outRect,
+                ref _groupScroll,
+                conditions,
+                "- No conditions defined",
+                BuildConditionSummary,
+                editIndex => EditorWindowStack.OpenNested(new ConditionDefEditorWindow(conditions[editIndex], config => { })),
+                condition => new ConditionDefConfig(condition),
+                condition => condition.IsOr,
+                (condition, isOr) => condition.IsOr = isOr);
+        }
+
+        private static string BuildConditionSummary(ConditionDefConfig condition)
+        {
+            if (condition == null)
+            {
+                return "(null)";
+            }
+
+            return condition.ToCompactString();
+        }
+
+        private void EnsureGroupWindowSize()
+        {
+            var targetHeight = Mathf.Min(GroupWindowHeight, Mathf.Max(LeafWindowHeight, Verse.UI.screenHeight - 45f));
+            if (windowRect.height >= targetHeight)
+            {
+                return;
+            }
+
+            windowRect = new Rect(windowRect.x, windowRect.y, windowRect.width, targetHeight);
+
+            // Keep the grown window on screen when it was opened near the bottom edge.
+            if (windowRect.yMax > Verse.UI.screenHeight - 10f)
+            {
+                windowRect = new Rect(
+                    windowRect.x,
+                    Mathf.Max(10f, Verse.UI.screenHeight - windowRect.height - 10f),
+                    windowRect.width,
+                    windowRect.height);
+            }
         }
 
         private void DrawCompareRow(float cursorY, Rect content)
@@ -352,6 +493,18 @@ namespace HomebrewDot.Net.Rimworld.UI.Components
         private bool ValidateInputs()
         {
             _error = string.Empty;
+
+            if (_showGroupTab)
+            {
+                if (_config.Conditions == null || _config.Conditions.Count == 0)
+                {
+                    _error = "A group requires at least one condition.";
+                    return false;
+                }
+
+                return true;
+            }
+
             if (string.IsNullOrEmpty(_config.Operator))
             {
                 _error = "Operator is required";

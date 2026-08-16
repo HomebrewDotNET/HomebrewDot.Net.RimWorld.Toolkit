@@ -222,7 +222,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             var tagKey = IndexMetadataKey.Get("tag");
             db.Deploy(schema => schema.WithTable<string>("Items", tb =>
-                tb.OnInserting((i, m, t) =>
+                tb.OnInserting((IWriteableIndexed<string> i, ref IndexMetadata m, IReadOnlyTable<string> t) =>
                 {
                     if (m.TryGetValue<string>(tagKey, out var tag))
                         i.Set("tag", tag);
@@ -245,7 +245,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             var _md = default(IndexMetadata);
             Assert.Throws<ArgumentNullException>(() =>
-                db.Delete<string>(null, ref _md));
+                db.Delete<string>((string)null, ref _md));
         }
 
         [Fact]
@@ -328,7 +328,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnInserting((item, meta, database) => capturedItem = item.Value);
+                schema.OnInserting((IWriteableIndexed<object> item, ref IndexMetadata meta, IDatabase database) => capturedItem = item.Value);
             });
 
             var _md1 = default(IndexMetadata);
@@ -344,7 +344,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             IIndexed<string> capturedIndexed = null;
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnInserted((indexed, table, database) => capturedIndexed = indexed)));
+                    tb.OnInserted((IIndexed<string> indexed, ref IndexMetadata meta, IReadOnlyTable<string> table) => capturedIndexed = indexed)));
 
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
@@ -535,7 +535,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnInserted((i,m,d) => captured = i);
+                schema.OnInserted((IIndexed<object> i, ref IndexMetadata m, IDatabase d) => captured = i);
             });
 
             var _md = default(IndexMetadata);
@@ -553,7 +553,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleting((indexed, meta, database) => capturedBefore = indexed);
+                schema.OnDeleting((IIndexed<object> indexed, ref IndexMetadata meta, IDatabase database) => capturedBefore = indexed);
             });
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
@@ -571,7 +571,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema =>
             {
                 schema.WithTable<string>("Items", _ => { });
-                schema.OnDeleted((indexed, meta, database) => capturedAfter = indexed);
+                schema.OnDeleted((IIndexed<object> indexed, ref IndexMetadata meta, IDatabase database) => capturedAfter = indexed);
             });
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
@@ -590,7 +590,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnInserting((item, m, t) => capturedItem = item.Value)));
+                    tb.OnInserting((IWriteableIndexed<string> item, ref IndexMetadata m, IReadOnlyTable<string> t) => capturedItem = item.Value)));
 
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
@@ -605,7 +605,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleting((indexed, m, t) => capturedBefore = indexed)));
+                    tb.OnDeleting((IIndexed<string> indexed, ref IndexMetadata m, IReadOnlyTable<string> t) => capturedBefore = indexed)));
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
 
@@ -622,7 +622,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             db.Deploy(schema =>
                 schema.WithTable<string>("Items", tb =>
-                    tb.OnDeleted((indexed, m, t) => capturedAfter = indexed)));
+                    tb.OnDeleted((IIndexed<string> indexed, ref IndexMetadata m, IReadOnlyTable<string> t) => capturedAfter = indexed)));
             var _md = default(IndexMetadata);
             db.Upsert("hello", ref _md);
 
@@ -727,7 +727,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
             {
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name);
-                tb.OnInserting((i, m, t) =>
+                tb.OnInserting((IWriteableIndexed<SampleEntity> i, ref IndexMetadata m, IReadOnlyTable<SampleEntity> t) =>
                 {
                     if (m.TryGetValue<string>(tagKey, out var tag))
                     {
@@ -759,7 +759,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             db.Deploy(schema => schema.WithTable<SampleEntity>("Items", tb =>
             {
                 tb.WithIndex<string>(nameof(SampleEntity.Name), e => e.Value.Name);
-                tb.OnInserting((i, m, t) =>
+                tb.OnInserting((IWriteableIndexed<SampleEntity> i, ref IndexMetadata m, IReadOnlyTable<SampleEntity> t) =>
                 {
                     if (m.TryGetValue<string>(tagKey, out var tag))
                     {
@@ -1361,7 +1361,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             var db = new Database();
             var tagKey = IndexMetadataKey.Get("PendingDedupTag");
             db.Deploy(schema => schema
-                .WithTable<string>("Items", tb => tb.OnInserting((i, m, t) =>
+                .WithTable<string>("Items", tb => tb.OnInserting((IWriteableIndexed<string> i, ref IndexMetadata m, IReadOnlyTable<string> t) =>
                 {
                     if (m.TryGetValue<string>(tagKey, out var tag))
                     {

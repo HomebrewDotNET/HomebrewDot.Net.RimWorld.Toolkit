@@ -128,6 +128,13 @@ namespace HomebrewDot.Net.RimWorld.Tests.Indexing.Components
             public bool HasSnapshot => false;
             public bool IsSnapshot => false;
             public IIndexed<T> Snapshot => null;
+
+            public bool HasPendingChanges => throw new NotImplementedException();
+
+            public bool IsRemoved => throw new NotImplementedException();
+
+            public bool IsInsert => throw new NotImplementedException();
+
             public TValue GetValue<TValue>(string propertyName) => default;
         }
 

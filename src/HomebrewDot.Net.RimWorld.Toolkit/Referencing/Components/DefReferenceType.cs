@@ -98,5 +98,14 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         /// <returns>The fluent return type.</returns>
         public static TReturn StuffCategory<TReturn>(this IConditionOperandBuilder<TReturn> builder, string defName)
             => Guard.NotNull(builder, nameof(builder)).Reference(new ReferenceDef() { Type = DefReferenceType<StuffCategoryDef>.DefaultTypeName, Value = Guard.NotNull(defName, nameof(defName)) });
+        /// <summary>
+        /// Fluent syntax for creating a reference definition that uses the <see cref="DefReferenceType{T}"/> to resolve a special thing filter def from the def database by defName. The provided def name will be used as the value for the reference definition, and the type will be set to the default type name of the <see cref="DefReferenceType{SpecialThingFilterDef}"/>. This allows for easy creation of references that can access special thing filter defs of objects in a fluent manner.
+        /// </summary>
+        /// <typeparam name="TReturn">The fluent return type.</typeparam>
+        /// <param name="builder">The condition builder.</param>
+        /// <param name="defName">The defName of the special thing filter def to resolve from the def database.</param>
+        /// <returns>The fluent return type.</returns>
+        public static TReturn SpecialThingFilter<TReturn>(this IConditionOperandBuilder<TReturn> builder, string defName)
+            => Guard.NotNull(builder, nameof(builder)).Reference(new ReferenceDef() { Type = DefReferenceType<SpecialThingFilterDef>.DefaultTypeName, Value = Guard.NotNull(defName, nameof(defName)) });
     }
 }

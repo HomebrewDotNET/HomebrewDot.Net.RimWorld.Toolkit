@@ -678,6 +678,12 @@ namespace HomebrewDot.Net.Rimworld
 
             public IIndexed<object> Snapshot => throw new NotImplementedException();
 
+            public bool HasPendingChanges => throw new NotImplementedException();
+
+            public bool IsRemoved => throw new NotImplementedException();
+
+            public bool IsInsert => throw new NotImplementedException();
+
             public TValue GetValue<TValue>(string propertyName)
             {
                 try
@@ -709,6 +715,12 @@ namespace HomebrewDot.Net.Rimworld
             public bool IsSnapshot => throw new NotImplementedException();
 
             public IIndexed<object> Snapshot => throw new NotImplementedException();
+
+            public bool HasPendingChanges => throw new NotImplementedException();
+
+            public bool IsRemoved => throw new NotImplementedException();
+
+            public bool IsInsert => throw new NotImplementedException();
 
             public TValue GetValue<TValue>(string propertyName)
             {

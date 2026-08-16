@@ -19,6 +19,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private readonly IndexMetadataKey<TProperty> _metadataKey;
         private readonly IComparer<TProperty> _comparer;
 
+        /// <inheritdoc/>
+        public bool Once => false;
+
         /// <inheritdoc cref="PropertyChangeTracker{T, TProperty}"/>
         /// <param name="getProperty">Delegate used to get the property value.</param>
         /// <param name="metadataKey">Key used to store the previous value in the metadata.</param>

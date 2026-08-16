@@ -180,6 +180,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         public virtual bool IsSnapshot => false;
         /// <inheritdoc/>
         public virtual IIndexed<T> Snapshot => null;
+        /// <inheritdoc/>
+        public virtual bool HasPendingChanges => false;
+        /// <inheritdoc/>
+        public bool IsRemoved { get; protected set; }
+        /// <inheritdoc/>
+        public bool IsInsert { get; protected set; }
 
         // Constructor
         /// <inheritdoc cref="Indexed{T}"/>

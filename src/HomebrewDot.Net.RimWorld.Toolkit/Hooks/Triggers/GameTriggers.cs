@@ -41,6 +41,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(postfix));
             var prefix = AccessTools.Method(typeof(Patches), nameof(Patches.LoadGame_Prefix));
             harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.LoadGame)), prefix: new HarmonyMethod(prefix));
+            var prefixUnload = AccessTools.Method(typeof(Patches), nameof(Patches.Dispose_Prefix));
+            harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.Dispose)), prefix: new HarmonyMethod(prefixUnload));
             var postfixMenu = AccessTools.Method(typeof(Patches), nameof(Patches.MainMenuOnGUI_Postfix));
             harmony.Patch(AccessTools.Method(typeof(MainMenuDrawer), nameof(MainMenuDrawer.MainMenuOnGUI)), postfix: new HarmonyMethod(postfixMenu));
         }
@@ -101,6 +103,15 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             }
 
             /// <summary>
+            /// Harmony prefix patch for the Game's Dispose method to trigger a game unloaded event before the game is torn down, allowing subscribers to still access the game, its maps and world while handling the unload.
+            /// </summary>
+            /// <param name="__instance">The game instance that is being unloaded.</param>
+            public static void Dispose_Prefix(Game __instance)
+            {
+                Toolkit.Hooks.Manager.Trigger(new OnGameUnloadedTrigger(__instance));
+            }
+
+            /// <summary>
             /// Harmony postfix patch for the MainMenuDrawer's MainMenuOnGUI method to trigger a game loaded event after the main menu is drawn, ensuring that the event is only triggered once when the game is first loaded.
             /// </summary>
             public static void MainMenuOnGUI_Postfix()
@@ -139,6 +150,25 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         public Game Game { get; }
 
         internal OnSaveLoadingTrigger(Game game)
+        {
+            Game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
+        }
+    }
+
+    /// <summary>
+    /// Fired when the current game is unloaded, either by returning to the main menu or by loading another save which replaces the current game. The game instance is about to be torn down, so its data is still accessible when the trigger fires.
+    /// </summary>
+    public class OnGameUnloadedTrigger
+    {
+        // Properties
+        /// <summary>
+        /// The game instance that is being unloaded, providing access to game data before teardown.
+        /// </summary>
+        public Game Game { get; }
+
+        /// <inheritdoc cref="OnGameUnloadedTrigger"/>
+        /// <param name="game"><see cref="Game"/></param>
+        internal OnGameUnloadedTrigger(Game game)
         {
             Game = Toolkit.Helpers.Guard.NotNull(game, nameof(game));
         }

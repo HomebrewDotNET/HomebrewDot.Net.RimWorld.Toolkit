@@ -15,6 +15,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing
     public interface IChangeTracker<in T> where T : class
     {
         /// <summary>
+        /// If this tracker should only be used for inserts, not updates.
+        /// </summary>
+        public bool Once { get; }
+        /// <summary>
         /// Determines if any changes have occurred to the given <paramref name="current"/> value since the last snapshot was taken, as represented by the <paramref name="previous"/> indexed value. If this method returns true, a new snapshot will be taken; if it returns false, the current snapshot will be reused.
         /// </summary>
         /// <param name="current">The current value to check for changes.</param>

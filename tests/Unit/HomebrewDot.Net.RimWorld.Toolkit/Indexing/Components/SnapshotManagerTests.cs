@@ -30,6 +30,17 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
             _mockSnapshotBuilder.Setup(b => b.Build()).Returns(_mockSnapshot.Object);
             _mockDatabase.Setup(d => d.StartSnapshot()).Returns(_mockSnapshotBuilder.Object);
             _mockDatabase.Setup(d => d.AsTyped<string>()).Returns(_mockTypedDb.Object);
+
+            // The snapshot manager drives buffered work through typed triggerers obtained
+            // via IHookManager.GetTriggerer<T> (in the constructor and Reset), so the mock
+            // must hand back working triggerer instances. Cooperative work is accepted by
+            // default so pushes/destroys can be buffered once the pending queue is enabled.
+            var cooperativeWorkTriggerer = new Mock<IHookTriggerer<RaiseCooperativeWork>>();
+            cooperativeWorkTriggerer.Setup(t => t.Trigger(It.IsAny<RaiseCooperativeWork>())).Returns(true);
+            _mockHookManager.Setup(h => h.GetTriggerer<RaiseCooperativeWork>()).Returns(cooperativeWorkTriggerer.Object);
+
+            var snapshotTakenTriggerer = new Mock<IHookTriggerer<OnSnapshotTakenTrigger>>();
+            _mockHookManager.Setup(h => h.GetTriggerer<OnSnapshotTakenTrigger>()).Returns(snapshotTakenTriggerer.Object);
         }
 
         private SnapshotManager CreateSut() =>
@@ -43,7 +54,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
         {
             _mockSnapshotBuilder.Setup(b => b.IsFinished).Returns(true);
             _mockSnapshotBuilder.Setup(b => b.Snapshot).Returns(_mockSnapshot.Object);
-            _mockHookManager.Setup(h => h.Trigger(It.IsAny<RaiseCooperativeWork>())).Returns(true);
             sut.Snapshot();
         }
 
@@ -622,6 +632,11 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
                 DeleteCalls++;
                 LastDeleteMetadata = metadata;
                 return true;
+            }
+
+            public bool Delete(IIndexed<string> item, ref IndexMetadata metadata)
+            {
+                throw new NotImplementedException();
             }
         }
     }

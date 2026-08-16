@@ -39,6 +39,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private readonly Dictionary<Type, object[]> _changeTrackerCache = new Dictionary<Type, object[]>();
         private readonly Dictionary<Type, TypedSnapshotManager> _typedManagers = new Dictionary<Type, TypedSnapshotManager>();
         private bool _queueEnabled;
+        private IHookTriggerer<RaiseCooperativeWork> _cooperativeWorkTriggerer;
+        private IHookTriggerer<OnSnapshotTakenTrigger> _snapshotTakenTriggerer;
 
         /// <inheritdoc cref="SnapshotManager"/>
         /// <param name="database">The database the snapshot manager will manage.</param>
@@ -47,6 +49,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             _database = Guard.NotNull(database, nameof(database));
             _hookManager = Guard.NotNull(hookManager, nameof(hookManager));
+            _cooperativeWorkTriggerer = hookManager.GetTriggerer<RaiseCooperativeWork>();
+            _snapshotTakenTriggerer = hookManager.GetTriggerer<OnSnapshotTakenTrigger>();
             DatabaseSnapshot = _database.StartSnapshot().Build();
         }
         /// <inheritdoc/>
@@ -71,7 +75,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <inheritdoc/>
         public bool Push<T>(T data, ref IndexMetadata metadata, bool allowBuffering = true) where T : class
             => AsTyped<T>().Push(data, ref metadata, allowBuffering);
-
+        /// <inheritdoc/>
+        public bool Update<T>(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true) where T : class
+            => AsTyped<T>().Update(indexed, ref metadata, allowBuffering);
+        /// <inheritdoc/>
+        public bool Delete<T>(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true) where T : class
+            => AsTyped<T>().Delete(indexed, ref metadata, allowBuffering);
         /// <inheritdoc/>
         public void Reset(Action<ISnapshotManagerConfigurator> configurator, Action<IDatabaseSchemaBuilder> schemaBuilder)
         {
@@ -90,6 +99,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _database.Deploy(schemaBuilder);
                 _queueEnabled = false;
                 _snapshotBuilder = null;
+                _cooperativeWorkTriggerer = _hookManager.GetTriggerer<RaiseCooperativeWork>();
+                _snapshotTakenTriggerer = _hookManager.GetTriggerer<OnSnapshotTakenTrigger>();
                 DatabaseSnapshot = _database.StartSnapshot().Build();
             }
         }
@@ -155,11 +166,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     _snapshotBuilder = null;
                     if (isForce)
                     {
-                        _hookManager.Trigger(new OnSnapshotTakenTrigger(snapshot, isForce));
+                        _snapshotTakenTriggerer.Trigger(new OnSnapshotTakenTrigger(snapshot, isForce));
                     }
                     else
                     {
-                        _hookManager.TriggerDelayed(new OnSnapshotTakenTrigger(snapshot, isForce));
+                        _snapshotTakenTriggerer.TriggerDelayed(new OnSnapshotTakenTrigger(snapshot, isForce));
                     }
                     return builder;
                 }
@@ -201,13 +212,21 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <typeparam name="T">The entity type this instance is optimized for.</typeparam>
         internal class TypedSnapshotManager<T> : TypedSnapshotManager, ISnapshotManager<T> where T : class
         {
+            // Statics
+            private const int MaxPendingWork = 1024;
+
             delegate bool Changed(T current, IIndexed<T> indexed, ref IndexMetadata metadata);
             private readonly SnapshotManager _manager;
             private readonly IDatabase<T> _typedDb;
             private readonly IChangeTracker<T>[] _changeTrackers;
+            private readonly IChangeTracker<T>[] _updateChangeTrackers;
             private readonly Dictionary<T, PendingUpsert> _pending = new Dictionary<T, PendingUpsert>();
             private readonly Queue<PendingUpsert> _work = new Queue<PendingUpsert>();
+            private readonly Changed _onInsert;
             private readonly Changed _hasChanged;
+
+            // State
+            private int _lastPending;
 
             public override int Pending => _work.Count;
 
@@ -216,7 +235,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _manager = Guard.NotNull(manager, nameof(manager));
                 _typedDb = manager._database.AsTyped<T>();
                 _changeTrackers = manager.GetChangeTrackers<T>();
-                _hasChanged = Compile();
+                _updateChangeTrackers = _changeTrackers.Where(x => !x.Once).ToArray();
+                _onInsert = Compile(_changeTrackers);
+                _hasChanged = Compile(_updateChangeTrackers);
             }
 
             /// <inheritdoc/>
@@ -235,7 +256,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     var context = new CooperativeWorkContext();
                     var work = RaiseCooperativeWork.From(() => DoWork(context).GetEnumerator(), context);
-                    accepted = _manager._hookManager.Trigger(work);
+                    accepted = _manager._cooperativeWorkTriggerer.Trigger(work);
                 }
                 else
                 {
@@ -267,7 +288,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
             private bool Push(T data, IIndexed<T> existing, ref IndexMetadata metadata)
             {
-                if (!HasChanged(data, existing, ref metadata) && existing is not null)
+                if(existing is null)
+                {
+                    _ = _onInsert?.Invoke(data, existing, ref metadata);
+                }
+                else if (!HasChanged(data, existing, ref metadata))
                 {
                     // Release rejected metadata back to the pools
                     metadata.Dispose();
@@ -287,7 +312,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     var context = new CooperativeWorkContext();
                     var work = RaiseCooperativeWork.From(() => DoWork(context).GetEnumerator(), context);
-                    accepted = _manager._hookManager.Trigger(work);
+                    accepted = _manager._cooperativeWorkTriggerer.Trigger(work);
                 }
                 else
                 {
@@ -331,7 +356,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
             private IEnumerable DoWork(CooperativeWorkContext context)
             {
-                context.CheckInterval = 4;
+                if(context.CheckInterval <= 8) context.CheckInterval = 8;
+                if(_work.Count > MaxPendingWork)
+                {
+                    Logger.LogWarning($"Snapshot manager has {_work.Count} pending work items for {typeof(T).Name}. Queue grew from {_lastPending} to {_work.Count}. Increasing interval to catch-up");
+                    context.CheckInterval *= 2;
+                }
                 while (_work.TryDequeue(out var work)) 
                 {
                     var data = work.Data;
@@ -361,12 +391,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                     if (context.WaitForNextTick)
                     {
+                        _lastPending = _work.Count;
                         yield return null;
                     }
                 }
             }
 
-            private Changed Compile()
+            private Changed Compile(IChangeTracker<T>[] changeTrackers)
             {
                 var currentParameter = Expression.Parameter(typeof(T), "current");
                 var indexParameter = Expression.Parameter(typeof(IIndexed<T>), "index");
@@ -375,8 +406,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 Expression current = null;
                 IndexMetadata metadata = default;
                 var changedMethod = Toolkit.Helpers.Expression.GetMethod<IChangeTracker<T>>(x => x.HasChanged(default, default, ref metadata));
-                for (int i = 0; i < _changeTrackers.Length; i++) { 
-                    var changeTracker = _changeTrackers[i];
+                for (int i = 0; i < changeTrackers.Length; i++) { 
+                    var changeTracker = changeTrackers[i];
 
                     Expression condition;
                     if(changeTracker is IChangeTrackerCompileable<T> compileable)
@@ -409,6 +440,18 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     context.NoInterval();
                     DoWork(context).ExecuteEnumerable();
                 }
+            }
+            /// <inheritdoc/>
+            public bool Update(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true)
+            {
+                indexed = Guard.NotNull(indexed, nameof(indexed));
+                return Push(indexed.Value, indexed, ref metadata);
+            }
+            /// <inheritdoc/>
+            public bool Delete(IIndexed<T> indexed, ref IndexMetadata metadata, bool allowBuffering = true)
+            {
+                indexed = Guard.NotNull(indexed, nameof(indexed));
+                return Destroyed(indexed.Value, ref metadata, allowBuffering);
             }
 
             private class PendingUpsert : IPoolable, IDisposable

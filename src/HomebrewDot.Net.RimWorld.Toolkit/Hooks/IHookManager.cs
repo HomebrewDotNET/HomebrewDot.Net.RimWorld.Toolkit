@@ -58,6 +58,37 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// <param name="newManager">The new manager for the hooks.</param>
         /// <returns>If a hook was triggered, otherwise false</returns>
         void TransferTo(IHookManager newManager);
+
+        /// <summary>
+        /// Gets a triggerer for event type <typeparamref name="T"/>, which can be used to trigger events of that type more efficiently than using the <see cref="IHookManager"/> directly.
+        /// </summary>
+        /// <typeparam name="T">The type of event that the triggerer will respond to.</typeparam>
+        /// <returns>A triggerer for the specified event type.</returns>
+        IHookTriggerer<T> GetTriggerer<T>();
+    }
+
+    /// <summary>
+    /// Used to raise trigger hooks listening for a specific event type <typeparamref name="T"/>.
+    /// More optimitzed than using <see cref="IHookManager"/> directly, but less flexible.
+    /// </summary>
+    /// <typeparam name="T">The type of event that the triggerer will respond to.</typeparam>
+    public interface IHookTriggerer<T>
+    {
+        /// <summary>
+        /// Triggers event <typeparamref name="T"/>, invoking all registered hooks that respond to this event type with the provided argument <paramref name="arg"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of event to trigger.</typeparam>
+        /// <param name="arg">The event being triggered.</param>
+        /// <returns>If a hook was triggered, otherwise false</returns>
+        bool Trigger(T arg);
+        /// <summary>
+        /// Triggers event <typeparamref name="T"/>, invoking all registered hooks that respond to this event type with the provided argument <paramref name="arg"/>.
+        /// Delays the trigger to next tick.
+        /// </summary>
+        /// <typeparam name="T">The type of event to trigger.</typeparam>
+        /// <param name="arg">The event being triggered.</param>
+        /// <returns>If a hook was triggered, otherwise false</returns>
+        void TriggerDelayed(T arg);
     }
 
     /// <summary>

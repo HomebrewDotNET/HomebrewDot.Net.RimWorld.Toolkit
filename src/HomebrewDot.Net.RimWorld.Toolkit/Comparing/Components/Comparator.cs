@@ -91,7 +91,8 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
                     throw new InvalidOperationException("Condition must have either 'With' or 'Conditions' defined.");
                 }
 
-                return groupResult;
+                // Pure group: only the nested conditions matter.
+                return Compare(input, condition.Conditions, context);
             }
             if (condition is ICacheable cacheable)
             {
@@ -158,8 +159,9 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Components
             {
                 var subCondition = conditions[i];
                 var subResult = Compare(input, subCondition, context);
-                
+
                 lastResult = lastGroupIsOr ? lastResult || subResult : lastResult && subResult;
+                lastGroupIsOr = subCondition.IsOr;
             }
 
             return lastResult;

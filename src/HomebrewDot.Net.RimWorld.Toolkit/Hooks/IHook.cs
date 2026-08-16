@@ -22,6 +22,10 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// Only applied when <see cref="OnTrigger(T)"/> returns true, otherwise the hook will remain registered regardless of this value.
         /// </summary>
         bool Once { get; }
+        /// <summary>
+        /// Indicates that the hook is scoped to the current game session. If true, the hook will be automatically unregistered when the game session ends. If false, the hook will persist across game sessions until it is manually unregistered.
+        /// </summary>
+        bool GameScoped { get; }
 
         /// <summary>
         /// Trigger the hook with the specified argument. This method will be called by the hook manager when the corresponding event or condition occurs.

@@ -19,6 +19,7 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 using static HomebrewDot.Net.Rimworld.Indexing.Components.Database;
+using static HomebrewDot.Net.Rimworld.Indexing.Models.Delegates;
 using static HomebrewDot.Net.Rimworld.Toolkit;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 using static HomebrewDot.Net.Rimworld.Toolkit.Helpers.Logging;
@@ -122,6 +123,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <inheritdoc/>
         public bool Delete<T>(T item, ref IndexMetadata metadata) where T : class
             => AsTyped<T>().Delete(item, ref metadata);
+        /// <inheritdoc/>
+        public bool Delete<T>(IIndexed<T> item, ref IndexMetadata metadata) where T : class
+            => AsTyped<T>().Delete(item, ref metadata);
 
         /// <inheritdoc/>
         public IReadOnlyTable<T> GetTable<T>(string name) where T : class
@@ -203,6 +207,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 IsDeploying = true;
                 {
+                    foreach (var table in _tables)
+                    {
+                        table.Dispose();
+                    }
                     _tables.Clear();
                     _tablesByName.Clear();
                     _listeners.Clear();
@@ -288,7 +296,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserting(Action<IWriteableIndexed<object>, IndexMetadata, IDatabase> onInserting)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserting(OnDatabaseInserting onInserting)
         {
             onInserting = Guard.NotNull(onInserting, nameof(onInserting));
 
@@ -298,7 +306,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserted(Action<IIndexed<object>, IndexMetadata, IDatabase> onInserted)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnInserted(OnDatabaseInserted onInserted)
         {
             onInserted = Guard.NotNull(onInserted, nameof(onInserted));
             var listener = new DelegateDatabaseListener<object>();
@@ -307,7 +315,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleting(Action<IIndexed<object>, IndexMetadata, IDatabase> onDeleting)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleting(OnDatabaseDeleting onDeleting)
         {
             onDeleting = Guard.NotNull(onDeleting, nameof(onDeleting));
             var listener = new DelegateDatabaseListener<object>();
@@ -316,7 +324,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleted(Action<IIndexed<object>, IndexMetadata, IDatabase> onDeleted)
+        IDatabaseSchemaBuilder IDatabaseSchemaBuilder.OnDeleted(OnDatabaseDeleted onDeleted)
         {
             onDeleted = Guard.NotNull(onDeleted, nameof(onDeleted));
             var listener = new DelegateDatabaseListener<object>();
@@ -333,11 +341,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 _changedItems.Clear();
                 _deletedItems.Clear();
-                ((IDatabaseSchemaBuilder)this).OnInserted((i,m,d) =>
+                ((IDatabaseSchemaBuilder)this).OnInserted((IIndexed<object> i, ref IndexMetadata m, IDatabase d) =>
                 {
                     _changedItems.Add(i);
                 });
-                ((IDatabaseSchemaBuilder)this).OnDeleted((i, m, d) =>
+                ((IDatabaseSchemaBuilder)this).OnDeleted((IIndexed<object> i, ref IndexMetadata m, IDatabase d) =>
                 {
                     _deletedItems.Add(i);
                 });
@@ -357,13 +365,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             Dictionary<string, object> IndexedBy { get; }
 
             IIndexed<T> Clone();
-
             IIndexed<T> TakeSnapshot();
-
-            bool HasChanges { get; }
-            bool IsInsert { get; }
-
             void Commit();
+            void NotifyRemoved();
         }
 
         internal class TrackingIndexed<T> : Indexed<T>, ITrackingIndexed<T>, IWriteableIndexed<T> where T : class
@@ -376,6 +380,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
             // State
             private TrackingIndexed<T> _snapshot;
+            private bool _hasPendingChanges;
 
             // Properties
             /// <inheritdoc/>
@@ -396,16 +401,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             }
             public override bool IsSnapshot { get; }
             public override IIndexed<T> Snapshot => _snapshot;
-
-            public bool HasChanges { get; private set; }
-
-            public bool IsInsert { get; private set; }
+            public override bool HasPendingChanges => _hasPendingChanges || IsInsert;
 
             public TrackingIndexed(T value, IReadOnlyDictionary<string, object> metadata, bool isSnapshot = false) : base(value)
             {
                 _mutableMetadata = metadata != null ? metadata.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase) : new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
                 IsSnapshot = isSnapshot;
-                HasChanges = true;
                 IsInsert = true;
             }
 
@@ -427,7 +428,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     _metadata = null;
                 }
 
-                HasChanges = true;
+                _hasPendingChanges = true;
                 if (_mutableMetadata.ContainsKey(propertyName))
                 {
                     _mutableMetadata[propertyName] = value;
@@ -447,7 +448,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     return false;
                 }
 
-                return _mutableMetadata.Remove(propertyName);
+                if (_mutableMetadata.Remove(propertyName))
+                {
+                    _hasPendingChanges = true;
+                    return true;
+                }
+                return false;
             }
 
             public override int GetHashCode()
@@ -488,13 +494,18 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                     Toolkit.Pool<PooledList<string>>.Return(keysToRemove);
                 }
+                _hasPendingChanges = false;
                 return _snapshot;
             }
 
             public void Commit()
             {
-                HasChanges = false;
                 IsInsert = false;
+            }
+
+            public void NotifyRemoved()
+            {
+                IsRemoved = true;
             }
         }
 
@@ -788,7 +799,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 for (int i = 0; i < _tables.Count; i++)
                 {
-                    if (_tables[i].TryAddOrUpdate(trackedItem, metadata))
+                    if (_tables[i].TryAddOrUpdate(trackedItem, ref metadata))
                     {
                         anyInserted = true;
                     }
@@ -797,7 +808,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 metadata.PersistTo(trackedItem);
                 metadata.Dispose();
 
-                if (anyInserted || trackedItem.HasChanges)
+                if (anyInserted || trackedItem.HasPendingChanges)
                 {
                     if(_database._cachedSnapshot != null && _database.TrackingChanges)
                     {
@@ -843,7 +854,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                 }
 
-                if (foundItem is not TrackingIndexed<T> typedItem)
+                if (foundItem == null)
+                {
+                    return false;
+                }
+
+                return Delete(foundItem, ref metadata);
+            }
+            /// <inheritdoc/>
+            public bool Delete(IIndexed<T> item, ref IndexMetadata metadata)
+            {
+                if (item is not TrackingIndexed<T> typedItem)
                 {
                     return false;
                 }
@@ -854,13 +875,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     var handler = _listeners[i];
                     try
                     {
-                        handler.OnDeleting(foundItem, ref metadata, _database);
+                        handler.OnDeleting(typedItem, ref metadata, _database);
                     }
                     catch { Logging.LogError($"Failed to execute {handler}{nameof(IDatabaseListener<T>.OnDeleting)} listener"); }
                 }
                 for (int i = 0; i < _tables.Count; i++)
                 {
-                    if (_tables[i].TryDelete(typedItem, metadata))
+                    if (_tables[i].TryDelete(typedItem, ref metadata))
                     {
                         anyDeleted = true;
                     }
@@ -868,7 +889,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
                 if (anyDeleted)
                 {
-                    if(_database._cachedSnapshot != null && _database.TrackingChanges)
+                    if (_database._cachedSnapshot != null && _database.TrackingChanges)
                     {
                         if (_database._pending.TryGetValue(typedItem, out var pendingAction))
                         {
@@ -1103,15 +1124,14 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return false;
         }
         /// <inheritdoc/>
-        internal override bool TryAddOrUpdate<T1>(ITrackingIndexed<T1> item, IndexMetadata metadata)
+        internal override bool TryAddOrUpdate<T1>(ITrackingIndexed<T1> item, ref IndexMetadata metadata)
         {
             item = Guard.NotNull(item, nameof(item));
             if (item is ITrackingIndexed<T> tableItem)
             {
-
                 if (_filter != null && !_filter(tableItem.Value))
                 {
-                    return TryDelete(tableItem, metadata);
+                    return TryDelete(tableItem, ref metadata);
                 }
 
                 bool added = false;
@@ -1131,7 +1151,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     catch { Logging.LogError($"Failed to execute {handler}{nameof(ITableListener<T>.OnDeleted)} listener"); }
                 }
 
-                bool changed = added || tableItem.HasChanges || tableItem.IsInsert;
+                bool changed = added || tableItem.HasPendingChanges || tableItem.IsInsert;
                 if (changed)
                 {
                     _hasChanges = true;
@@ -1158,7 +1178,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     foreach (var subTable in _subTables)
                     {
-                        if (subTable.TryAddOrUpdate(tableItem, metadata))
+                        if (subTable.TryAddOrUpdate(tableItem, ref metadata))
                         {
                             subChanged = true;
                         }
@@ -1181,7 +1201,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return false;
         }
         /// <inheritdoc/>
-        internal override bool TryDelete<T1>(ITrackingIndexed<T1> item, IndexMetadata metadata)
+        internal override bool TryDelete<T1>(ITrackingIndexed<T1> item, ref IndexMetadata metadata)
         {
             if (item is ITrackingIndexed<T> tableItem)
             {
@@ -1194,10 +1214,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         {
             if (_data.Remove(item.Value))
             {
-
-                if(_cachedSnapshot != null)
+                var typedItem = (ITrackingIndexed<T>)item;
+                typedItem.NotifyRemoved();
+                if (_cachedSnapshot != null)
                 {
-                    var typedItem = (ITrackingIndexed<T>)item;
                     if(_pending.TryGetValue(typedItem, out var pendingAction))
                     {
                         pendingAction.LogType = LogType.Delete;
@@ -1206,7 +1226,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     {
                         var action = Toolkit.Pool<TableAction>.Rent();
                         action.LogType = LogType.Delete;
-                        action.Entity = (ITrackingIndexed<T>)item;
+                        action.Entity = typedItem;
                         _intentLog.Enqueue(action);
                         _pending[typedItem] = action;
                     }
@@ -1223,7 +1243,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 }
                 foreach (var subTable in SubTables.OfType<Table>())
                 {
-                    _ = subTable.TryDelete(item, metadata);
+                    _ = subTable.TryDelete(item, ref metadata);
                 }
                 _listeners ??= _listenersSet.ToArray();
                 for (int i = 0; i < _listeners.Length; i++)
@@ -1262,7 +1282,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         }
 
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnDeleted(Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onDeleted)
+        ITableBuilder<T> ITableBuilder<T>.OnDeleted(OnTableDeleted<T> onDeleted)
         {
             onDeleted = Guard.NotNull(onDeleted, nameof(onDeleted));
             var listener = new DelegateTableListener<T>();
@@ -1271,7 +1291,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnDeleting(Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onDeleting)
+        ITableBuilder<T> ITableBuilder<T>.OnDeleting(OnTableDeleting<T> onDeleting)
         {
             onDeleting = Guard.NotNull(onDeleting, nameof(onDeleting));
             var listener = new DelegateTableListener<T>();
@@ -1280,7 +1300,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnInserted(Action<IIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onInserted)
+        ITableBuilder<T> ITableBuilder<T>.OnInserted(OnTableInserted<T> onInserted)
         {
             onInserted = Guard.NotNull(onInserted, nameof(onInserted));
             var listener = new DelegateTableListener<T>();
@@ -1289,7 +1309,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             return this;
         }
         /// <inheritdoc/>
-        ITableBuilder<T> ITableBuilder<T>.OnInserting(Action<IWriteableIndexed<T>, IndexMetadata, IReadOnlyTable<T>> onInserting)
+        ITableBuilder<T> ITableBuilder<T>.OnInserting(OnTableInserting<T> onInserting)
         {
             onInserting = Guard.NotNull(onInserting, nameof(onInserting));
             var listener = new DelegateTableListener<T>();
@@ -1312,7 +1332,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             Log($"Added {(filter != null ? "filtered " : string.Empty)}index {fullIndexName} on property {propertyName} to table {Name}");
 
             var self = ((ITableBuilder<T>)this);
-            self.OnInserted((i, m, t) =>
+            self.OnInserted((IIndexed<T> i, ref IndexMetadata m, IReadOnlyTable<T> t) =>
             {
                 var indexValue = propertySelector(i);
                 if (!_indexes.TryGetValue(fullIndexName, out var index))
@@ -1388,7 +1408,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                     tracked.IndexedBy[propertyName] = indexValue;
                 }
-            }).OnDeleted((i, m, t) =>
+            }).OnDeleted((IIndexed<T> i, ref IndexMetadata m, IReadOnlyTable<T> t) =>
             {
                 if (!_indexes.TryGetValue(fullIndexName, out var index))
                 {
@@ -1590,11 +1610,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 _changedItems.Clear();
                 _deletedItems.Clear();
-                ((ITableBuilder<T>)this).OnInserted((i, m, t) =>
+                ((ITableBuilder<T>)this).OnInserted((IIndexed<T> i, ref IndexMetadata m, IReadOnlyTable<T> t) =>
                 {
                     _changedItems.Add(i);
                 });
-                ((ITableBuilder<T>)this).OnDeleted((i, m, t) =>
+                ((ITableBuilder<T>)this).OnDeleted((IIndexed<T> i, ref IndexMetadata m, IReadOnlyTable<T> t) =>
                 {
                     _deletedItems.Add(i);
                 });
@@ -1608,8 +1628,24 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             _listenersSet.Add(Guard.NotNull(listener, nameof(listener)));
             return this;
         }
+        /// <inheritdoc/>
+        public override void Dispose()
+        {
+            foreach (var subTable in _subTables)
+            {
+                subTable.Dispose();
+            }
+            foreach (var data in _data.Values)
+            {
+                data.NotifyRemoved();
+            }
+            if(_cachedSnapshot is not null)
+            {
+                _cachedSnapshot.Dispose();
+            }
+        }
 
-        private sealed class SnapshotTable : IReadOnlyTable<T>
+        private sealed class SnapshotTable : IReadOnlyTable<T>, IDisposable
         {
             // Fields
             internal readonly Dictionary<T, IIndexed<T>> _data;
@@ -1706,6 +1742,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                                     }
                                     break;
                                 case LogType.Delete:
+                                    action.Entity.NotifyRemoved();
                                     _data.Remove(action.Entity.Value);
                                     if (TrackingChanges)
                                     {
@@ -1786,6 +1823,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _snapshotData = _data.Values.ToArray();
                 return _snapshotData;
             }
+
+            public void Dispose()
+            {
+                foreach (var item in _data.Values)
+                {
+                    if (item is ITrackingIndexed<T> tracked)
+                    {
+                        tracked.NotifyRemoved();
+                    }
+                }
+            }
         }
 
         private class TableAction : IPoolable, IDisposable
@@ -1813,7 +1861,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
     /// <summary>
     /// Base class for typed tables.
     /// </summary>
-    public abstract class Table : IReadOnlyTable
+    public abstract class Table : IReadOnlyTable, IDisposable
     {
         // State
         protected HashSet<IIndexed<object>> _changedItems;
@@ -1858,7 +1906,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <typeparam name="T">The type to attempt to insert.</typeparam>
         /// <param name="item">The item to insert.</param>
         /// <returns>True if the item was successfully added or updated; otherwise, false.</returns>
-        internal abstract bool TryAddOrUpdate<T>(ITrackingIndexed<T> item, IndexMetadata metadata) where T : class;
+        internal abstract bool TryAddOrUpdate<T>(ITrackingIndexed<T> item, ref IndexMetadata metadata) where T : class;
 
         /// <summary>
         /// Tries to add a new item to the table. If an item with the same data already exists, it will be updated with the new data and the method will return true. If the item is successfully added, it will also return true.
@@ -1873,7 +1921,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// <param name="item">The item to delete.</param>
         /// <param name="metadata">Optional metadata associated with the item.</param>
         /// <returns>True if the item was successfully deleted; otherwise, false.</returns>
-        internal abstract bool TryDelete<T>(ITrackingIndexed<T> item, IndexMetadata metadata) where T : class;
+        internal abstract bool TryDelete<T>(ITrackingIndexed<T> item, ref IndexMetadata metadata) where T : class;
         /// <summary>
         /// Tries to retrieve an indexed item from the table based on the provided data.
         /// </summary>
@@ -1898,6 +1946,10 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         /// Creates an immutable snapshot of this table's current state.
         /// </summary>
         internal abstract IEnumerable CreateSnapshot(PendingWorkContext pendingWork);
+        /// <summary>
+        /// Cleans up any data.
+        /// </summary>
+        public abstract void Dispose();
     }
 
     internal enum LogType

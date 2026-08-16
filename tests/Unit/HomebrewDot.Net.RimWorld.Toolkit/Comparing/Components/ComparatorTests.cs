@@ -255,7 +255,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Comparing.Components
 
             var result = sut.Compare(null, condition, null);
 
-            Assert.True(result);
+            Assert.False(result);
         }
 
         [Fact]

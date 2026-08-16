@@ -57,6 +57,8 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public bool Once => false;
         /// <inheritdoc/>
         public byte Priority => 100;
+        /// <inheritdoc/>
+        public bool GameScoped => false;
 
         /// <inheritdoc cref="MonitorCollector{T}"/>
         /// <param name="collectionDef">The definition of conditions in addition to being in collection <paramref name="monitoredCollectionName"/></param>

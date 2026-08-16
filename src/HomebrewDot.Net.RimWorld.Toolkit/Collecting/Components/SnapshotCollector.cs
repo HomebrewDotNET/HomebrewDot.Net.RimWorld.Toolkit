@@ -82,6 +82,8 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public bool Once => _static;
         /// <inheritdoc/>
         public byte Priority => byte.MaxValue;
+        /// <inheritdoc/>
+        bool IHook<OnSnapshotTakenTrigger>.GameScoped => true;
 
         /// <inheritdoc/>
         public bool OnTrigger(OnSnapshotTakenTrigger arg)
@@ -101,14 +103,32 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
 
             var context = new WorkContext();
 
+            bool forceSync = arg.IsForced;
             if (_lastWork != null && !_lastWork.IsFinished)
             {
-                if(!arg.IsForced) Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work is still running, can't keep up, cancelling");
+                // Completed work reports IsFinished=true, so this only fires when the previous work is
+                // genuinely still pending (still running, or queued but never started).
+                if(!arg.IsForced)
+                {
+                    var managerStats = CooperativeWorkContext.Stats.ToString();
+                    bool wasStarted = _lastWork.Started is not null;
+                    if (!wasStarted)
+                    {
+                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work was never started, can't keep up, cancelling and forcing sync (managerStats={managerStats})");
+                    }
+                    else
+                    {
+                        var workDone = _lastWork.Started?.Context?.TotalActions ?? 0;
+                        var cyclesPerformed = _lastWork.Started?.Context?.CyclesPerformed ?? 0;
+                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work is still running, can't keep up, cancelling and forcing sync (workDone={workDone}, cyclesPerformed={cyclesPerformed}, managerStats={managerStats})");
+                    }
+                }
+                // Sync the current snapshot and cancel the previous work, since we can't keep up with the snapshot changes
                 _lastWork.Cancel();
-                _lastVersion = -1;
+                forceSync = true;
             }
             _lastWork = null;
-            if (Once || arg.IsForced)
+            if (Once || forceSync)
             {
                 _lastVersion = -1;
                 context.NoInterval();

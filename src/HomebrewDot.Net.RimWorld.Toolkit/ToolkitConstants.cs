@@ -49,6 +49,40 @@ namespace HomebrewDot.Net.Rimworld
         }
 
         /// <summary>
+        /// Constants related to the Rimworld Anomaly expansion, which can be used to check if the expansion is installed and active, and to conditionally enable or disable features that depend on the presence of this expansion.
+        /// </summary>
+        public static class Anomaly
+        {
+            /// <summary>
+            /// The package ID of the Rimworld Anomaly expansion, which can be used to check if the expansion is installed and active.
+            /// </summary>
+            public const string PackageId = "ludeon.rimworld.anomaly";
+            /// <summary>
+            /// Checks if the Rimworld Anomaly expansion is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this expansion.
+            /// </summary>
+            public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            /// <summary>
+            /// The defName of the HediffDef added by the Rimworld Anomaly expansion that marks a pawn as a ghoul, used to identify ghoul corpses. Ghouls are transformed humans, so their corpses share the Human corpse def and can only be identified per-instance through this hediff.
+            /// </summary>
+            public const string GhoulHediffDefName = "Ghoul";
+        }
+
+        /// <summary>
+        /// Constants related to the Rimworld Ideology expansion, which can be used to check if the expansion is installed and active, and to conditionally enable or disable features that depend on the presence of this expansion.
+        /// </summary>
+        public static class Ideology
+        {
+            /// <summary>
+            /// The package ID of the Rimworld Ideology expansion, which can be used to check if the expansion is installed and active.
+            /// </summary>
+            public const string PackageId = "ludeon.rimworld.ideology";
+            /// <summary>
+            /// Checks if the Rimworld Ideology expansion is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this expansion.
+            /// </summary>
+            public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+        }
+
+        /// <summary>
         /// Contains constants related to mods, such as mod IDs and other mod-specific information that may be used across the toolkit.
         /// </summary>
         public static class Mods
@@ -213,6 +247,25 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public const string CountProductsDetourTypeName = "ImprovedWorkbenches.RecipeWorkerCounter_CountProducts_Detour";
             }
+
+            /// <summary>
+            /// Contains constants related to the "Davai's Sorted Categories" mod by "Davai".
+            /// </summary>
+            public static class DavaiSortedCategories
+            {
+                /// <summary>
+                /// Id of the "Davai's Sorted Categories" mod, which can be used to check if the mod is installed and active. This is the packageId declared in the mod's About.xml.
+                /// </summary>
+                public const string PackageId = "davai.sortedcategories";
+                /// <summary>
+                /// The defName of the ThingCategoryDef added by Davai's Sorted Categories for meat that causes mood debuffs when eaten (human meat, insect meat, twisted meat, etc.), into which the mod moves such meat.
+                /// </summary>
+                public const string NastyMeatCategoryDefName = "DavaiNastyMeat";
+                /// <summary>
+                /// Checks if the "Davai's Sorted Categories" mod is loaded and active in the current Rimworld session. This can be used to conditionally enable or disable features that depend on the presence of this mod.
+                /// </summary>
+                public static bool IsLoaded => ModLister.GetActiveModWithIdentifier(PackageId) != null;
+            }
         }
 
         /// <summary>
@@ -341,6 +394,30 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static readonly IndexMetadataKey<bool> IsUnique = IndexMetadataKey<bool>.Get("IsUnique");
             /// <summary>
+            /// Key of the metadata that indicates whether a thing is the corpse of a ghoul (Anomaly), which can be used to check if the thing is a ghoul corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackIsGhoulCorpse"/> for <see cref="Verse.Corpse"/>s whose <see cref="Verse.Corpse.InnerPawn"/> carries the Anomaly "Ghoul" hediff.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsGhoulCorpse = IndexMetadataKey<bool>.Get("IsGhoulCorpse");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing is the corpse of a colonist, which can be used to check if the thing is a colonist corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackCorpseKind"/> for humanlike <see cref="Verse.Corpse"/>s whose <see cref="Verse.Corpse.InnerPawn"/> was a free colonist.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsColonistCorpse = IndexMetadataKey<bool>.Get("IsColonistCorpse");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing is the corpse of a stranger, which can be used to check if the thing is a stranger corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackCorpseKind"/> for humanlike <see cref="Verse.Corpse"/>s whose <see cref="Verse.Corpse.InnerPawn"/> did not belong to the player faction.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsStrangerCorpse = IndexMetadataKey<bool>.Get("IsStrangerCorpse");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing is the corpse of a slave, which can be used to check if the thing is a slave corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackCorpseKind"/> for humanlike <see cref="Verse.Corpse"/>s whose <see cref="Verse.Corpse.InnerPawn"/> was a player-faction slave (Ideology).
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsSlaveCorpse = IndexMetadataKey<bool>.Get("IsSlaveCorpse");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing is an unnatural corpse (Anomaly), which can be used to check if the thing is an unnatural corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackCorpseKind"/> for <see cref="Verse.UnnaturalCorpse"/>s.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsUnnaturalCorpse = IndexMetadataKey<bool>.Get("IsUnnaturalCorpse");
+            /// <summary>
+            /// Key of the metadata that indicates whether a thing is the corpse of a tame colony animal (a pet), which can be used to check if the thing is a pet corpse in code or definitions. Only set by <see cref="Toolkit.Indexing.Thing.TrackCorpseKind"/> for <see cref="Verse.Corpse"/>s whose <see cref="Verse.Corpse.InnerPawn"/> was a tame animal of the player faction.
+            /// </summary>
+            public static readonly IndexMetadataKey<bool> IsPetCorpse = IndexMetadataKey<bool>.Get("IsPetCorpse");
+            /// <summary>
             /// Key of the metadata that contains the mod ID of a def, which can be used to check which mod a def belongs to in code or definitions.
             /// </summary>
             public static readonly IndexMetadataKey<string> ModId = IndexMetadataKey<string>.Get("ModId");
@@ -365,7 +442,8 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public readonly static IndexMetadataKey<bool> IsConstructionMaterial = IndexMetadataKey<bool>.Get("IsConstructionMaterial");
                 /// <summary>
-                /// Key of the metadata that indicates whether a ThingDef is foul (meat or leather from insectoid creatures).
+                /// Key of the metadata that indicates whether a ThingDef is foul (meat or leather from humanlike,
+                /// insectoid, twisted or other non-standard creatures, plus meat of pollution-adapted animals).
                 /// </summary>
                 public readonly static IndexMetadataKey<bool> IsFoul = IndexMetadataKey<bool>.Get("IsFoul");
                 /// <summary>

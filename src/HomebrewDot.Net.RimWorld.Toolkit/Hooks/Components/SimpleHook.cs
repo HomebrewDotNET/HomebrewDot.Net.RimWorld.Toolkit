@@ -26,6 +26,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks
 
         /// <inheritdoc/>
         public byte Priority { get; }
+        /// <inheritdoc/>
+        public bool GameScoped => false;
 
         /// <inheritdoc cref="SimpleHook{T}"/>
         /// <param name="owner"><see cref="Owner"/></param>

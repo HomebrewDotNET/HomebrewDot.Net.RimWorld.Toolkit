@@ -11,16 +11,30 @@ using static HomebrewDot.Net.Rimworld.Toolkit.Helpers;
 namespace HomebrewDot.Net.Rimworld.Collecting.Components
 {
     /// <summary>
+    /// Internal contract for collectors that can have their collection definition replaced in place so the
+    /// collector instance (and its registered hooks) can be reused when a collection is rebuilt instead of
+    /// constructing a new collector and re-registering it.
+    /// </summary>
+    internal interface IReusableCollector
+    {
+        /// <summary>
+        /// Replaces the collection definition this collector collects against.
+        /// </summary>
+        /// <param name="definition">The new collection definition to collect against.</param>
+        void UpdateDefinition(ICollectionDef definition);
+    }
+
+    /// <summary>
     /// A collector that collects objects of type T based on a collection definition and a collection comparator. The collector maintains a set of collected objects and provides methods to check if an object can be collected, to collect an object, to check if an object is already collected, and to retrieve all collected objects. The collector can be started and stopped, which will reset its state and allow it to be reused with different collection definitions and comparators.
     /// </summary>
     /// <typeparam name="T">The type of objects to be collected.</typeparam>
-    public class Collector<T> : ICollector<T> where T : class
+    public class Collector<T> : ICollector<T>, IReusableCollector where T : class
     {
         /// <summary>
         /// The current set of collected objects.
         /// </summary>
         protected readonly HashSet<T> _collected = new HashSet<T>();
-        private readonly ICollectionDef _definition;
+        private ICollectionDef _definition;
         /// <summary>
         /// A dictionary of collection definitions keyed by their names. Used to resolve references between collections.
         /// </summary>
@@ -91,6 +105,26 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         public Collector(ICollectionDef definition)
         {
             _definition = Guard.NotNull(definition, nameof(definition));
+        }
+
+        /// <summary>
+        /// Replaces the collection definition this collector collects against. Used when rebuilding a
+        /// collection in place so the collector instance (and its registered hooks) can be reused instead of
+        /// constructing a new collector and re-registering it.
+        /// </summary>
+        /// <param name="definition">The new collection definition to collect against.</param>
+        internal void UpdateDefinition(ICollectionDef definition)
+        {
+            _definition = Guard.NotNull(definition, nameof(definition));
+        }
+        /// <summary>
+        /// Explicit implementation of <see cref="IReusableCollector.UpdateDefinition"/> so the definition can
+        /// be swapped through the non-generic reuse contract.
+        /// </summary>
+        /// <param name="definition">The new collection definition to collect against.</param>
+        void IReusableCollector.UpdateDefinition(ICollectionDef definition)
+        {
+            UpdateDefinition(definition);
         }
 
         /// <inheritdoc/>

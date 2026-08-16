@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Extensions;
 using HomebrewDot.Net.Rimworld.Generic;
 using HomebrewDot.Net.Rimworld.Referencing;
+using HomebrewDot.Net.Rimworld.Referencing.Components;
 
 namespace HomebrewDot.Net.Rimworld.Comparing.Models
 {
@@ -99,6 +100,112 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         public override string ToString()
         {
             return ToString(null, false).ToString();
+        }
+
+        /// <summary>
+        /// Converts the condition to a single-line, human-readable string. Groups are rendered as a parenthesized
+        /// expression of their sub-conditions, e.g. "(A && B)" or "(A || B)". Sub-conditions are joined with "&&"
+        /// or "||" based on the preceding condition's <see cref="IsOr"/> flag, mirroring the evaluation order.
+        /// </summary>
+        /// <returns>A single-line compact string representation of the condition.</returns>
+        public string ToCompactString()
+        {
+            var stringBuilder = new StringBuilder();
+            AppendCompactString(stringBuilder);
+            return stringBuilder.ToString();
+        }
+
+        private void AppendCompactString(StringBuilder stringBuilder)
+        {
+            var hasGroup = Conditions != null && Conditions.Length > 0;
+            var hasLeaf = With != null;
+
+            if (hasGroup)
+            {
+                stringBuilder.Append('(');
+                for (var i = 0; i < Conditions.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        stringBuilder.Append(Conditions[i - 1].IsOr ? " || " : " && ");
+                    }
+                    Conditions[i]?.AppendCompactString(stringBuilder);
+                }
+                stringBuilder.Append(')');
+            }
+
+            if (!hasLeaf)
+            {
+                return;
+            }
+
+            if (hasGroup)
+            {
+                stringBuilder.Append(ConditionGroupIsOr ? " || " : " && ");
+            }
+
+            AppendCompactValue(stringBuilder, Compare);
+            stringBuilder.Append(' ');
+            if (Inverted)
+            {
+                stringBuilder.Append("not ");
+            }
+            AppendCompactValue(stringBuilder, With);
+            if (To != null)
+            {
+                stringBuilder.Append(' ');
+                AppendCompactValue(stringBuilder, To);
+            }
+        }
+
+        private static void AppendCompactValue(StringBuilder stringBuilder, object value)
+        {
+            if (value is IReference reference)
+            {
+                if (string.Equals(reference.Type, IndexedReferenceType.DefaultTypeName, StringComparison.Ordinal)
+                    || string.Equals(reference.Type, ValueReferenceType.DefaultTypeName, StringComparison.Ordinal))
+                {
+                    AppendCompactRawValue(stringBuilder, reference.Value);
+                }
+                else
+                {
+                    stringBuilder.Append('[').Append(reference.Type).Append(':');
+                    AppendCompactRawValue(stringBuilder, reference.Value);
+                    stringBuilder.Append(']');
+                }
+                return;
+            }
+
+            if (value is OperatorDef operatorDef)
+            {
+                stringBuilder.Append(string.IsNullOrWhiteSpace(operatorDef.Type) ? "?" : operatorDef.Type);
+                return;
+            }
+
+            AppendCompactRawValue(stringBuilder, value);
+        }
+
+        private static void AppendCompactRawValue(StringBuilder stringBuilder, object value)
+        {
+            if (value is System.Collections.IEnumerable enumerable && value is not string)
+            {
+                stringBuilder.Append('[');
+                var first = true;
+                foreach (var item in enumerable)
+                {
+                    if (!first)
+                    {
+                        stringBuilder.Append(", ");
+                    }
+                    first = false;
+                    AppendCompactValue(stringBuilder, item);
+                }
+                stringBuilder.Append(']');
+                return;
+            }
+
+            var text = value?.ToString();
+            stringBuilder.Append(string.IsNullOrEmpty(text) ? "(empty)" : text);
         }
 
         /// <summary>

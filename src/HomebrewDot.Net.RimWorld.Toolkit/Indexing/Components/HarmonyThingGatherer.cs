@@ -72,16 +72,16 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 LogWarning($"Skipping {nameof(Thing.SpawnSetup)} patch for {typeof(Thing).FullName} because no implemented method was found in its type hierarchy.");
             }
 
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoTick_Postfix));
-            original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.DoTick));
-            if (original != null)
-            {
-                harmony.Patch(original, postfix: new HarmonyMethod(postfix));
-            }
-            else
-            {
-                LogWarning($"Skipping {nameof(Thing.DoTick)} patch for {typeof(Thing).FullName} because no implemented method was found in its type hierarchy.");
-            }
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoTick_Postfix));
+            //original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.DoTick));
+            //if (original != null)
+            //{
+            //    harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+            //}
+            //else
+            //{
+            //    LogWarning($"Skipping {nameof(Thing.DoTick)} patch for {typeof(Thing).FullName} because no implemented method was found in its type hierarchy.");
+            //}
 
             postfix = AccessTools.Method(typeof(Patches), nameof(Patches.Destroy_Postfix));
             original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.Destroy));
@@ -159,12 +159,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 harmony.Unpatch(original, postfix);
             }
 
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoTick_Postfix));
-            original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.DoTick));
-            if (original != null)
-            {
-                harmony.Unpatch(original, postfix);
-            }
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoTick_Postfix));
+            //original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.DoTick));
+            //if (original != null)
+            //{
+            //    harmony.Unpatch(original, postfix);
+            //}
 
             postfix = AccessTools.Method(typeof(Patches), nameof(Patches.Destroy_Postfix));
             original = ResolveImplementedMethod(typeof(Thing), nameof(Thing.Destroy));

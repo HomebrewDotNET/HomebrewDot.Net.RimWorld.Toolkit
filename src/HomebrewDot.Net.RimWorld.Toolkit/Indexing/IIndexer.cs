@@ -9,7 +9,7 @@ using HomebrewDot.Net.Rimworld.Indexing.Models;
 namespace HomebrewDot.Net.Rimworld.Indexing
 {
     /// <summary>
-    /// Used to manage <see cref="IIndexed{T}.Metadata"/> during insertion.
+    /// Used to manage <see cref="IIndexed{T}.Metadata"/> during upsertion.
     /// </summary>
     public interface IIndexer<T> : IDatabaseListener<T> where T : class
     {

@@ -170,7 +170,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
 			if(getThing != null)
 			{
 				var getValue = Toolkit.Helpers.Expression.GetMethod<StatWorker>(x => x.GetValue(default(Thing), default(bool), default));
-				return Expression.Call(getStatDefWorker, getValue, getThing, Expression.Constant(true), Expression.Constant(TimeSpan.Zero));
+				return Expression.Call(getStatDefWorker, getValue, getThing, Expression.Constant(true), Expression.Constant(-1));
 			}
 			return ToolkitConstants.Expressions<float>.Default;
 		}

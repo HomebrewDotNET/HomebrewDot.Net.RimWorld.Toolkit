@@ -28,6 +28,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
         /// Indicates whether this indexer is tracking any changes.
         /// </summary>
         public bool WatchesChanges => _watchers.Count > 0;
+        /// <inheritdoc/>
+        public bool Once { get; private set; }
 
         /// <inheritdoc/>
         public bool HasChanged(T current, IIndexed<T> indexed, ref IndexMetadata metadata)
@@ -313,6 +315,12 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Models
                     return false;
                 };
             }
+            return this;
+        }
+        /// <inheritdoc/>
+        IIndexerBuilder<T> IIndexerBuilder<T>.Once()
+        {
+            Once = true;
             return this;
         }
     }
