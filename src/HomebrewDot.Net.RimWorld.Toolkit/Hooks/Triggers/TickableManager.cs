@@ -19,10 +19,11 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         private readonly List<(IManagedTickable tickable, List<IManagedTickable> bucket)> _tickablesToAdd = new();
         private readonly List<(IManagedTickable tickable, List<IManagedTickable> bucket)> _tickablesToRemove = new();
         private readonly Dictionary<int, List<IManagedTickable>[]> _buckets = new();
+        private readonly Stopwatch _stopwatch = new();
 
         // State
         private long _currentTick = 0;
-        private long _lastLogTick = 0;
+        private long _nextLogTick = ToolkitConstants.TickRareInterval;
         /// <inheritdoc/>
         object IHook<RequestTickManagement>.Owner => this;
         /// <inheritdoc/>
@@ -66,22 +67,24 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             _tickablesToRemove.Clear();
 
             // Tick all buckets per their intervals
-            bool isLogTick = Logging.IsPerformanceEnabled && (_currentTick - _lastLogTick) % ToolkitConstants.TickRareInterval == 0;
+            bool isLogTick = Logging.IsPerformanceEnabled && _currentTick >= _nextLogTick;
             foreach (var (interval, buckets) in _buckets)
             {
-                Stopwatch stopwatch = null;
                 if (isLogTick)
                 {
-                    stopwatch = Stopwatch.StartNew();
+                    _stopwatch.Restart();
                 }
                 var tickList = buckets;
                 var ticked = TickList(tickList);
 
-                stopwatch?.Stop();
-                if (isLogTick && ticked > 0)
+                if (isLogTick)
                 {
-                    _lastLogTick = _currentTick;
-                    Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables with interval {interval} in {stopwatch.ElapsedMilliseconds}ms.");
+                    _stopwatch.Stop();
+                    if (ticked > 0)
+                    {
+                        _nextLogTick = _currentTick + ToolkitConstants.TickRareInterval;
+                        Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables with interval {interval} in {_stopwatch.ElapsedMilliseconds}ms.");
+                    }
                 }
             }
         }
@@ -106,7 +109,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 
         private void TickThings(List<IManagedTickable> tickables)
         {
-            for (int i = tickables.Count - 1; i >= 0; i--)
+            for (int i = 0; i < tickables.Count; i++)
             {
                 var tickable = tickables[i];
                 try
