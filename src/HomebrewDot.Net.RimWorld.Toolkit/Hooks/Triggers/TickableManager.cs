@@ -75,7 +75,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     _stopwatch.Restart();
                 }
                 var tickList = buckets;
-                var ticked = TickList(tickList);
+                var (ticked,bucketId) = TickList(tickList);
 
                 if (isLogTick)
                 {
@@ -83,7 +83,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     if (ticked > 0)
                     {
                         _nextLogTick = _currentTick + ToolkitConstants.TickRareInterval;
-                        Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables with interval {interval} in {_stopwatch.ElapsedMilliseconds}ms.");
+                        Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables in bucket {bucketId} from interval {interval} in {_stopwatch.Elapsed.TotalMilliseconds}ms.");
                     }
                 }
             }
@@ -94,7 +94,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             base.FinalizeInit();
         }
 
-        private int TickList(List<IManagedTickable>[] tickList)
+        private (int Ticked, int Bucked) TickList(List<IManagedTickable>[] tickList)
         {
             var buckets = tickList.Length;
             var bucketIndexToTick = (int)(_currentTick % buckets);
@@ -102,9 +102,9 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             if (bucket != null)
             {
                 TickThings(bucket);
-                return bucket.Count;
+                return (bucket.Count,bucketIndexToTick);
             }
-            return 0;
+            return (0,0);
         }
 
         private void TickThings(List<IManagedTickable> tickables)

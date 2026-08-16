@@ -31,6 +31,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
 
         // Fields
         private readonly Game _game;
+        private readonly Stopwatch _stopwatch = new Stopwatch();
 
         // State
         private Queue<RaiseCooperativeWork> _finalize = new Queue<RaiseCooperativeWork>();
@@ -42,7 +43,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         private int _currentCycleStreak = 0;
         private int? _lastPendingWork;
         private TimeSpan _highestTimeCurrentCycle;
-        private long _lastLogTick = 0;
+        private long _nextLogTick = ToolkitConstants.TickRareInterval;
 
         /// <summary>
         /// Creates the work manager component for the current game instance.
@@ -82,8 +83,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         /// <inheritdoc/>
         public override void GameComponentTick()
         {
-            var timer = Stopwatch.StartNew();
             base.GameComponentTick();
+            _stopwatch.Restart();
             CooperativeWorkContext.Stats.PendingCurrentCycle = _currentCycle.Count;
             CooperativeWorkContext.Stats.PendingNextCycle = _nextCycle.Count;
             CooperativeWorkContext.Stats.PendingFinalize = _finalize.Count;
@@ -94,26 +95,26 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 AdjustBudget();
             }
             var budget = _currentBudget;
-            ExecuteWork(budget);
+            var workWasPerformed = ExecuteWork(budget);
 
             if (_currentCycle.Count == 0)
             {
                 (_currentCycle, _nextCycle) = (_nextCycle, _currentCycle);
             }
             _acceptedThisTick = 0;
-            timer.Stop();
+            _stopwatch.Stop();
             if(IsPerformanceEnabled)
             {
-                bool isLogTick = (ticks - _lastLogTick) % ToolkitConstants.TickRareInterval == 0;
-                if(isLogTick)
+                bool isLogTick = ticks >= _nextLogTick;
+                if (isLogTick && workWasPerformed)
                 {
-                    _lastLogTick = ticks;
-                    LogPerformance($"Tick {ticks} completed in {timer.Elapsed.TotalMilliseconds}ms (budget={budget.TotalMilliseconds}ms, highest={_highestTimeCurrentCycle.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats})");
+                    _nextLogTick = ticks + ToolkitConstants.TickRareInterval;
+                    LogPerformance($"Tick {ticks} completed in {_stopwatch.Elapsed.TotalMilliseconds}ms (budget={budget.TotalMilliseconds}ms, highest={_highestTimeCurrentCycle.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats})");
                 }
             }
-            if(timer.Elapsed > MaxTickSpike)
+            if(_stopwatch.Elapsed > MaxTickSpike)
             {
-                _highestTimeCurrentCycle = timer.Elapsed;
+                _highestTimeCurrentCycle = _stopwatch.Elapsed;
             }
         }
 
