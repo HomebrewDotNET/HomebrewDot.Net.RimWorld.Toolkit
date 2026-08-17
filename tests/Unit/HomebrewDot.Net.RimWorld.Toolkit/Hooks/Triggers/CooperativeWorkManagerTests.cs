@@ -1,3 +1,4 @@
+using System;
 using HomebrewDot.Net.Rimworld.Hooks.Triggers;
 using Xunit;
 
@@ -9,7 +10,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Hooks.Triggers
         public void ShouldIncreaseBudget_WithStableLongRunningWork_ReturnsFalse()
         {
             // Act
-            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 4, 0);
+            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 4, 0, TimeSpan.Zero);
 
             // Assert
             Assert.False(result);
@@ -19,7 +20,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Hooks.Triggers
         public void ShouldIncreaseBudget_WithGrowingWorkQueue_ReturnsTrue()
         {
             // Act
-            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 5, 0);
+            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 5, 0, TimeSpan.Zero);
 
             // Assert
             Assert.True(result);
@@ -29,7 +30,17 @@ namespace HomebrewDot.Net.Rimworld.Tests.Hooks.Triggers
         public void ShouldIncreaseBudget_WithRepeatedCancellations_ReturnsTrue()
         {
             // Act
-            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 4, 5);
+            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 4, 5, TimeSpan.Zero);
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void ShouldIncreaseBudget_WithTickSpikeAboveMax_ReturnsTrue()
+        {
+            // Act
+            bool result = CooperativeWorkManager.ShouldIncreaseBudget(4, 4, 0, TimeSpan.FromMilliseconds(2));
 
             // Assert
             Assert.True(result);

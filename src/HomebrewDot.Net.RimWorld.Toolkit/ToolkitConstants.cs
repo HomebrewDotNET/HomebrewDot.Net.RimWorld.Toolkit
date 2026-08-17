@@ -17,6 +17,10 @@ namespace HomebrewDot.Net.Rimworld
     public static class ToolkitConstants
     {
         /// <summary>
+        /// How many ticks the Rimworld tick manager spreads out the normal ticking of things.
+        /// </summary>
+        public const int TickNormalInterval = 60;
+        /// <summary>
         /// How many ticks the Rimworld tick manager spreads out the rare ticking of things.
         /// </summary>
         public const int TickRareInterval = 250;

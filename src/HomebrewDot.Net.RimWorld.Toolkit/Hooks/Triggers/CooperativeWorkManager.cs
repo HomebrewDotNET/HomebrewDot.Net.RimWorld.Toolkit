@@ -112,7 +112,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     LogPerformance($"Tick {ticks} completed in {_stopwatch.Elapsed.TotalMilliseconds}ms (budget={budget.TotalMilliseconds}ms, highest={_highestTimeCurrentCycle.TotalMilliseconds}ms, stats={CooperativeWorkContext.Stats})");
                 }
             }
-            if(_stopwatch.Elapsed > MaxTickSpike)
+            if(_stopwatch.Elapsed > MaxTickSpike && _stopwatch.Elapsed > _highestTimeCurrentCycle)
             {
                 _highestTimeCurrentCycle = _stopwatch.Elapsed;
             }
@@ -217,8 +217,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             var change = acceptedThisCycle - completedThisCycle - canceledThisCycle;
             var highestTime = _highestTimeCurrentCycle;
             var pendingWork = _currentCycle.Count + _nextCycle.Count + _finalize.Count;
-            var overbudget = ShouldIncreaseBudget(_lastPendingWork, pendingWork, canceledThisCycle);
-            var canDecrease = !overbudget && highestTime <= MaxTickSpike;
+            var overbudget = ShouldIncreaseBudget(_lastPendingWork, pendingWork, canceledThisCycle, highestTime);
+            var canDecrease = !overbudget;
 
             if (overbudget && _lastCycleOverBudget)
             {
@@ -253,9 +253,9 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             _highestTimeCurrentCycle = TimeSpan.Zero;
         }
 
-        internal static bool ShouldIncreaseBudget(int? previousPendingWork, int pendingWork, int canceledWork)
+        internal static bool ShouldIncreaseBudget(int? previousPendingWork, int pendingWork, int canceledWork, TimeSpan highestTime)
         {
-            return previousPendingWork.HasValue && pendingWork > previousPendingWork.Value || canceledWork >= MinCancelledWorkToIncrease;
+            return previousPendingWork.HasValue && pendingWork > previousPendingWork.Value || canceledWork >= MinCancelledWorkToIncrease || highestTime > MaxTickSpike;
         }
     }
 

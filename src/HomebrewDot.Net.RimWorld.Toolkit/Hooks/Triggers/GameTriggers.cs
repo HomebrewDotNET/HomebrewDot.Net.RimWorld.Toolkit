@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using HarmonyLib;
 using HomebrewDot.Net.Rimworld;
+using HomebrewDot.Net.Rimworld.Generic;
 using RimWorld;
 using Verse;
 
@@ -37,8 +38,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         static GameTriggers()
         {
             var harmony = Toolkit.Harmony;
-            var postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoSingleTick_Postfix));
-            harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(postfix));
+            //var postfix = AccessTools.Method(typeof(Patches), nameof(Patches.DoSingleTick_Postfix));
+            //harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(postfix));
             var prefix = AccessTools.Method(typeof(Patches), nameof(Patches.LoadGame_Prefix));
             harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.LoadGame)), prefix: new HarmonyMethod(prefix));
             var prefixUnload = AccessTools.Method(typeof(Patches), nameof(Patches.Dispose_Prefix));
@@ -51,6 +52,22 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
         public override void FinalizeInit()
         {
             base.FinalizeInit();
+            var requestedTickers = new List<Ticker>
+            {
+                new Ticker(_game, TickerType.Normal, 1, Toolkit.Hooks.Manager.GetTriggerer<OnGameTickTrigger>()),
+                new Ticker(_game, TickerType.Rare, 2, Toolkit.Hooks.Manager.GetTriggerer<OnGameTickTrigger>()),
+                new Ticker(_game, TickerType.Long, 3, Toolkit.Hooks.Manager.GetTriggerer<OnGameTickTrigger>())
+            };
+
+            foreach (var ticker in requestedTickers)
+            {
+                var request = new RequestTickManagement(ticker, true);
+                var accepted = Toolkit.Hooks.Manager.Trigger(request);
+                if(!accepted)
+                {
+                    Log.Warning($"Ticker of type {ticker.TickerType} was not accepted by the tick manager. Hooks will not be fired");
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -121,6 +138,48 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     Toolkit.Hooks.Manager.Trigger(OnGameLoadedTrigger.Instance);
                     _hasTriggered = true;
                 }
+            }
+        }
+
+        private class Ticker : IManagedTickable
+        {
+            // Fields
+            private readonly IHookTriggerer<OnGameTickTrigger> _triggerer;
+            private readonly Game _game;
+            private readonly TickerType _tickerType;
+            private readonly int _hash;
+
+            public int Bucket { get; set; }
+
+            public int Hash => _hash;
+
+            public int Interval { get; }
+            public TickerType TickerType => _tickerType;
+
+            public Ticker(Game game, TickerType tickerType, int hash, IHookTriggerer<OnGameTickTrigger> triggerer)
+            {
+                _game = game;
+                _tickerType = tickerType;
+                _hash = hash;
+                _triggerer = triggerer;
+                Interval = tickerType switch
+                {
+                    TickerType.Normal => ToolkitConstants.TickNormalInterval,
+                    TickerType.Rare => ToolkitConstants.TickRareInterval,
+                    TickerType.Long => ToolkitConstants.TickLongInterval,
+                    _ => throw new ArgumentOutOfRangeException(nameof(tickerType), tickerType, null)
+                };
+            }
+
+            public void NotifyRemoved()
+            {
+                Log.Warning($"Ticker of type {_tickerType} was removed from the tick manager. Hooks will not be fired");
+            }
+
+            public bool Tick()
+            {
+                _triggerer.Trigger(new OnGameTickTrigger(_game, _tickerType));
+                return true;
             }
         }
     }
