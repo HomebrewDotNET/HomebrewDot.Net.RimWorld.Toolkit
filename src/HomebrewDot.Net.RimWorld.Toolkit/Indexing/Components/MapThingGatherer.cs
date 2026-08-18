@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -50,11 +51,15 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private void Scan(Map map)
         {
             Log($"Scanning map {map} for things");
+            var stopwatch = Stopwatch.StartNew();
             var thingsPushed = 0;
             var thingsAccepted = 0;
+            var ingestableCategories = Toolkit.Indexing.Thing.IngestibleThingCategories.ToHashSet();
             var seen = new HashSet<Thing>();
             foreach (var thing in map.listerThings.AllThings)
             {
+                if( thing == null ) continue;
+                if(!ingestableCategories.Contains(thing.def.category)) continue;
                 if (!seen.Add(thing)) continue;
                 thingsPushed++;
                 var metadata = new IndexMetadata();
@@ -68,6 +73,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             foreach (var thing in thingHolder)
             {
                 if (!seen.Add(thing)) continue;
+                if (!ingestableCategories.Contains(thing.def.category)) continue;
                 thingsPushed++;
                 var metadata = new IndexMetadata();
                 metadata.Set(ToolkitConstants.Thing.Map, map);
@@ -88,6 +94,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     foreach (var thing in heldThings)
                     {
                         if (!seen.Add(thing)) continue;
+                        if (!ingestableCategories.Contains(thing.def.category)) continue;
                         thingsPushed++;
                         var metadata = new IndexMetadata();
                         metadata.Set(ToolkitConstants.Thing.Map, map);
@@ -101,7 +108,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 }
             }
         
-            Log($"Pushed {thingsAccepted}/{thingsPushed} things to snapshot manager from map {map}");
+            stopwatch.Stop();
+            Log($"Pushed {thingsAccepted}/{thingsPushed} things to snapshot manager from map {map} in {stopwatch.Elapsed.TotalMilliseconds} ms");
             // Force snapshot here so spike is during map generation and not during the next tick(s). Sorry not sorry.
             _ = _snapshotManager?.Snapshot()?.Build();
         }

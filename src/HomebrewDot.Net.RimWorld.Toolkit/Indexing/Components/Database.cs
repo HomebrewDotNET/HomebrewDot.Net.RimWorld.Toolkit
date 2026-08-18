@@ -213,6 +213,16 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                     }
                     _tables.Clear();
                     _tablesByName.Clear();
+                    if(_listeners?.Count > 0)
+                    {
+                        foreach (var listener in _listeners)
+                        {
+                            if (listener is IDisposable disposableListener)
+                            {
+                                Invoking.Safe(disposableListener.Dispose);
+                            }
+                        }
+                    }
                     _listeners.Clear();
                     TrackingChanges = false;
                     _changedItems?.Clear();

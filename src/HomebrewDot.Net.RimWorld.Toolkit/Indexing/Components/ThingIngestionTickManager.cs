@@ -15,7 +15,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
     /// <summary>
     /// Listens to new new ingested ticking things and schedules periodic pushes to <see cref="ISnapshotManager"/> in case changes need to be synced.
     /// </summary>
-    public class ThingIngestionTickManager : IDatabaseListener<Thing>
+    public class ThingIngestionTickManager : IDatabaseListener<Thing>, IDisposable
     {
         // Constats
         /// <summary>
@@ -30,14 +30,15 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public static readonly IReadOnlyDictionary<TickerType, int> TickerTypeToSlowInterval = new Dictionary<TickerType, int>
         {
             { TickerType.Normal, ToolkitConstants.TickLongInterval },
-            { TickerType.Rare, ToolkitConstants.TickLongInterval * 2 },
-            { TickerType.Long, ToolkitConstants.TickLongInterval * 4 }
+            { TickerType.Rare, ToolkitConstants.TickLongInterval * 3 },
+            { TickerType.Long, ToolkitConstants.TickLongInterval * 5 }
         };
 
         // Fields
         private readonly IHookManager _hookManager;
         private readonly ISnapshotManager _snapshotManager;
         private readonly IReadOnlyDictionary<TickerType, int> _tickerTypeToInterval;
+        private readonly Dictionary<IIndexed<object>, ManagedTickingIndexedThing> _managedThings = new Dictionary<IIndexed<object>, ManagedTickingIndexedThing>();
 
         // State
         private ISnapshotManager<Thing> _snapshotThingManager;
@@ -56,7 +57,13 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
         /// <inheritdoc/>
         public void OnDeleted(IIndexed<Thing> indexed, ref IndexMetadata metadata, IDatabase database)
-        {}
+        {
+            if(!_managedThings.TryGetValue(indexed, out var managed)) return;
+
+            RequestDeletion(managed);
+
+            _managedThings.Remove(indexed);
+        }
         /// <inheritdoc/>
         public void OnDeleting(IIndexed<Thing> indexed, ref IndexMetadata metadata, IDatabase database)
         {}
@@ -64,9 +71,11 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         public void OnUpserted(IIndexed<Thing> indexed, ref IndexMetadata metadata, IDatabase database)
         {
             indexed = Guard.NotNull(indexed, nameof(indexed));
-            if (!indexed.IsInsert) return;
+            if(!indexed.Value.def.HasThingIDNumber) return;
             var tickerType = indexed.Value.def.tickerType;
             if (tickerType == TickerType.Never) return;
+            if (_managedThings.ContainsKey(indexed)) return;
+            if (!indexed.IsInsert) return;
             if(!_tickerTypeToInterval.TryGetValue(tickerType, out var interval)) return;
 
             var managed = Toolkit.Pool<ManagedTickingIndexedThing>.Rent();
@@ -79,10 +88,34 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 managed.NotifyRemoved();
             }
+            else
+            {
+                _managedThings.Add(indexed, managed);
+            }
+        }
+
+        private void RequestDeletion(ManagedTickingIndexedThing managed)
+        {
+            var request = new RequestTickManagement(managed, false);
+            _requestTriggerer ??= _hookManager.GetTriggerer<RequestTickManagement>();
+            bool accepted = _requestTriggerer.Trigger(request);
+            if (!accepted)
+            {
+                managed.NotifyRemoved();
+            }
         }
 
         public void OnUpserting(IWriteableIndexed<Thing> indexed, ref IndexMetadata metadata, IDatabase database)
         {}
+
+        public void Dispose()
+        {
+            foreach (var managed in _managedThings.Values)
+            {
+                RequestDeletion(managed);
+            }
+            _managedThings.Clear();
+        }
 
         private class ManagedTickingIndexedThing : IManagedTickable, IPoolable
         {
@@ -100,6 +133,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
 
             public int Hash => _hash;
 
+            public string DisplayName { get; private set; }
+            public ManagedTickableStats Stats { get; set; }
+
             public void Set(IIndexed<Thing> indexed, ISnapshotManager<Thing> snapshotManager, int interval)
             {
                 _indexed = Guard.NotNull(indexed, nameof(indexed));
@@ -110,6 +146,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 {
                     _hash = _hash & 0x7FFFFFFF;
                 }
+                DisplayName = $"{indexed.Value}<{_hash}>[{_interval}]";
             }
 
             public bool Tick()
@@ -139,6 +176,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 _interval = 0;
                 _hash = 0;
                 Bucket = -1;
+                DisplayName = null;
             }
         }
     }

@@ -15,15 +15,38 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
     /// </summary>
     public class TickableManager : GameComponent, IHook<RequestTickManagement>
     {
+        // Constants
+        /// <summary>
+        /// The threshold above which we consider a ticking thing to be running too long.
+        /// </summary>
+        public readonly static TimeSpan HighTickDurationThreshold = TimeSpan.FromMilliseconds(100L);
+        /// <summary>
+        /// The threshold above which we consider a ticking bucket to be running too long.
+        /// </summary>
+        public readonly static TimeSpan HighBucketDurationThreshold = TimeSpan.FromMilliseconds(1);
+        /// <summary>
+        /// How many times a tickable can go over budget before we log a warning about it.
+        /// Will log every n times over budget, where n is this value.
+        /// </summary>
+        public const int OverBudgetReportInterval = 3;
+        public const int BucketPeekSize = 10;
+
         // Fields
         private readonly List<(IManagedTickable tickable, List<IManagedTickable> bucket)> _tickablesToAdd = new();
         private readonly List<(IManagedTickable tickable, List<IManagedTickable> bucket)> _tickablesToRemove = new();
         private readonly Dictionary<int, List<IManagedTickable>[]> _buckets = new();
         private readonly Stopwatch _stopwatch = new();
+        private readonly Stopwatch _tickStopwatch = new();
 
         // State
         private long _currentTick = 0;
         private long _nextLogTick = ToolkitConstants.TickRareInterval;
+        private int _timedLogged = 0;
+        private long _nextPerfLogTick = ToolkitConstants.TickLongInterval;
+        private int _timesPerfLogged = 0;
+        private int _managed = 0;
+
+        // Properties
         /// <inheritdoc/>
         object IHook<RequestTickManagement>.Owner => this;
         /// <inheritdoc/>
@@ -52,6 +75,7 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 if(bucket != null)
                 {
                     bucket.Add(tickable);
+                    _managed++;
                 }
             }
             _tickablesToAdd.Clear();
@@ -62,28 +86,78 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 {
                     tickable.NotifyRemoved();
                     tickable.Bucket = -1;
+                    _managed--;
                 }
             }
             _tickablesToRemove.Clear();
 
             // Tick all buckets per their intervals
             bool isLogTick = Logging.IsPerformanceEnabled && _currentTick >= _nextLogTick;
+            bool isPerfLogTick = _currentTick >= _nextPerfLogTick;
             foreach (var (interval, buckets) in _buckets)
             {
-                if (isLogTick)
+                if (isLogTick || isPerfLogTick)
                 {
                     _stopwatch.Restart();
                 }
                 var tickList = buckets;
                 var (ticked,bucketId) = TickList(tickList);
 
-                if (isLogTick)
+                if (isLogTick || isPerfLogTick)
                 {
                     _stopwatch.Stop();
                     if (ticked > 0)
                     {
-                        _nextLogTick = _currentTick + ToolkitConstants.TickRareInterval;
-                        Logging.LogPerformance($"TickableManager: Ticked {ticked} tickables in bucket {bucketId} from interval {interval} in {_stopwatch.Elapsed.TotalMilliseconds}ms.");
+                        if (isLogTick)
+                        {
+                            _timedLogged++;
+                            _nextLogTick = _currentTick + (ToolkitConstants.TickRareInterval * _timedLogged);
+                            Logging.LogPerformance($"TickableManager (Managed={_managed}): Ticked {ticked} tickables in bucket {bucketId} from interval {interval} in {_stopwatch.Elapsed.TotalMilliseconds}ms.");
+                        }
+                        if (isPerfLogTick && _stopwatch.Elapsed >= HighBucketDurationThreshold)
+                        {
+                            _timesPerfLogged++;
+                            _nextPerfLogTick = _currentTick + (ToolkitConstants.TickLongInterval * _timesPerfLogged);
+
+                            var peekBuilder = new StringBuilder();
+                            peekBuilder.Append($"TickableManager (Managed={_managed}): Ticked {ticked} tickables in bucket {bucketId} from interval {interval} in {_stopwatch.Elapsed.TotalMilliseconds}ms which is higher than the threshold of {HighBucketDurationThreshold}. Seems something is slowing down this bucket.");
+                            // Head
+                            peekBuilder.Append($"[");
+                            var bucket = tickList[bucketId];
+                            for ( var i = 0;  i < bucket.Count && i < BucketPeekSize; i++)
+                            {
+                                var tickable = bucket[i];
+                                if (tickable != null)
+                                {
+                                    peekBuilder.Append(tickable.DisplayName);
+                                    if(i < bucket.Count - 1 && i < BucketPeekSize - 1)
+                                    {
+                                        peekBuilder.Append(", ");
+                                    }
+                                }
+                            }
+
+                            // Tail
+                            peekBuilder.Append($"...");
+                            for (var i = Math.Max(0, bucket.Count - BucketPeekSize); i < bucket.Count; i++)
+                            {
+                                if (i > BucketPeekSize)
+                                {
+                                    var tickable = bucket[i];
+                                    if (tickable != null)
+                                    {
+                                        peekBuilder.Append(tickable.DisplayName);
+                                        if (i < bucket.Count - 1)
+                                        {
+                                            peekBuilder.Append(", ");
+                                        }
+                                    }
+                                }
+                            }
+                            peekBuilder.Append($"]");
+
+                            Logging.LogWarning(peekBuilder.ToString());
+                        }
                     }
                 }
             }
@@ -112,6 +186,12 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             for (int i = 0; i < tickables.Count; i++)
             {
                 var tickable = tickables[i];
+                var nextCheckTick = tickable?.Stats?.NextCheckTick ?? ToolkitConstants.TickLongInterval;
+                var checkPerformance = _currentTick >= nextCheckTick;
+                if (checkPerformance)
+                {
+                    _tickStopwatch.Restart();
+                }
                 try
                 {
                     if(tickable != null)
@@ -125,6 +205,29 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                 catch (Exception ex)
                 {
                     Log.Error($"Exception occurred while ticking {tickable.GetType().Name}: {ex}");
+                }
+                finally
+                {
+                    if (checkPerformance && tickable != null)
+                    {
+                        _tickStopwatch.Stop();
+                        if(_tickStopwatch.Elapsed >= HighTickDurationThreshold)
+                        {
+                            tickable.Stats ??= new ManagedTickableStats();
+                            if(_tickStopwatch.Elapsed >= tickable.Stats.MaxTickTime)
+                            {
+                                tickable.Stats.MaxTickTime = _tickStopwatch.Elapsed;
+                            }
+                            tickable.Stats.LastOffendingTick = _currentTick;
+                            tickable.Stats.NextCheckTick = _currentTick + ToolkitConstants.TickLongInterval;
+                            tickable.Stats.TimesOverBudget++;
+
+                            if(tickable.Stats.TimesOverBudget % OverBudgetReportInterval == 0)
+                            {
+                                Logging.LogWarning($"TickableManager (Managed={_managed}): Tickable {tickable.GetType().Name} has exceeded the high tick duration threshold of {HighTickDurationThreshold} for {tickable.Stats.TimesOverBudget} times. {tickable.Stats}.");
+                            }
+                        }
+                    }
                 }
             }
         }

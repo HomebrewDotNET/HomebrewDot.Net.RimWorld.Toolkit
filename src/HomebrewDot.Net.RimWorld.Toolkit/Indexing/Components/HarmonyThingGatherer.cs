@@ -25,6 +25,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
         private static ISnapshotManager _snapshotManager;
         private static ISnapshotManager<Thing> _thingManager;
         private static ISnapshotManager<Def> _defManager;
+        private static HashSet<ThingCategory> _ingestableCategories = new HashSet<ThingCategory>();
+        private static Type[] _ingestableDefTypes = Array.Empty<Type>();
+
         /// <summary>
         /// The singleton instance of the <see cref="HarmonyThingGatherer"/>.
         /// </summary>
@@ -53,6 +56,8 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             _thingManager = snapshotManager.AsTyped<Thing>();
             _defManager = snapshotManager.AsTyped<Def>();
             TickHashInterval = Invoking.Safe(() => Toolkit.Settings.SlowGatheringEnabled ? ToolkitConstants.TickLongInterval : ToolkitConstants.TickRareInterval, ToolkitConstants.TickLongInterval);
+            _ingestableCategories = Toolkit.Indexing.Thing.IngestibleThingCategories.ToHashSet();
+            _ingestableDefTypes = Toolkit.Indexing.Def.IngestibleTypes.ToArray();
             if (IsVerboseEnabled) LogVerbose($"HarmonyThingGatherer for {typeof(Thing).Name} ready to gather data.");
         }
         /// <inheritdoc/>
@@ -103,36 +108,36 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 LogWarning($"Skipping {nameof(Thing.DeSpawn)} patch for {typeof(Thing).FullName} because no implemented method was found in its type hierarchy.");
             }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyAdded_PostFix));
-            original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyAddedmethod);
-            if (original != null)
-            {
-                harmony.Patch(original, postfix: new HarmonyMethod(postfix));
-            }
-            else
-            {
-                LogWarning($"Skipping {ToolkitConstants.Thing.NotifyAddedmethod} patch for {typeof(ThingOwner).FullName} because the method was not found.");
-            }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyRemoved_PostFix));
-            original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyRemovedMethod);
-            if (original != null)
-            {
-                harmony.Patch(original, postfix: new HarmonyMethod(postfix));
-            }
-            else
-            {
-                LogWarning($"Skipping {ToolkitConstants.Thing.NotifyRemovedMethod} patch for {typeof(ThingOwner).FullName} because the method was not found.");
-            }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ExposeData_Postfix));
-            original = AccessTools.Method(typeof(ThingOwner<Thing>), nameof(ThingOwner<Thing>.ExposeData));
-            if (original != null)
-            {
-                harmony.Patch(original, postfix: new HarmonyMethod(postfix));
-            }
-            else
-            {
-                LogWarning($"Skipping {nameof(ThingOwner<Thing>.ExposeData)} patch for {typeof(ThingOwner<Thing>).FullName} because the method was not found.");
-            }
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyAdded_PostFix));
+            //original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyAddedmethod);
+            //if (original != null)
+            //{
+            //    harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+            //}
+            //else
+            //{
+            //    LogWarning($"Skipping {ToolkitConstants.Thing.NotifyAddedmethod} patch for {typeof(ThingOwner).FullName} because the method was not found.");
+            //}
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyRemoved_PostFix));
+            //original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyRemovedMethod);
+            //if (original != null)
+            //{
+            //    harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+            //}
+            //else
+            //{
+            //    LogWarning($"Skipping {ToolkitConstants.Thing.NotifyRemovedMethod} patch for {typeof(ThingOwner).FullName} because the method was not found.");
+            //}
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ExposeData_Postfix));
+            //original = AccessTools.Method(typeof(ThingOwner<Thing>), nameof(ThingOwner<Thing>.ExposeData));
+            //if (original != null)
+            //{
+            //    harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+            //}
+            //else
+            //{
+            //    LogWarning($"Skipping {nameof(ThingOwner<Thing>.ExposeData)} patch for {typeof(ThingOwner<Thing>).FullName} because the method was not found.");
+            //}
             postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ResearchManager_FinishProject_Postfix));
             original = AccessTools.Method(typeof(ResearchManager), nameof(ResearchManager.FinishProject));
             if (original != null)
@@ -178,24 +183,24 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 harmony.Unpatch(original, postfix);
             }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyAdded_PostFix));
-            original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyAddedmethod);
-            if (original != null)
-            {
-                harmony.Unpatch(original, postfix);
-            }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyRemoved_PostFix));
-            original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyRemovedMethod);
-            if (original != null)
-            {
-                harmony.Unpatch(original, postfix);
-            }
-            postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ExposeData_Postfix));
-            original = AccessTools.Method(typeof(ThingOwner<Thing>), nameof(ThingOwner<Thing>.ExposeData));
-            if (original != null)
-            {
-                harmony.Unpatch(original, postfix);
-            }
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyAdded_PostFix));
+            //original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyAddedmethod);
+            //if (original != null)
+            //{
+            //    harmony.Unpatch(original, postfix);
+            //}
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.NotifyRemoved_PostFix));
+            //original = AccessTools.Method(typeof(ThingOwner), ToolkitConstants.Thing.NotifyRemovedMethod);
+            //if (original != null)
+            //{
+            //    harmony.Unpatch(original, postfix);
+            //}
+            //postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ExposeData_Postfix));
+            //original = AccessTools.Method(typeof(ThingOwner<Thing>), nameof(ThingOwner<Thing>.ExposeData));
+            //if (original != null)
+            //{
+            //    harmony.Unpatch(original, postfix);
+            //}
             postfix = AccessTools.Method(typeof(Patches), nameof(Patches.ResearchManager_FinishProject_Postfix));
             original = AccessTools.Method(typeof(ResearchManager), nameof(ResearchManager.FinishProject));
             if (original != null)
@@ -237,6 +242,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 var manager = _thingManager;
                 if (manager != null)
                 {
+                    if (!_ingestableCategories.Contains(__instance.def.category)) return;
                     var metadata = new IndexMetadata();
                     metadata.Set(ToolkitConstants.Thing.Map, map);
                     metadata.Set(RespawningAfterLoadKey, respawningAfterLoad);
@@ -244,7 +250,6 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 }
             }
 
-            
             /// <summary>
             /// Indexes <paramref name="__instance"/> when it despawns from the game world, providing metadata about the mode of despawning for indexing purposes.
             /// </summary>
@@ -253,8 +258,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             public static void DeSpawn_Postfix(Thing __instance, DestroyMode mode)
             {
                 var manager = _thingManager;
-                if(manager != null)
+                if (manager != null)
                 {
+                    if (!_ingestableCategories.Contains(__instance.def.category)) return;
                     var metadata = new IndexMetadata();
                     metadata.Set(ToolkitConstants.Thing.Map, __instance.Map ?? __instance.MapHeld);
                     metadata.Set(ToolkitConstants.Thing.DestroyMode, mode);
@@ -266,17 +272,17 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             /// Pushes updates for <paramref name="__instance"/> to the snapshot manager.
             /// </summary>
             /// <param name="__instance">The instance being updated.</param>
-            public static void DoTick_Postfix(Thing __instance)
-            {
-                var isHashIntervalTick = (TickManager.TicksGame+__instance.thingIDNumber) % TickHashInterval == 0;
-                var manager = _thingManager;
-                if(isHashIntervalTick)
-                {
-                    var metadata = new IndexMetadata();
-                    metadata.Set(ToolkitConstants.Thing.Map, __instance.Map ?? __instance.MapHeld);
-                    manager.Push(__instance, ref metadata);
-                }
-            }
+            //public static void DoTick_Postfix(Thing __instance)
+            //{
+            //    var isHashIntervalTick = (TickManager.TicksGame+__instance.thingIDNumber) % TickHashInterval == 0;
+            //    var manager = _thingManager;
+            //    if(isHashIntervalTick)
+            //    {
+            //        var metadata = new IndexMetadata();
+            //        metadata.Set(ToolkitConstants.Thing.Map, __instance.Map ?? __instance.MapHeld);
+            //        manager.Push(__instance, ref metadata);
+            //    }
+            //}
             /// <summary>
             /// Notifies the snapshot manager that <paramref name="__instance"/> has been destroyed.
             /// </summary>
@@ -285,8 +291,9 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             public static void Destroy_Postfix(Thing __instance, DestroyMode mode)
             {
                 var manager = _thingManager;
-                if(manager != null)
+                if (manager != null)
                 {
+                    if (!_ingestableCategories.Contains(__instance.def.category)) return;
                     var metadata = new IndexMetadata();
                     metadata.Set(ToolkitConstants.Thing.Map, __instance.Map ?? __instance.MapHeld);
                     metadata.Set(ToolkitConstants.Thing.DestroyMode, mode);
@@ -299,52 +306,52 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             /// </summary>
             /// <param name="__instance">The container to which the thing has been added.</param>
             /// <param name="item">The thing that has been added to the container.</param>
-            public static void NotifyAdded_PostFix(ThingOwner __instance, Thing item)
-            {
-                var manager = _thingManager;
-                if(manager != null)
-                {
-                    var metadata = new IndexMetadata();
-                    metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
-                    metadata.Set(ToolkitConstants.Thing.HolderMetadata, __instance.Owner);
-                    manager.Push(item, ref metadata);
-                }
-            }
+            //public static void NotifyAdded_PostFix(ThingOwner __instance, Thing item)
+            //{
+            //    var manager = _thingManager;
+            //    if(manager != null)
+            //    {
+            //        var metadata = new IndexMetadata();
+            //        metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
+            //        metadata.Set(ToolkitConstants.Thing.HolderMetadata, __instance.Owner);
+            //        manager.Push(item, ref metadata);
+            //    }
+            //}
 
             /// <summary>
             /// Notifies the snapshot manager that <paramref name="item"/> has been removed from a container, providing metadata about the container for indexing purposes. This can be used to track when things are moved between containers or removed from the game world.
             /// </summary>
             /// <param name="__instance">The container from which the thing has been removed.</param>
             /// <param name="item">The thing that has been removed from the container.</param>
-            public static void NotifyRemoved_PostFix(ThingOwner __instance, Thing item)
-            {
-                var manager = _thingManager;
-                if(manager != null)
-                {
-                    var metadata = new IndexMetadata();
-                    metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
-                    metadata.Set(ToolkitConstants.Thing.HolderMetadata, null);
-                    manager.Push(item, ref metadata);
-                }
-            }
+            //public static void NotifyRemoved_PostFix(ThingOwner __instance, Thing item)
+            //{
+            //    var manager = _thingManager;
+            //    if(manager != null)
+            //    {
+            //        var metadata = new IndexMetadata();
+            //        metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
+            //        metadata.Set(ToolkitConstants.Thing.HolderMetadata, null);
+            //        manager.Push(item, ref metadata);
+            //    }
+            //}
 
             /// <summary>
             /// Notifies the snapshot manager of the current container when it's data is loaded from a save.
             /// </summary>
             /// <param name="__instance">The container whose data is being loaded.</param>
-            public static void ExposeData_Postfix(ThingOwner<Thing> __instance)
-            {
-                if (Scribe.mode == LoadSaveMode.Saving) return;
-                var manager = _thingManager;
-                if(manager == null) return;
-                foreach (var item in __instance)
-                {
-                    var metadata = new IndexMetadata();
-                    metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
-                    metadata.Set(ToolkitConstants.Thing.HolderMetadata, __instance.Owner);
-                    manager.Push(item, ref metadata);
-                }
-            }
+            //public static void ExposeData_Postfix(ThingOwner<Thing> __instance)
+            //{
+            //    if (Scribe.mode == LoadSaveMode.Saving) return;
+            //    var manager = _thingManager;
+            //    if (manager == null) return;
+            //    foreach (var item in __instance)
+            //    {
+            //        var metadata = new IndexMetadata();
+            //        metadata.Set(ToolkitConstants.Thing.ContainerMetadata, __instance);
+            //        metadata.Set(ToolkitConstants.Thing.HolderMetadata, __instance.Owner);
+            //        manager.Push(item, ref metadata);
+            //    }
+            //}
 
 
             /// <summary>
@@ -355,16 +362,16 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             public static void ResearchManager_FinishProject_Postfix(ResearchManager __instance, ResearchProjectDef proj)
             {
                 var manager = _defManager;
-                if(manager == null) return;
+                if (manager == null) return;
                 ResearchTracker++;
 
                 var metadata = new IndexMetadata();
-                manager.Push(proj, ref metadata);
+                PushDef(proj, manager, ref metadata);
 
                 foreach (var thingDef in proj.UnlockedDefs)
                 {
                     metadata = new IndexMetadata();
-                    manager.Push(thingDef, ref metadata);
+                    PushDef(thingDef, manager, ref metadata);
 
                     if (thingDef is BuildableDef buildableDef)
                     {
@@ -375,7 +382,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                                 if (cost.thingDef != null)
                                 {
                                     metadata = new IndexMetadata();
-                                    manager.Push(cost.thingDef, ref metadata);
+                                    PushDef(cost.thingDef, manager, ref metadata);
                                 }
                             }
                         }
@@ -388,12 +395,19 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                                 foreach (var stuffDef in stuffDefs)
                                 {
                                     metadata = new IndexMetadata();
-                                    manager.Push(stuffDef, ref metadata);
+                                    PushDef(stuffDef, manager, ref metadata);
                                 }
                             }
                         }
                     }
                 }
+            }
+        
+            private static void PushDef<T>(T def, ISnapshotManager<Def> manager, ref IndexMetadata metadata) where T : Def
+            {
+                if(!_ingestableDefTypes.Any(t => t.IsAssignableFrom(def.GetType()))) return;
+                if(def is ThingDef thingDef && !_ingestableCategories.Contains(thingDef.category)) return;
+                manager.Push(def, ref metadata);
             }
         }
     }

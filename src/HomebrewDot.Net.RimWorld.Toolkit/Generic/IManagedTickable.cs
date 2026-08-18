@@ -12,9 +12,17 @@ namespace HomebrewDot.Net.Rimworld.Generic
     public interface IManagedTickable
     {
         /// <summary>
+        /// The display name of the tickable. Used in logging.
+        /// </summary>
+        string DisplayName { get; }
+        /// <summary>
         /// The bucket index that this tickable object is assigned to.
         /// </summary>
         int Bucket { get; set; }
+        /// <summary>
+        /// Optional stats set by the manager for logging purposes.
+        /// </summary>
+        public ManagedTickableStats Stats { get; set; }
         /// <summary>
         /// The hash code of the tickable object, used for identification and management within the tick manager.
         /// </summary>
@@ -34,5 +42,33 @@ namespace HomebrewDot.Net.Rimworld.Generic
         /// Can be used to release resources or perform cleanup operations when the object is no longer being managed by the tick manager.
         /// </summary>
         void NotifyRemoved();
+    }
+
+    /// <summary>
+    /// Some statistics that will be maintained by the manager in relation to the tickable object.
+    /// </summary>
+    public class ManagedTickableStats {
+        /// <summary>
+        /// The longest time this instance took to tick.
+        /// </summary>
+        public TimeSpan MaxTickTime { get; set; } = TimeSpan.MinValue;
+        /// <summary>
+        /// How many times this instance went over budget when ticking.
+        /// </summary>
+        public int TimesOverBudget { get; set; }
+        /// <summary>
+        /// The last tick the instance went over it's maximum.
+        /// </summary>
+        public long LastOffendingTick { get; set; }
+        /// <summary>
+        /// The next tick we will start monitoring for perf violations again.
+        /// </summary>
+        public long NextCheckTick { get; set; }
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            return $"MaxTickTime: {MaxTickTime}, TimesOverBudget: {TimesOverBudget}, LastOffendingTick: {LastOffendingTick}, NextCheckTick: {NextCheckTick}";
+        }
     }
 }

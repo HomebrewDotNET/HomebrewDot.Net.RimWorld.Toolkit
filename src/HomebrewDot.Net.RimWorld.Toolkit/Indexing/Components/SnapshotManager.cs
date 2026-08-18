@@ -89,7 +89,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             {
                 var config = new ConfigureSnapshotManager();
                 configurator?.Invoke(config);
-                _changeTrackers = config.changeTrackers?.ToArray();
+                _changeTrackers = config.changeTrackers?.Distinct()?.ToArray();
                 _changeTrackerCache.Clear();
                 foreach(var typedManager in _typedManagers.Values)
                 {

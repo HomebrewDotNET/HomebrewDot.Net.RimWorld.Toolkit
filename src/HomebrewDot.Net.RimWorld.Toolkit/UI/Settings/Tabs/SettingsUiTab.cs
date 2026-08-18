@@ -43,15 +43,6 @@ namespace HomebrewDot.Net.Rimworld
             Toolkit.Settings.PerformanceLogging = perfLogging;
 
             listing.End();
-
-            // Fire immediately so cached flags (e.g. logging) update without a restart.
-            // The save-time trigger in ToolkitSettings.ExposeData can't detect this: the UI
-            // already wrote the new values into the settings object, so the old == new diff
-            // guard never sees a change.
-            if (slowGatheringChanged || verboseChanged || perfLoggingChanged)
-            {
-                Toolkit.Hooks.Manager.Trigger(new ToolkitSettings.Changed(Toolkit.Settings));
-            }
         }
     }
 }

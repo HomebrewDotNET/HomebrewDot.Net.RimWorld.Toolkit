@@ -156,6 +156,9 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
             public int Interval { get; }
             public TickerType TickerType => _tickerType;
 
+            public string DisplayName { get; }
+            public ManagedTickableStats Stats { get; set; }
+
             public Ticker(Game game, TickerType tickerType, int hash, IHookTriggerer<OnGameTickTrigger> triggerer)
             {
                 _game = game;
@@ -169,6 +172,8 @@ namespace HomebrewDot.Net.Rimworld.Hooks.Triggers
                     TickerType.Long => ToolkitConstants.TickLongInterval,
                     _ => throw new ArgumentOutOfRangeException(nameof(tickerType), tickerType, null)
                 };
+
+                DisplayName = $"Ticker trigger {tickerType}";
             }
 
             public void NotifyRemoved()

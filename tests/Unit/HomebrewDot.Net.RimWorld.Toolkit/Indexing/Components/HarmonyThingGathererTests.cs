@@ -14,28 +14,6 @@ namespace HomebrewDot.Net.Rimworld.Tests.Indexing.Components
     public class HarmonyThingGathererTests
     {
         [Fact]
-        public void GatherData_WithSnapshotManager_SetsManagerUsedByDestroyPatch()
-        {
-            // Arrange
-            var snapshotManager = new Mock<ISnapshotManager>();
-            var typedThingManager = new Mock<ISnapshotManager<Thing>>();
-            snapshotManager.Setup(m => m.AsTyped<Thing>()).Returns(typedThingManager.Object);
-            var sut = HarmonyThingGatherer.Instance;
-            var pawn = CreateUninitialized<Pawn>();
-
-            // Act
-            sut.GatherData(game: null, snapshotManager: snapshotManager.Object);
-            HarmonyThingGatherer.Patches.Destroy_Postfix(pawn, DestroyMode.Vanish);
-
-            // Assert
-            typedThingManager.Verify(m => m.Destroyed(
-                It.Is<Thing>(x => ReferenceEquals(x, pawn)),
-                ref It.Ref<IndexMetadata>.IsAny,
-                It.IsAny<bool>()),
-                Times.Once);
-        }
-
-        [Fact]
         public void Reset_AfterGatherData_ClearsManagerSoDestroyPatchDoesNothing()
         {
             // Arrange

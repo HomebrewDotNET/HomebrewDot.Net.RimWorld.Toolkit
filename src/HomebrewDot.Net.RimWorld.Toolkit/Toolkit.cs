@@ -227,6 +227,8 @@ namespace HomebrewDot.Net.Rimworld
         /// </summary>
         public static class Indexing
         {
+            private static readonly ChangeWatcher<ToolkitSettings> _settingsMonitor = new ChangeWatcher<ToolkitSettings>(Invoking.Safe(() => Settings, new ToolkitSettings()), x => x.Monitor(s => s.SlowGatheringEnabled));
+
             // Statics
             static Indexing()
             {
@@ -236,7 +238,18 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         StartIndexing(e.Game, true);
                     }, priority: byte.MaxValue)
-                                 .RegisterHook<ToolkitSettings.Changed>(Instance, e => StartIndexing(Current.Game));
+                    .RegisterHook<OnGameUnloadedTrigger>(Instance, (e) =>
+                    {
+                        ClearIndex(e.Game);
+                    }, priority: byte.MaxValue)
+                    .RegisterHook<ToolkitSettings.Changed>(Instance, e =>
+                    {
+                        var game = Current.Game;
+                        if (game is not null && _settingsMonitor.Update(e.Settings))
+                        {
+                            StartIndexing(game);
+                        }
+                    });
                 });
             }
 
@@ -389,6 +402,24 @@ namespace HomebrewDot.Net.Rimworld
             }
 
             /// <summary>
+            /// Stops the indexing for <paramref name="game"/> by rebuilding with empty config.
+            /// </summary>
+            /// <param name="game">The game to clear for</param>
+            public static void ClearIndex(Game game)
+            {
+                var orchestrator = Orchestrator;
+                try
+                {
+                    orchestrator?.RebuildIndex(game, game == null, Manager, (x => { }), (x => { }), (x => { }));
+                }
+                catch (Exception ex)
+                {
+                    Helpers.Logging.LogError($"An error occurred during the indexing process: {ex}");
+                }
+
+            }
+
+            /// <summary>
             /// Tools for working with indexers, which are responsible for defining how data is indexed and stored in the snapshot database. This includes methods for registering new indexers, building indexers using a fluent builder pattern, and helper methods for creating common types of indexers based on properties. Indexers registered through this class will be automatically initialized and configured to define their own database schema for indexing data, allowing for flexible and customizable indexing of game data in the snapshot database. It's important to note that when registering a new indexer with the same name as an existing one, the existing indexer will be unregistered and replaced with the new one, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
             /// </summary>
             public static class Indexers
@@ -433,8 +464,6 @@ namespace HomebrewDot.Net.Rimworld
                             Toolkit.Indexing.ConfigureSchema += configure;
 
                             _indexers[key] = (indexer, configure);
-
-                            Indexing.StartIndexing(Current.Game);
                         });
                     }
                 }
@@ -552,24 +581,42 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static class Def
             {
+                private static bool _ensured = false;
+                private static bool _gathererEnsured = false;
                 /// <summary>
                 /// The name of the root table that contains all defs in the game.
                 /// </summary>
                 public const string TableName = nameof(Verse.Def);
+                /// <summary>
+                /// Limits the amounts of defs ingested into the table matching the types. Consumers can add a type to opt in those defs.
+                /// </summary>
+                public static readonly HashSet<Type> IngestibleTypes = new HashSet<Type>();
 
                 /// <summary>
                 /// Configures the schema to include the table for defs.
                 /// </summary>
                 public static void EnsureTable()
                 {
+                    if (_ensured) return;
                     Indexing.ConfigureSchema += ConfigureSchema;
+                    _ensured = true;
                 }
                 /// <summary>
                 /// Configures the snapshot orchestrator to include the gatherer for defs, which is responsible for collecting all defs in the game and pushing them to the snapshot manager.
                 /// </summary>
-                public static void EnsureGatherer()
+                /// <param name="ingestibleTypes">The types of defs to ingest into the table. Consumers can add a type to opt in those defs.</param>
+                public static void EnsureGatherer(params Type[] ingestibleTypes)
                 {
+                    if(ingestibleTypes?.Length > 0)
+                    {
+                        foreach (var type in ingestibleTypes)
+                        {
+                            IngestibleTypes.Add(type);
+                        }
+                    }
+                    if (_gathererEnsured) return;
                     Indexing.ConfigureOrchestrator += ConfigureGathering;
+                    _gathererEnsured = true;
                 }
                 /// <summary>
                 /// Returns the latest snapshot of the table containing all defs in the game.
@@ -603,6 +650,8 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static class Thing
                 {
+                    private static readonly HashSet<IndexMetadataKey> _trackedMetadata = new HashSet<IndexMetadataKey>();
+                    private static bool _ensured = false;
                     /// <summary>
                     /// The name of the root table that contains all thing defs in the game.
                     /// </summary>
@@ -611,14 +660,31 @@ namespace HomebrewDot.Net.Rimworld
                     /// The fully qualified name of the table
                     /// </summary>
                     public const string FullTableName = $"{Def.TableName}.{TableName}";
+                    /// <summary>
+                    /// Limits the amounts of defs ingested into the table matching the categories. Consumers can add a category to opt in those defs.
+                    /// </summary>
+                    public static readonly HashSet<ThingCategory> IngestibleThingCategories = new HashSet<ThingCategory>();
 
                     /// <summary>
                     /// Configures the schema to include the table for thing defs.
                     /// </summary>
-                    public static void EnsureTable()
+                    /// <param name="categories">The categories of thing defs to ingest into the table. Consumers can add a category to opt in those defs.</param>
+                    public static void EnsureTable(params ThingCategory[] categories)
                     {
                         Def.EnsureTable();
-                        Def.ConfigureTable(Configure);
+                        if(!_ensured)
+                        {
+                            Def.ConfigureTable(Configure);
+                            _ensured = true;
+                        }
+                        Def.IngestibleTypes.Add(typeof(Verse.ThingDef));
+                        if (categories?.Length > 0)
+                        {
+                            foreach (var category in categories)
+                            {
+                                IngestibleThingCategories.Add(category);
+                            }
+                        }
                     }
                     /// <summary>
                     /// Adds addition configuration for the table.
@@ -647,6 +713,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsConstructionMaterial()
                     {
+                        if (!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsConstructionMaterial)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsConstructionMaterial.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => Current.Game != null)
@@ -701,6 +768,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsFoul()
                     {
+                        if(!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsFoul)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsFoul.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsFoul.Name)))
@@ -770,6 +838,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsDrink()
                     {
+                        if(!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsDrink)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsDrink.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsDrink.Name)))
@@ -795,6 +864,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsAlcoholic()
                     {
+                        if(!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsAlcoholic)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsAlcoholic.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsAlcoholic.Name)))
@@ -823,6 +893,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsMedical()
                     {
+                        if(!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsMedical)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsMedical.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsMedical.Name)))
@@ -850,6 +921,7 @@ namespace HomebrewDot.Net.Rimworld
                     /// </summary>
                     public static void TrackIsSurgical()
                     {
+                        if(!_trackedMetadata.Add(ToolkitConstants.Def.Thing.IsSurgical)) return;
                         Indexers.BuildIndexer<Verse.Def>(ToolkitConstants.Def.Thing.IsSurgical.Name, x =>
                         {
                             x.When((Verse.Def v, IIndexed<Verse.Def> i, ref IndexMetadata m) => v is ThingDef && (i is null || !i.Metadata.ContainsKey(ToolkitConstants.Def.Thing.IsSurgical.Name)))
@@ -1064,25 +1136,44 @@ namespace HomebrewDot.Net.Rimworld
             /// </summary>
             public static class Thing
             {
+                private static readonly HashSet<IndexMetadataKey> _trackedMetadata = new HashSet<IndexMetadataKey>();
+                private static bool _ensured = false;
+                private static bool _gathererEnsured = false;
                 /// <summary>
                 /// The name of the root table that contains all things on all active maps.
                 /// </summary>
                 public const string TableName = nameof(Verse.Thing);
+                /// <summary>
+                /// Limits the amounts of things ingested into the table matching the categories. Consumers can add a category to opt in those defs.
+                /// </summary>
+                public static readonly HashSet<ThingCategory> IngestibleThingCategories = new HashSet<ThingCategory>();
 
                 /// <summary>
                 /// Configures the schema to include the table for things.
                 /// </summary>
                 public static void EnsureTable()
                 {
+                    if(_ensured) return;
                     ConfigureSchema += Configure;
+                    _ensured = true;
                 }
                 /// <summary>
                 /// Configures the snapshot orchestrator to include the gatherer for things, which is responsible for collecting all things on all active maps and pushing them to the snapshot manager.
                 /// </summary>
-                public static void EnsureGatherer()
+                /// <param name="categories">The categories of things to ingest.</param>
+                public static void EnsureGatherer(params ThingCategory[] categories)
                 {
+                    if(categories?.Length > 0)
+                    {
+                        foreach (var category in categories)
+                        {
+                            IngestibleThingCategories.Add(category);
+                        }
+                    }
+                    if(_gathererEnsured) return;
                     ConfigureOrchestrator += ConfigureGathering;
                     ConfigureSchema += ConfigureGatheringSchema;
+                    _gathererEnsured = true;
                 }
                 /// <summary>
                 /// Adds addition configuration for the table.
@@ -1122,6 +1213,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackMap()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.Map)) return;
                     Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.Map.Name, x =>
                     {
                         x.Set(ToolkitConstants.Thing.Map, t =>
@@ -1136,6 +1228,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackModId()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.ModId)) return;
                     Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.ModId.Name, x =>
                     {
                         x.Requires(IndexMetadataKey.Get($"{typeof(Verse.Thing)}.{nameof(Verse.Thing.def)}"), x => x.def)
@@ -1162,6 +1255,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackIsUnique()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.IsUnique)) return;
                     if (ToolkitConstants.Odyssey.IsLoaded)
                     {
                         Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.IsUnique.Name, x =>
@@ -1190,6 +1284,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackIsGhoulCorpse()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.IsGhoulCorpse)) return;
                     if (!ToolkitConstants.Anomaly.IsLoaded)
                     {
                         return;
@@ -1223,6 +1318,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackCorpseKind()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.IsColonistCorpse)) return;
                     Indexers.BuildIndexer<Verse.Thing>("CorpseKind", x =>
                     {
                         x.When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v is Corpse)
@@ -1309,6 +1405,7 @@ namespace HomebrewDot.Net.Rimworld
                 /// </summary>
                 public static void TrackHitPointPercentage()
                 {
+                    if (!_trackedMetadata.Add(ToolkitConstants.Thing.HitPointPercentage)) return;
                     Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.HitPointPercentage.Name, x =>
                     {
                         x.When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v.def.useHitPoints)
@@ -3467,6 +3564,8 @@ namespace HomebrewDot.Net.Rimworld
     /// </summary>
     public class ToolkitSettings : ModSettings
     {
+        private ChangeWatcher<ToolkitSettings> _changeWatcher;
+
         /// <summary>
         /// Instead of pushing all data in a single tick, pushing is done over a period between each snapshot by calculating all ticking things and pushing a portion of them each tick.
         /// Helps reduce lag spikes when a lot of things are being gathered.
@@ -3514,22 +3613,20 @@ namespace HomebrewDot.Net.Rimworld
         {
             base.ExposeData();
 
-            // Capture old values so we only fire Changed when something actually changed
-            var oldDynamicGathering = DynamicGatheringEnabled;
-            var oldSlowGathering = SlowGatheringEnabled;
-            var oldVerbose = Verbose;
-            var oldPerformanceLogging = PerformanceLogging;
-
             Scribe_Values.Look(ref DynamicGatheringEnabled, nameof(DynamicGatheringEnabled), defaultValue: false);
             Scribe_Values.Look(ref SlowGatheringEnabled, nameof(SlowGatheringEnabled), defaultValue: false);
             Scribe_Values.Look(ref Verbose, nameof(Verbose), defaultValue: false);
             Scribe_Values.Look(ref PerformanceLogging, nameof(PerformanceLogging), defaultValue: false);
 
-            if (Scribe.mode == LoadSaveMode.Saving
-                && (oldDynamicGathering != DynamicGatheringEnabled
-                    || oldSlowGathering != SlowGatheringEnabled
-                    || oldVerbose != Verbose
-                    || oldPerformanceLogging != PerformanceLogging))
+            if (Scribe.mode == LoadSaveMode.LoadingVars)
+            {
+                _changeWatcher = new ChangeWatcher<ToolkitSettings>(this, x => x.Monitor(s => s.DynamicGatheringEnabled)
+                                                                                .Monitor(s => s.SlowGatheringEnabled)
+                                                                                .Monitor(s => s.Verbose)
+                                                                                .Monitor(s => s.PerformanceLogging));
+            }
+
+            if (Scribe.mode == LoadSaveMode.Saving && (_changeWatcher?.Update(this) ?? false))
             {
                 Toolkit.Hooks.Manager.Trigger(new Changed(this));
             }

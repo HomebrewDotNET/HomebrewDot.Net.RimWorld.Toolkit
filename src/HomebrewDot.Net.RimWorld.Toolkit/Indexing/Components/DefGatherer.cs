@@ -36,8 +36,23 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
             Log($"Loaded {defs.Count} defs in {elapsed.TotalMilliseconds} ms. Pushing to snapshot manager...");
             stopWatch.Reset();
             int accepted = 0;
+            int allowed = 0;
+            var ingestableTypes = Toolkit.Indexing.Def.IngestibleTypes.ToArray();
+            var ingestableCategories = Toolkit.Indexing.Def.Thing.IngestibleThingCategories;
             foreach (var def in defs)
             {
+                if(!ingestableTypes.Any(x => x.IsAssignableFrom(def.GetType())))
+                {
+                    continue;
+                }
+                if (def is ThingDef thingDef)
+                {
+                    if (!ingestableCategories.Contains(thingDef.category))
+                    {
+                        continue;
+                    }
+                }
+                allowed++;
                 var metadata = new IndexMetadata();
                 if(snapshotManager.Push(def, ref metadata, false))
                 {
@@ -45,7 +60,7 @@ namespace HomebrewDot.Net.Rimworld.Indexing.Components
                 }
             }
             elapsed = stopWatch.Elapsed;
-            Log($"Pushed {accepted}/{defs.Count} defs to snapshot manager in {elapsed.TotalMilliseconds}ms.");
+            Log($"Pushed {accepted}/{allowed} defs to snapshot manager in {elapsed.TotalMilliseconds}ms.");
         }
         /// <inheritdoc/>
         public void Initialize(Game game)

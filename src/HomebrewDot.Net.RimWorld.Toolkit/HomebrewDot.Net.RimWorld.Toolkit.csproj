@@ -28,6 +28,9 @@
 		<PublishedFileIdFileName Condition="'$(PUBLISHED_FILE_ID_FILE_NAME)' != ''">$(PUBLISHED_FILE_ID_FILE_NAME)</PublishedFileIdFileName>
 		<ModTestingTargetDir>$(RimworldModsRoot)\$(ModTestingFolderName)</ModTestingTargetDir>
 	</PropertyGroup>
+	<ItemGroup>
+	  <None Remove="Indexing\Components\DefGatherer.cs~RF1365986.TMP" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<Reference Include="Assembly-CSharp">
