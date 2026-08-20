@@ -1486,17 +1486,23 @@ namespace HomebrewDot.Net.Rimworld
                         Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(Toolkit.Instance, e =>
                         {
                             WarmupCache(true);
-                        }, false, priority: byte.MaxValue);
+                        }, false, priority: byte.MaxValue, gameScoped: true);
                     }, true, priority: byte.MaxValue);
                 });
             }
-            private static void WarmupCache(bool reset = false)
+            /// <summary>
+            /// Warms up the collection cache by pre-compiling the collection conditions and expressions for all registered collections and relevant types. This can improve performance when evaluating collections, as it avoids the overhead of compiling expressions at runtime. If the `reset` parameter is set to true, the cache will be cleared before warming up, allowing for a fresh compilation of all collections. This method should be called after any changes to collection definitions or comparator settings to ensure that the cache reflects the latest configuration.
+            /// </summary>
+            /// <param name="reset">Indicates whether the cache should be reset before warming up.</param>
+            internal static void WarmupCache(bool reset = false)
             {
                 if (Comparator is CollectionComparator comparator)
                 {
                     if (reset)
                     {
                         comparator.ClearCache();
+                        // Reset occurs during game so recompiling everything causes a freeze.
+                        return;
                     }
                     var allCollections = GetAllDefinitions();
                     if (allCollections.Count > 0)

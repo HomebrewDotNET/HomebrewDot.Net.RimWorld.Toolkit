@@ -20,8 +20,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
     public class StaticCollectionDef : ICollectionDef, ICacheable
     {
         // Fields
+        private ICollectionDef _collectionDef;
         private Lazy<string> _cacheKey;
         private string _toString;
+        
+        // State
+        private string _compactString;
 
         /// <inheritdoc cref="StaticCollectionDef"/>
         /// <param name="collectionDef">The collection definition to copy the properties from.</param>
@@ -43,6 +47,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
                 }
             });
             _toString = collectionDef.ToString();
+            _collectionDef = collectionDef;
         }
 
         public IReadOnlyList<IConditionDef> Conditions { get; }
@@ -58,6 +63,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
 
         /// <inheritdoc/>
         public string GetCacheKey() => _cacheKey.Value;
+        /// <inheritdoc/>
+        public string ToCompactString()
+        {
+            _compactString ??= _collectionDef.ToCompactString();
+            return _compactString;
+        }
 
         /// <inheritdoc/>
         public override string ToString() => _toString;

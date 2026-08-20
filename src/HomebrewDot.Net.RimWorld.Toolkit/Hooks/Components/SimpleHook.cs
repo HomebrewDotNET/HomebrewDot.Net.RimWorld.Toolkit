@@ -27,14 +27,16 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// <inheritdoc/>
         public byte Priority { get; }
         /// <inheritdoc/>
-        public bool GameScoped => false;
+        public bool GameScoped { get; }
 
         /// <inheritdoc cref="SimpleHook{T}"/>
         /// <param name="owner"><see cref="Owner"/></param>
         /// <param name="action">Delegate to be invoked when the hook is triggered.</param>
         /// <param name="once"><see cref="Once"/></param>
         /// <param name="errorHandler">Delegate to handle any exceptions that occur during the hook's execution.</param>
-        public SimpleHook(object owner, Action<T> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128) : this(owner, WrapAction(action), once, errorHandler, priority)
+        /// <param name="gameScoped"><inheritdoc cref="IHook{T}.GameScoped"/></param>
+        /// <param name="priority"><inheritdoc cref="IHandler.Priority"/></param>
+        public SimpleHook(object owner, Action<T> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128, bool gameScoped = false) : this(owner, WrapAction(action), once, errorHandler, priority, gameScoped)
         {
         }
         private static Func<T, bool> WrapAction(Action<T> action)
@@ -48,13 +50,16 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// <param name="action">Delegate to be invoked when the hook is triggered.</param>
         /// <param name="once"><see cref="Once"/></param>
         /// <param name="errorHandler">Delegate to handle any exceptions that occur during the hook's execution.</param>
-        public SimpleHook(object owner, Func<T,bool> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128)
+        /// <param name="gameScoped"><inheritdoc cref="IHook{T}.GameScoped"/></param>
+        /// <param name="priority"><inheritdoc cref="IHandler.Priority"/></param>
+        public SimpleHook(object owner, Func<T,bool> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128, bool gameScoped = false)
         {
             Owner = Guard.NotNull(owner, nameof(owner));
             _action = Guard.NotNull(action, nameof(action));
             Once = once;
             _errorHandler = errorHandler;
             Priority = priority;
+            GameScoped = gameScoped;
         }
 
         /// <inheritdoc/>

@@ -39,6 +39,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting
         /// Can be null when either <see cref="Conditions"/> or <see cref="Inclusions"/> are used.
         /// </summary>
         IReadOnlyList<ICollectionConditionDef> Exclusions { get; }
+
+        /// <summary>
+        /// Returns a compact string representation of the collection definition, which can be used for logging or debugging purposes.
+        /// </summary>
+        /// <returns>The compact string representation of the collection definition.</returns>
+        public string ToCompactString();
     }
     /// <summary>
     /// Contains extension methods for <see cref="ICollectionDef"/>.

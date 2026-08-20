@@ -60,15 +60,16 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
         /// Converts the current condition definition to a string representation. This method builds a string that represents the condition in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
         /// </summary>
         /// <param name="stringBuilder">The <see cref="StringBuilder"/> to append the string representation to. If null, a new <see cref="StringBuilder"/> will be created.</param>
+        /// <param name="includeNewLines">Whether to include new lines in the string representation for better readability.</param>
         /// <param name="includeTypeNames">Whether to include type names in the string representation.</param>
         /// <returns>The <see cref="StringBuilder"/> containing the string representation of the condition.</returns>
-        public StringBuilder ToString(StringBuilder stringBuilder, bool includeTypeNames)
+        public StringBuilder ToString(StringBuilder stringBuilder, bool includeTypeNames, bool includeNewLines = true)
         {
             stringBuilder ??= new StringBuilder();
             var isCondition = With != null;
             if (Conditions != null && Conditions.Length > 0)
             {
-                GroupToString(Conditions, stringBuilder);
+                GroupToString(Conditions, stringBuilder, includeNewLines);
                 if (isCondition)
                 {
                     stringBuilder.Append(ConditionGroupIsOr ? " OR " : " AND ");
@@ -228,7 +229,7 @@ namespace HomebrewDot.Net.Rimworld.Comparing.Models
             {
                 var isLast = i == conditions.Length - 1;
                 var condition = conditions[i];
-                stringBuilder = condition.ToString(stringBuilder, includeTypeNames);
+                stringBuilder = condition.ToString(stringBuilder, includeTypeNames, conditionNextLine);
                 if (!isLast)
                 {
                     if (conditionNextLine)

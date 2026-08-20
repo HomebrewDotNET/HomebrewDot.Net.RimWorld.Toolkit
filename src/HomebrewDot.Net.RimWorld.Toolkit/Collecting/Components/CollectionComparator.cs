@@ -269,7 +269,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LinqExpression isExcluded = null;
             if (hasExclusionCollections)
             {
-                var exclusionExpressions = collection.Exclusions.Select(exclusion => (Expression: CompileCollectionRef(inputParameter, exclusion.By, input, contextParameter, comparator, collections.TryGetValue(exclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{exclusion.Name}' not found."), collections, context), IsOr: exclusion.IsOr)).ToArray();
+                var exclusionExpressions = collection.Exclusions.Select(exclusion => (Expression: CompileCollectionRef(inputParameter, exclusion.By, exclusion.Inverted, input, contextParameter, comparator, collections.TryGetValue(exclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{exclusion.Name}' not found."), collections, context), IsOr: exclusion.IsOr)).ToArray();
                 isExcluded = exclusionExpressions[0].Expression;
                 for (int i = 1; i < exclusionExpressions.Length; i++)
                 {
@@ -282,7 +282,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LinqExpression isIncluded = null;
             if (hasInclusionCollections)
             {
-                var inclusionExpressions = collection.Inclusions.Select(inclusion => (Expression: CompileCollectionRef(inputParameter, inclusion.By, input, contextParameter, comparator, collections.TryGetValue(inclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{inclusion.Name}' not found."), collections, context), IsOr: inclusion.IsOr)).ToArray();
+                var inclusionExpressions = collection.Inclusions.Select(inclusion => (Expression: CompileCollectionRef(inputParameter, inclusion.By, inclusion.Inverted, input, contextParameter, comparator, collections.TryGetValue(inclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{inclusion.Name}' not found."), collections, context), IsOr: inclusion.IsOr)).ToArray();
                 isIncluded = inclusionExpressions[0].Expression;
                 for (int i = 1; i < inclusionExpressions.Length; i++)
                 {
@@ -320,29 +320,38 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             }
             else if (isIncluded is not null)
             {
-                itemIsMatch = collection.InclusionsAreOr ? LinqExpression.OrElse(itemIsMatch, isIncluded) : LinqExpression.AndAlso(itemIsMatch, isIncluded);
+                itemIsMatch = collection.InclusionsAreOr ? LinqExpression.OrElse(isIncluded, itemIsMatch) : LinqExpression.AndAlso(isIncluded,itemIsMatch);
             }
 
             if (itemIsMatch is null)
             {
                 return isExcluded is null ? LinqExpression.Constant(false) : LinqExpression.Not(isExcluded);
             }
-            return isExcluded is null ? itemIsMatch : LinqExpression.AndAlso(itemIsMatch, LinqExpression.Not(isExcluded));
+            return isExcluded is null ? itemIsMatch : LinqExpression.AndAlso(LinqExpression.Not(isExcluded), itemIsMatch);
         }
 
-        LinqExpression CompileCollectionRef(ParameterExpression inputParameter, string by, object input, ParameterExpression contextParameter, IComparator comparator, ICollectionDef collection, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+        LinqExpression CompileCollectionRef(ParameterExpression inputParameter, string by, bool inverted, object input, ParameterExpression contextParameter, IComparator comparator, ICollectionDef collection, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
         {
-            if(string.IsNullOrWhiteSpace(by))
+            LinqExpression expression;
+            if (string.IsNullOrWhiteSpace(by))
             {
-                return Compile(inputParameter, input, contextParameter, comparator, collection, collections, context);
+                expression = Compile(inputParameter, input, contextParameter, comparator, collection, collections, context);
+            }
+            else
+            {
+                var expectedType = Toolkit.Helpers.Traversing.TryWalkIndexedPath(input.GetType(), by);
+                var byVariable = LinqExpression.Variable(expectedType, "byValue");
+                var getter = Toolkit.Helpers.Traversing.GenerateFullGetter(inputParameter, input.GetType(), by);
+                var assignBy = LinqExpression.Assign(byVariable, getter);
+                var value = Toolkit.Helpers.Traversing.Traverse(input, by) ?? FormatterServices.GetUninitializedObject(expectedType);
+                expression = LinqExpression.Block(new[] { byVariable }, assignBy, Compile(byVariable, value, contextParameter, comparator, collection, collections, context));
             }
 
-            var expectedType = Toolkit.Helpers.Traversing.TryWalkIndexedPath(input.GetType(), by);
-            var byVariable = LinqExpression.Variable(expectedType, "byValue");
-            var getter = Toolkit.Helpers.Traversing.GenerateFullGetter(inputParameter, input.GetType(), by);
-            var assignBy = LinqExpression.Assign(byVariable, getter);
-            var value = Toolkit.Helpers.Traversing.Traverse(input, by) ?? FormatterServices.GetUninitializedObject(expectedType);
-            return LinqExpression.Block(new[] { byVariable }, assignBy, Compile(byVariable, value, contextParameter, comparator, collection, collections, context));
+            if(inverted)
+            {
+                expression = LinqExpression.Not(expression);
+            }
+            return expression;
         }
 
         private bool MatchesCollections(IReadOnlyList<ICollectionConditionDef> collectionConditions, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)

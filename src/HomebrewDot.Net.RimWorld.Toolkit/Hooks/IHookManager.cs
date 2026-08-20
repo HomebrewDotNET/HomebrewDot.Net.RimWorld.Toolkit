@@ -106,10 +106,11 @@ namespace HomebrewDot.Net.Rimworld.Hooks
         /// <param name="once">Indicates whether the hook should be triggered only once.</param>
         /// <param name="errorHandler">A function to handle errors that occur during the execution of the hook.</param>
         /// <param name="priority">The priority of the hook, determining the order in which hooks are executed.</param>
-        public static IHookManager RegisterHook<T>(this IHookManager hookManager, object owner, Action<T> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128) where T : class
+        /// <param name="gameScoped"><inheritdoc cref="IHook{T}.GameScoped"/></param>
+        public static IHookManager RegisterHook<T>(this IHookManager hookManager, object owner, Action<T> action, bool once = false, Func<Exception, T, bool> errorHandler = null, byte priority = 128, bool gameScoped = false) where T : class
         {
             hookManager = Toolkit.Helpers.Guard.NotNull(hookManager, nameof(hookManager));
-            hookManager.RegisterHook(new SimpleHook<T>(owner, action,once, errorHandler, priority));
+            hookManager.RegisterHook(new SimpleHook<T>(owner, action,once, errorHandler, priority, gameScoped));
             return hookManager;
         }
         /// <summary>

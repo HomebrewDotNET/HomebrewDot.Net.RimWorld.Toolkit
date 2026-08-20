@@ -72,14 +72,18 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
         IReadOnlyList<ICollectionConditionDef> ICollectionDef.Exclusions => Exclusions;
         /// <inheritdoc/>
         public string GetCacheKey() => ToString(null, true).ToString();
+        
+        /// <inheritdoc/>
+        public string ToCompactString() => ToString(null, false, false).ToString();
 
         /// <summary>
         /// Converts the current collection definition to a string representation. This method builds a string that represents the collection in a human-readable format, which can be useful for debugging or logging purposes. The string representation includes the left hand side object, the operator, and the right hand side object, as well as any nested conditions if applicable. The method handles different types of objects, such as references and operators, and formats them accordingly in the resulting string.
         /// </summary>
         /// <param name="stringBuilder">The <see cref="StringBuilder"/> to append the string representation to. If null, a new <see cref="StringBuilder"/> will be created.</param>
         /// <param name="includeTypeNames">Whether to include type names in the string representation.</param>
+        /// <param name="includeNewLines">Whether to include new lines in the string representation.</param>
         /// <returns>The <see cref="StringBuilder"/> containing the string representation of the collection.</returns>
-        public StringBuilder ToString(StringBuilder stringBuilder, bool includeTypeNames = false)
+        public StringBuilder ToString(StringBuilder stringBuilder, bool includeTypeNames = false, bool includeNewLines = true)
         {
             stringBuilder ??= new StringBuilder();
 
@@ -87,13 +91,13 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             if (Conditions?.Length > 0)
             {
                 stringBuilder.Append("IF ");
-                ConditionDef.GroupToString(Conditions, stringBuilder, includeTypeNames: includeTypeNames);
+                ConditionDef.GroupToString(Conditions, stringBuilder, includeNewLines, includeTypeNames);
                 if (Inclusions?.Length > 0)
                 {
-                    stringBuilder.AppendLine().Append(InclusionsAreOr ? " OR " : " AND THEN ");
+                    (includeNewLines ? stringBuilder.AppendLine() : stringBuilder).Append(InclusionsAreOr ? " OR " : " AND THEN ");
                 }
             }
-            if(currentLength != stringBuilder.Length)
+            if(currentLength != stringBuilder.Length && includeNewLines)
             {
                 stringBuilder.AppendLine();
             }
@@ -102,9 +106,9 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             {
                 stringBuilder.Append("INCLUDE FROM COLLECTIONS WHEN ");
                 CollectionConditionDef.GroupToString(Inclusions, stringBuilder, false);
-                stringBuilder.AppendLine();
+                if(includeNewLines)stringBuilder.AppendLine();
             }
-            if (currentLength != stringBuilder.Length)
+            if (currentLength != stringBuilder.Length && includeNewLines)
             {
                 stringBuilder.AppendLine();
             }
@@ -112,7 +116,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Models
             {
                 stringBuilder.Append("EXCLUDE FROM COLLECTIONS WHEN ");
                 CollectionConditionDef.GroupToString(Exclusions, stringBuilder, false);
-                stringBuilder.AppendLine();
+                if(includeNewLines) stringBuilder.AppendLine();
             }
 
             return stringBuilder;

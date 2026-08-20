@@ -92,12 +92,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var newData = _getDataInfo(snapshot);
             if (newData is null)
             {
-                if(Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger, but the provided getDataInfo function returned null for snapshot {snapshot.Version}, skipping");
+                if(Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] received snapshot taken trigger, but the provided getDataInfo function returned null for snapshot {snapshot.Version}, skipping");
                 return false;
             }
             if (newData.Version == _lastVersion)
             {
-                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but version {_lastVersion} has already been processed, skipping");
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] received snapshot taken trigger for snapshot {newData.Version}, but version {_lastVersion} has already been processed, skipping");
                 return false;
             }
 
@@ -114,13 +114,13 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                     bool wasStarted = _lastWork.Started is not null;
                     if (!wasStarted)
                     {
-                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work was never started, can't keep up, cancelling and forcing sync (managerStats={managerStats})");
+                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] received snapshot taken trigger for snapshot {newData.Version}, but a previous work was never started, can't keep up, cancelling and forcing sync (managerStats={managerStats})");
                     }
                     else
                     {
                         var workDone = _lastWork.Started?.Context?.TotalActions ?? 0;
                         var cyclesPerformed = _lastWork.Started?.Context?.CyclesPerformed ?? 0;
-                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}> received snapshot taken trigger for snapshot {newData.Version}, but a previous work is still running, can't keep up, cancelling and forcing sync (workDone={workDone}, cyclesPerformed={cyclesPerformed}, managerStats={managerStats})");
+                        Logging.LogWarning($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] received snapshot taken trigger for snapshot {newData.Version}, but a previous work is still running, can't keep up, cancelling and forcing sync (workDone={workDone}, cyclesPerformed={cyclesPerformed}, managerStats={managerStats})");
                     }
                 }
                 // Sync the current snapshot and cancel the previous work, since we can't keep up with the snapshot changes
@@ -128,13 +128,18 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 forceSync = true;
             }
             _lastWork = null;
+
             if (Once || forceSync)
             {
+                var stopwatch = Stopwatch.StartNew();
                 _lastVersion = -1;
                 context.NoInterval();
                 context.snapshot = snapshot;
                 context.data = newData;
                 LoadFrom(context).ExecuteEnumerable();
+                stopwatch.Stop();
+                var elapsed = stopwatch.Elapsed;
+                Logging.Log($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] force reprocessed snapshot {newData.Version} with {context.total} items in {elapsed.TotalMilliseconds}ms");
             }
             else
             {
@@ -145,8 +150,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 bool accepted = _hookmanager.Trigger(work);
                 if (!accepted)
                 {
+                    var stopwatch = Stopwatch.StartNew();
                     context.NoInterval();
                     LoadFrom(context).ExecuteEnumerable();
+                    stopwatch.Stop();
+                    var elapsed = stopwatch.Elapsed;
+                    Logging.Log($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] reprocessed snapshot {newData.Version} with {context.total} items in {elapsed.TotalMilliseconds}ms");
                 }
                 else
                 {
@@ -169,7 +178,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             var counter = 0;
             var total = 0;
             var fromChanges = data.TrackingChanges && data.Version - 1 == _lastVersion && data.Version > 0;
-            if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loading {_lastVersion} => {data.Version} (fromChanges={fromChanges})");
+            if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] loading {_lastVersion} => {data.Version} (fromChanges={fromChanges})");
             var context = CompareContext;
             if (fromChanges)
             {
@@ -204,7 +213,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                         yield return null;
                     }
                 }
-                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} changed items and {deleted} deleted items from snapshot {_lastVersion} changes");
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] loaded {counter}/{total} changed items and {deleted} deleted items from snapshot {_lastVersion} changes");
             }
             else
             {
@@ -228,8 +237,9 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                         yield return null;
                     }
                 }
-                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}> loaded {counter}/{total} items from snapshot {_lastVersion}");
+                if (Logging.IsVerboseEnabled) Logging.LogVerbose($"SnapshotCollector<{typeof(T).Name}>[{Definition.ToCompactString()}] loaded {counter}/{total} items from snapshot {_lastVersion}");
             }
+            workContext.total = total;
             _lastVersion = data.Version;
         }
 
@@ -330,6 +340,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             internal IReadOnlyDatabase snapshot;
             internal IDatabaseObject data;
+            internal int total;
         }
     }
 
