@@ -1,9 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Runtime.Serialization;
 using HomebrewDot.Net.Rimworld.Collecting.Components;
 using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using HomebrewDot.Net.Rimworld.Referencing.Components;
+using HomebrewDot.Net.Rimworld.Referencing.Models;
 using Moq;
+using RimWorld;
+using Verse;
 using Xunit;
 
 namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
@@ -190,6 +196,100 @@ namespace HomebrewDot.Net.Rimworld.Tests.Referencing.Components
         {
             var sut = new DelegateReferenceType((input, value, context) => value);
             Assert.True(sut.RequiresValue);
+        }
+    }
+
+    /// <summary>
+    /// Regression coverage for compiling <see cref="CompReferenceType"/> getters when the input is an
+    /// <see cref="IIndexed{T}"/>. The metadata lookup branch used the static-only
+    /// <c>Expression.Call(MethodInfo, Expression, Expression)</c> overload for the instance methods
+    /// <c>ContainsKey</c>/<c>get_Item</c> on <see cref="IIndexed{T}.Metadata"/>, which threw
+    /// <c>ArgumentException: Static method requires null instance, non-static method requires non-null instance</c>
+    /// while compiling a quality condition (e.g. <c>CompQuality|Quality</c> with Max set to Good) against a
+    /// snapshot. The getters must compile against indexed inputs and read the cached comp from metadata when present.
+    /// </summary>
+    public class CompReferenceTypeTests
+    {
+        private sealed class TestComp : ThingComp
+        {
+            public int TestValue { get; set; }
+        }
+
+        [Fact]
+        public void Compile_WithIndexedThingInput_CompilesWithoutThrowing()
+        {
+            // Arrange
+            var input = new Mock<IIndexed<Thing>>().Object;
+            var inputParameter = Expression.Parameter(typeof(IIndexed<Thing>), "input");
+
+            // Act
+            var expr = CompReferenceType.Instance.Compile(inputParameter, input, null, typeof(TestComp), null);
+
+            // Assert
+            Assert.NotNull(expr);
+            var func = Expression.Lambda<Func<IIndexed<Thing>, object>>(Expression.Convert(expr, typeof(object)), inputParameter).Compile();
+            Assert.NotNull(func);
+        }
+
+        [Fact]
+        public void Compile_WithIndexedThingInputAndCachedCompInMetadata_ReturnsCachedComp()
+        {
+            // Arrange
+            var cachedComp = new TestComp();
+            var metadata = new Dictionary<string, object>
+            {
+                [$"CompReferenceType:{typeof(TestComp).FullName}"] = cachedComp
+            };
+            var indexed = new Mock<IIndexed<Thing>>();
+            indexed.Setup(i => i.Metadata).Returns(metadata);
+
+            var inputParameter = Expression.Parameter(typeof(IIndexed<Thing>), "input");
+            var expr = CompReferenceType.Instance.Compile(inputParameter, indexed.Object, null, typeof(TestComp), null);
+            var func = Expression.Lambda<Func<IIndexed<Thing>, object>>(Expression.Convert(expr, typeof(object)), inputParameter).Compile();
+
+            // Act
+            var result = func(indexed.Object);
+
+            // Assert
+            Assert.Same(cachedComp, result);
+        }
+
+        [Fact]
+        public void Compile_WithIndexedThingInputAndPropertyReference_CompilesWithoutThrowing()
+        {
+            // Arrange
+            var input = new Mock<IIndexed<Thing>>().Object;
+            var inputParameter = Expression.Parameter(typeof(IIndexed<Thing>), "input");
+            var reference = $"{typeof(TestComp).FullName}{CompReferenceType.PathSeparator}{nameof(TestComp.TestValue)}";
+
+            // Act
+            var expr = CompReferenceType.Instance.Compile(inputParameter, input, null, reference, null);
+
+            // Assert
+            Assert.NotNull(expr);
+            var func = Expression.Lambda<Func<IIndexed<Thing>, object>>(Expression.Convert(expr, typeof(object)), inputParameter).Compile();
+            Assert.NotNull(func);
+        }
+
+        [Fact]
+        public void TryAutodex_WithPropertyReference_DoesNotThrow()
+        {
+            // Regression: TryAutodex compiled the property-value getter with an Indexed<T> parameter but passed
+            // the raw Thing as the compile-time input, so Compile tried Expression.Convert(Indexed<T>, Thing)
+            // and threw "No coercion operator is defined between types 'Indexed`1[Verse.Thing]' and 'Verse.Thing'".
+            // This is exactly the autodex call the quality condition (CompQuality|Quality) triggers on the first
+            // snapshot load, which broke the quality filter entirely. The getter must compile against the
+            // IIndexed<T> wrapper so it can read the cached comp from metadata.
+            // Arrange
+            var instance = (Thing)FormatterServices.GetUninitializedObject(typeof(ThingWithComps));
+            var reference = new ReferenceDef
+            {
+                Type = CompReferenceType.DefaultTypeName,
+                Value = $"{typeof(CompQuality).FullName}{CompReferenceType.PathSeparator}{nameof(CompQuality.Quality)}"
+            };
+
+            // Act & Assert
+            CompReferenceType.TryAutodex(instance, reference);
         }
     }
 }

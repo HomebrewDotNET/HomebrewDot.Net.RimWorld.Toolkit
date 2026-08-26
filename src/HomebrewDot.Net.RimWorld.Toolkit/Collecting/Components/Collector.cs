@@ -113,7 +113,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         /// constructing a new collector and re-registering it.
         /// </summary>
         /// <param name="definition">The new collection definition to collect against.</param>
-        internal void UpdateDefinition(ICollectionDef definition)
+        protected virtual void UpdateDefinition(ICollectionDef definition)
         {
             _definition = Guard.NotNull(definition, nameof(definition));
         }

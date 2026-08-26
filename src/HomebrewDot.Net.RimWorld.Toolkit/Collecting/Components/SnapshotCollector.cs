@@ -37,6 +37,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         // State
         private int _lastVersion = -1;
         private RaiseCooperativeWork _lastWork;
+        private bool _wasAutodexed = false;
 
         // Properties
         /// <summary>
@@ -226,6 +227,12 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                 }
                 foreach (var (thing, collected) in _comparer.Matches(Definition, thingsToPush, _collections, context))
                 {
+                    if(!_wasAutodexed)
+                    {
+                        _wasAutodexed = true;
+                        Autodex();
+                        AutodexFromInstance(thing.Value);
+                    }
                     workContext.LogWork();
                     if (HandleMatch(thing.Value, collected))
                     {
@@ -248,7 +255,6 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
         {
             base.StartCollecting(comparer, collections);
             _hookmanager.RegisterHook(this);
-            Autodex();
             var currentSnapshot = _snapshotManager.Database;
             if (currentSnapshot != null)
             {
@@ -261,8 +267,21 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             base.StopCollecting();
 
             _hookmanager.UnregisterHook(this);
+            Reset();
+        }
+        /// <inheritdoc/>
+        protected override void UpdateDefinition(ICollectionDef definition)
+        {
+            base.UpdateDefinition(definition);
+            Reset();
+        }
+
+        private void Reset()
+        {
+            _lastVersion = -1;
             _lastWork?.Cancel();
             _lastWork = null;
+            _wasAutodexed = false;
         }
 
         private void Autodex()
@@ -270,6 +289,51 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             foreach (var property in FindProperties(Definition))
             {
                 Toolkit.Indexing.Indexers.ByPath(typeof(T), property);
+            }
+        }
+
+        private void AutodexFromInstance(T instance)
+        {
+            if (instance is null) return;
+            FindReferencesToAutodexFromInstance(instance, Definition);
+        }
+
+        private void FindReferencesToAutodexFromInstance(T instance, ICollectionDef collectionDef)
+        {
+            if (instance is null) return;
+            if (collectionDef.Conditions is not null)
+            {
+                foreach (var condition in collectionDef.Conditions)
+                {
+                    if (condition.Compare is IReference reference)
+                    {
+                        if (CompReferenceType.DefaultTypeName == reference.Type)
+                        {
+                            CompReferenceType.TryAutodex(instance, reference);
+                            continue;
+                        }
+                    }
+                }
+            }
+            if (collectionDef.Inclusions is not null)
+            {
+                foreach (var inclusion in collectionDef.Inclusions)
+                {
+                    if (_collections.TryGetValue(inclusion.Name, out var includedCollection))
+                    {
+                        FindReferencesToAutodexFromInstance(instance, includedCollection);
+                    }
+                }
+            }
+            if (collectionDef.Exclusions is not null)
+            {
+                foreach (var exclusion in collectionDef.Exclusions)
+                {
+                    if (_collections.TryGetValue(exclusion.Name, out var excludedCollection))
+                    {
+                        FindReferencesToAutodexFromInstance(instance, excludedCollection);
+                    }
+                }
             }
         }
 

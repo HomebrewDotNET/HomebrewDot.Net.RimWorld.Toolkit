@@ -173,7 +173,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             bool hasExclusionCollections = collection.Exclusions != null && collection.Exclusions.Count > 0;
             if (hasExclusionCollections)
             {
-                if (MatchesCollections(collection.Exclusions, obj, collections, context))
+                if (MatchesCollections(collection.Exclusions, obj, collections, context, isExclusion: true))
                 {
                     return false;
                 }
@@ -194,7 +194,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
                     // If there are inclusion collections and the conditions are not met, we can skip checking the inclusion collections as they will be false anyway.
                     return false;
                 }
-                var inclusionsMet = MatchesCollections(collection.Inclusions, obj, collections, context);
+                var inclusionsMet = MatchesCollections(collection.Inclusions, obj, collections, context, isExclusion: false);
 
                 conditionsMet = hasConditions ? (collection.InclusionsAreOr ? conditionsMet || inclusionsMet : conditionsMet && inclusionsMet) : inclusionsMet;
             }
@@ -269,7 +269,14 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LinqExpression isExcluded = null;
             if (hasExclusionCollections)
             {
-                var exclusionExpressions = collection.Exclusions.Select(exclusion => (Expression: CompileCollectionRef(inputParameter, exclusion.By, exclusion.Inverted, input, contextParameter, comparator, collections.TryGetValue(exclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{exclusion.Name}' not found."), collections, context), IsOr: exclusion.IsOr)).ToArray();
+                var exclusionExpressions = collection.Exclusions.Select(exclusion => {
+                    if(!collections.TryGetValue(exclusion.Name, out var collection))
+                    {
+                        Logging.LogError($"Collection '{exclusion.Name}' not found in collections dictionary. Excluding everything for this reference");
+                        return (Expression: LinqExpression.Constant(true), IsOr: exclusion.IsOr);
+                    }
+                    return (Expression: CompileCollectionRef(inputParameter, exclusion.By, exclusion.Inverted, input, contextParameter, comparator, collection, collections, context), IsOr: exclusion.IsOr);
+                    }).ToArray();
                 isExcluded = exclusionExpressions[0].Expression;
                 for (int i = 1; i < exclusionExpressions.Length; i++)
                 {
@@ -282,7 +289,14 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             LinqExpression isIncluded = null;
             if (hasInclusionCollections)
             {
-                var inclusionExpressions = collection.Inclusions.Select(inclusion => (Expression: CompileCollectionRef(inputParameter, inclusion.By, inclusion.Inverted, input, contextParameter, comparator, collections.TryGetValue(inclusion.Name, out var collection) ? collection : throw new InvalidOperationException($"Collection '{inclusion.Name}' not found."), collections, context), IsOr: inclusion.IsOr)).ToArray();
+                var inclusionExpressions = collection.Inclusions.Select(inclusion => {
+                    if(!collections.TryGetValue(inclusion.Name, out var collection))
+                    {
+                        Logging.LogError($"Collection '{inclusion.Name}' not found in collections dictionary. Including nothing for this reference");
+                        return (Expression: LinqExpression.Constant(false), IsOr: inclusion.IsOr);
+                    }
+                    return (Expression: CompileCollectionRef(inputParameter, inclusion.By, inclusion.Inverted, input, contextParameter, comparator, collection, collections, context), IsOr: inclusion.IsOr);
+                    }).ToArray();
                 isIncluded = inclusionExpressions[0].Expression;
                 for (int i = 1; i < inclusionExpressions.Length; i++)
                 {
@@ -354,7 +368,7 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             return expression;
         }
 
-        private bool MatchesCollections(IReadOnlyList<ICollectionConditionDef> collectionConditions, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context)
+        private bool MatchesCollections(IReadOnlyList<ICollectionConditionDef> collectionConditions, object obj, IReadOnlyDictionary<string, ICollectionDef> collections, IReadOnlyDictionary<string, object> context, bool isExclusion)
         {
             // Evaluate referenced collections with the same semantics as condition chains:
             // contiguous terms form an AND-group, and IsOr ends the current group.
@@ -365,15 +379,29 @@ namespace HomebrewDot.Net.Rimworld.Collecting.Components
             for (int i = 0; i < collectionConditions.Count; i++)
             {
                 var collectionCondition = collectionConditions[i];
+                bool matches;
                 if (!collections.TryGetValue(collectionCondition.Name, out var subCollection))
                 {
-                    throw new InvalidOperationException($"Collection '{collectionCondition.Name}' not found in collections dictionary.");
+                    // Mirror the compiled path: a missing reference is a fixed constant, not an error
+                    // (exclusion → exclude everything, inclusion → include nothing).
+                    if (isExclusion)
+                    {
+                        Logging.LogError($"Collection '{collectionCondition.Name}' not found in collections dictionary. Excluding everything for this reference");
+                        matches = true;
+                    }
+                    else
+                    {
+                        Logging.LogError($"Collection '{collectionCondition.Name}' not found in collections dictionary. Including nothing for this reference");
+                        matches = false;
+                    }
                 }
-
-                var matches = Matches(subCollection, obj, collections, context);
-                if (collectionCondition.Inverted)
+                else
                 {
-                    matches = !matches;
+                    matches = Matches(subCollection, obj, collections, context);
+                    if (collectionCondition.Inverted)
+                    {
+                        matches = !matches;
+                    }
                 }
                 hasAnyTerm = true;
                 currentAndGroup = currentAndGroup && matches;

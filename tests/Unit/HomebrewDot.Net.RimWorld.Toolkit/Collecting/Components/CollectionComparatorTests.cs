@@ -17,7 +17,7 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
     public class CollectionComparatorTests
     {
         [Fact]
-        public void Matches_WithMissingCollectionReference_ThrowsInvalidOperationException()
+        public void Matches_WithMissingInclusionReference_ReturnsFalse()
         {
             var comparator = new Mock<IComparator>();
             var sut = new CollectionComparator(comparator.Object);
@@ -26,7 +26,24 @@ namespace HomebrewDot.Net.Rimworld.Tests.Collecting.Components
                 Inclusions = new[] { new CollectionConditionDef { Name = "missing" } },
             };
 
-            Assert.Throws<InvalidOperationException>(() => sut.Matches(root, new object(), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>()));
+            var result = sut.Matches(root, new object(), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>());
+
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void Matches_WithMissingExclusionReference_ReturnsFalse()
+        {
+            var comparator = new Mock<IComparator>();
+            var sut = new CollectionComparator(comparator.Object);
+            var root = new CollectionDef
+            {
+                Exclusions = new[] { new CollectionConditionDef { Name = "missing" } },
+            };
+
+            var result = sut.Matches(root, new object(), new Dictionary<string, ICollectionDef>(), new Dictionary<string, object>());
+
+            Assert.False(result);
         }
 
         [Fact]

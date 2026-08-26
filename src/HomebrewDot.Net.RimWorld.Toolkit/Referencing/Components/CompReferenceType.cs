@@ -5,7 +5,9 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 using HomebrewDot.Net.Rimworld.Comparing;
+using HomebrewDot.Net.Rimworld.Generic.Models;
 using HomebrewDot.Net.Rimworld.Indexing;
+using HomebrewDot.Net.Rimworld.Indexing.Models;
 using HomebrewDot.Net.Rimworld.Referencing.Models;
 using RimWorld;
 using UnityEngine.Windows;
@@ -35,6 +37,53 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
         /// This allows the selecting of sub properties/fields.
         /// </summary>
         public const char PathSeparator = '|';
+
+        // Statics
+        public static void TryAutodex<T>(T instance, IReference reference) where T : class
+        {
+            reference = Guard.NotNull(reference, nameof(reference));
+            if (!typeof(Thing).IsAssignableFrom(typeof(T))) return;
+            if (reference.Type?.Equals(DefaultTypeName, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                var compType = TryGetCompType(reference.Value, out var properties);
+                if (compType is not null)
+                {
+                    var inputParameter = Expression.Parameter(typeof(T), "instance");
+                    var getCompExpression = Instance.Compile(inputParameter, instance, null, compType, null);
+                    var getCompFunc = Expression.Lambda<Func<T, object>>(Expression.Convert(getCompExpression, typeof(object)), inputParameter).Compile();
+
+                    // Store comp for faster retrieval and watches for changes to the comps.
+                    var metadataKey = GetMetadataKey(compType);
+                    Toolkit.Indexing.Indexers.BuildIndexer<T>(metadataKey.Name, x =>
+                    {
+                        x.Requires(IndexMetadataKey.Get($"{nameof(Verse.Thing)}.{nameof(ThingWithComps.AllComps)}.{metadataKey.Name}"), x => x is ThingWithComps tc ? tc.AllComps?.Count : null)
+                         .When((T v, IIndexed<T> i, ref IndexMetadata m) => v is ThingWithComps)
+                         .Set(metadataKey, (T current, IIndexed<T> indexed, ref IndexMetadata metadata) => getCompFunc(current));
+                    }, true);
+
+                    // Also track/watch the actual value to detect changes
+                    if (properties is not null)
+                    {
+                        var inputValueParameter = Expression.Parameter(typeof(IIndexed<T>), "instance");
+                        var indexedInput = new Indexed<T>(instance, NullDictionary<string, object>.Instance);
+                        var metadataKeyWithProperties = GetMetadataKey(compType, properties);
+                        var getCompValueExpression = Instance.Compile(inputParameter, instance, null, reference.Value, null);
+                        var getCompValueFunc = Expression.Lambda<Func<T, object>>(Expression.Convert(getCompValueExpression, typeof(object)), inputParameter).Compile();
+                        var getCompValueFromIndexedExpression = Instance.Compile(inputValueParameter, indexedInput, null, reference.Value, null);
+                        var getCompValueFromIndexedFunc = Expression.Lambda<Func<IIndexed<T>, object>>(Expression.Convert(getCompValueFromIndexedExpression, typeof(object)), inputValueParameter).Compile();
+
+                        Toolkit.Indexing.Indexers.BuildIndexer<T>(metadataKeyWithProperties.Name, x =>
+                        {
+                            x.When((T v, IIndexed<T> i, ref IndexMetadata m) => v is ThingWithComps)
+                             .Set(metadataKeyWithProperties, (T current, IIndexed<T> indexed, ref IndexMetadata metadata) => indexed != null ? getCompValueFromIndexedFunc(indexed) : getCompValueFunc(current), true);
+                        }, true);
+                    }
+                    stopwatch.Stop();
+                    Log($"Auto created indexers for '{reference.Value}' in {stopwatch.Elapsed.TotalMilliseconds}ms");
+                }
+            }
+        }
 
         /// <inheritdoc/>
         public bool RequiresValue => true;
@@ -187,6 +236,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             var inputType = input.GetType();
             Expression getInput = inputParameter;
             bool inputIsDef = false;
+            bool inputIsIndexed = false;
             if(input is Def)
             {
                 inputIsDef = true;
@@ -195,6 +245,7 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             else if(input is IIndexed<Def> indexedDef)
             {
                 inputIsDef = true;
+                inputIsIndexed = true;
                 getInput = Expression.Property(Expression.Convert(inputParameter, typeof(IIndexed<Def>)), nameof(indexedDef.Value));
             }
             else if (input is Thing)
@@ -203,9 +254,11 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             }
             else if (input is IIndexed<Thing> thing)
             {
+                inputIsIndexed = true;
                 getInput = Expression.Property(Expression.Convert(inputParameter, typeof(IIndexed<Thing>)), nameof(indexedDef.Value));
             }
 
+            // Get comp directly
             Expression getComp;
             if (inputIsDef)
             {
@@ -240,6 +293,25 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
                 getComp = getMethod.IsStatic ? Expression.Call(getMethod, getInput) : Expression.Call(getInput, getMethod);
             }
 
+            // Check if comp is cached in metadata if input is indexed
+            if (inputIsIndexed)
+            {
+                var metadataKey = GetMetadataKey(compType);
+                var metadataProperty = Expression.Property(Expression.Convert(inputParameter, typeof(IIndexed<>).MakeGenericType(inputIsDef ? typeof(Def) : typeof(Thing))), nameof(IIndexed<object>.Metadata));
+                var metadataContainsKey = ToolkitConstants.Reflections.DictionaryStringObjectContainsKey;
+                var metadataGetItem = ToolkitConstants.Reflections.DictionaryStringObjectGetItem;
+                var compVariable = Expression.Variable(compType);
+                var assignCompFromMetadata = Expression.Assign(compVariable, Expression.Convert(Expression.Call(metadataProperty, metadataGetItem, Expression.Constant(metadataKey.Name)), compType));
+                var assignFromGetComp = Expression.Assign(compVariable, getComp);
+
+                var ifContainsKeyGetElseGetComp = Expression.IfThenElse(
+                    Expression.Call(metadataProperty, metadataContainsKey, Expression.Constant(metadataKey.Name)),
+                    assignCompFromMetadata,
+                    assignFromGetComp);
+
+                getComp = Expression.Block(new[] { compVariable }, ifContainsKeyGetElseGetComp, compVariable);
+            }
+
             if(properties is null)
             {
                 return getComp;
@@ -248,7 +320,12 @@ namespace HomebrewDot.Net.Rimworld.Referencing.Components
             return Toolkit.Helpers.Traversing.GenerateFullGetter(getComp, compType, properties);
         }
 
-        private Type TryGetCompType(object value, out string properties)
+        private static IndexMetadataKey<object> GetMetadataKey(Type compType, string properties = null)
+        {
+            return properties is null ? IndexMetadataKey<object>.Get($"CompReferenceType:{compType.FullName}") : IndexMetadataKey<object>.Get($"CompReferenceType:{compType.FullName}:{properties}");
+        }
+
+        private static Type TryGetCompType(object value, out string properties)
         {
             Type compType = value as Type;
             properties = null;

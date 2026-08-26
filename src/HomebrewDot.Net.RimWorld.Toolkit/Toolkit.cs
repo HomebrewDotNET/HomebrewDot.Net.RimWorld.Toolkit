@@ -237,7 +237,12 @@ namespace HomebrewDot.Net.Rimworld
                     Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Instance, (e) =>
                     {
                         StartIndexing(e.Game, true);
-                    }, priority: byte.MaxValue)
+                        // If config changed re-run again to pick up changes
+                        if (_configChanged)
+                        {
+                            StartIndexing(e.Game, true);
+                        }
+                    }, priority: byte.MaxValue-1)
                     .RegisterHook<OnGameUnloadedTrigger>(Instance, (e) =>
                     {
                         ClearIndex(e.Game);
@@ -260,6 +265,9 @@ namespace HomebrewDot.Net.Rimworld
             private static event Action<ISnapshotManagerConfigurator> _managerConfig;
             private static event Action<IDatabaseSchemaBuilder> _schemaConfig;
 
+            // State
+            private static bool _configChanged = true;
+
             // Properties
             /// <summary>
             /// Event that allows for configuring the snapshot orchestrator builder. This event is invoked during the indexing process to allow for dynamic configuration of the orchestrator based on the current game state or other factors. Subscribers to this event can add gatherers, indexers, and other components to the orchestrator builder to customize how the snapshot indexing process works. It's important to note that changes made in this event will only take effect during the next indexing process, so if you need to apply changes immediately, consider using the provided configuration methods and then calling the StartIndexing method to apply those changes without having to wait for the next indexing cycle.
@@ -269,10 +277,12 @@ namespace HomebrewDot.Net.Rimworld
                 add
                 {
                     _orchestratorConfig += value;
+                    _configChanged = true;
                 }
                 remove
                 {
                     _orchestratorConfig -= value;
+                    _configChanged = true;
                 }
             }
             /// <summary>
@@ -283,10 +293,12 @@ namespace HomebrewDot.Net.Rimworld
                 add
                 {
                     _managerConfig += value;
+                    _configChanged = true;
                 }
                 remove
                 {
                     _managerConfig -= value;
+                    _configChanged = true;
                 }
             }
             /// <summary>
@@ -297,10 +309,12 @@ namespace HomebrewDot.Net.Rimworld
                 add
                 {
                     _schemaConfig += value;
+                    _configChanged = true;
                 }
                 remove
                 {
                     _schemaConfig -= value;
+                    _configChanged = true;
                 }
             }
 
@@ -388,6 +402,7 @@ namespace HomebrewDot.Net.Rimworld
                 var orchestrator = Orchestrator;
                 try
                 {
+                    _configChanged = false;
                     orchestrator?.RebuildIndex(game, game == null, Manager, _orchestratorConfig ?? (x => { }), _managerConfig ?? (x => { }), _schemaConfig ?? (x => { }));
                     if (takeSnapshot)
                     {
@@ -410,6 +425,7 @@ namespace HomebrewDot.Net.Rimworld
                 var orchestrator = Orchestrator;
                 try
                 {
+                    _configChanged = false;
                     orchestrator?.RebuildIndex(game, game == null, Manager, (x => { }), (x => { }), (x => { }));
                 }
                 catch (Exception ex)
@@ -469,7 +485,7 @@ namespace HomebrewDot.Net.Rimworld
                 }
 
                 /// <summary>
-                /// Creates and registers a new indexer using the provided builder action to configure it. The indexer will be initialized and its configuration action will be added to the schema configuration event, allowing it to define its own database schema for indexing data. It's important to note that registering a new indexer with the same name as an existing one will replace the existing indexer and its configuration, so it should be used with caution to avoid potential issues with missing indexes or data inconsistencies. If you need to update an existing indexer, consider unregistering it first using the UnregisterIndexer method and then registering the updated version to ensure a clean replacement without any lingering configuration from the old indexer.
+                /// Registers a new indexer that can be used to store custom metadata on <see cref="IIndexed{T}"/> and/or to track changes so it is snapshotted again.
                 /// </summary>
                 /// <typeparam name="T">The type of the objects being indexed.</typeparam>
                 /// <param name="name">The name of the indexer.</param>
@@ -1260,7 +1276,7 @@ namespace HomebrewDot.Net.Rimworld
                     {
                         Indexers.BuildIndexer<Verse.Thing>(ToolkitConstants.Thing.IsUnique.Name, x =>
                         {
-                            x.Requires(IndexMetadataKey.Get($"{nameof(Verse.Thing)}.{nameof(ThingWithComps.AllComps)}"), x => x is ThingWithComps tc ? tc.AllComps?.Count : null)
+                            x.Requires(IndexMetadataKey.Get($"{nameof(Verse.Thing)}.{nameof(ThingWithComps.AllComps)}.Uniques"), x => x is ThingWithComps tc ? tc.AllComps?.Count : null)
                             .When((Verse.Thing v, IIndexed<Verse.Thing> i, ref IndexMetadata m) => v is ThingWithComps)
                              .Set(ToolkitConstants.Thing.IsUnique, t =>
                             {
@@ -1482,12 +1498,13 @@ namespace HomebrewDot.Net.Rimworld
                 {
                     Toolkit.Hooks.Manager.RegisterHook<OnSaveLoadedTrigger>(Toolkit.Instance, e =>
                     {
-                        WarmupCache();
+                        WarmupCache(true);
+                        StartCollection();
                         Toolkit.Hooks.Manager.RegisterHook<OnCollectionsChanged>(Toolkit.Instance, e =>
                         {
                             WarmupCache(true);
                         }, false, priority: byte.MaxValue, gameScoped: true);
-                    }, true, priority: byte.MaxValue);
+                    }, false, priority: byte.MaxValue);
                 });
             }
             /// <summary>
@@ -1735,10 +1752,6 @@ namespace HomebrewDot.Net.Rimworld
 
                 if (_collectors.TryGetValue(name, out var existing) && existing is IReusableCollector reusable && CanReuseCollector(existing, newCollector))
                 {
-                    // Reuse the existing collector in place: stop it, swap its definition and restart it. This
-                    // keeps the same instance registered, unregisters any stale hook, and re-runs the initial
-                    // load against the new definition. Autodex is idempotent through the indexer cache, so no
-                    // separate skip is required.
                     Invoking.Safe(() => existing.StopCollecting());
                     reusable.UpdateDefinition(collection);
                     _collectors[name] = existing;
@@ -1751,8 +1764,6 @@ namespace HomebrewDot.Net.Rimworld
                     return collection;
                 }
 
-                // No compatible collector to reuse: clean up any existing one before registering the new one so a
-                // replaced collector is not left running (and its hook registered) indefinitely.
                 if (existing != null)
                 {
                     Invoking.Safe(() => existing.StopCollecting());
